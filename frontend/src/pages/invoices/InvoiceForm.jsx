@@ -108,7 +108,17 @@ const InvoiceForm = () => {
   const fmt = (v) => `₹ ${Number(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
 
   const lineColumns = [
-    { title: 'Product', width: 200, dataIndex: 'product_id', render: (v, row) => <Select size="small" value={v} style={{ width: '100%' }} showSearch options={products} onChange={val => updateLine(row.key, 'product_id', val)} /> },
+    { title: 'Product', width: 200, dataIndex: 'product_id', render: (v, row) => (
+      <Select 
+        size="small" 
+        value={v} 
+        style={{ width: '100%' }} 
+        showSearch 
+        options={products.map(p => ({ value: p.id, label: p.name }))} 
+        filterOption={(input, option) => (option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
+        onChange={val => updateLine(row.key, 'product_id', val)} 
+      />
+    )},
     { title: 'Description', width: 200, dataIndex: 'description', render: (v, row) => <Input size="small" value={v} onChange={e => updateLine(row.key, 'description', e.target.value)} /> },
     { title: 'Qty', width: 80, dataIndex: 'quantity', render: (v, row) => <InputNumber size="small" value={v} onChange={val => updateLine(row.key, 'quantity', val)} /> },
     { title: 'Unit Price', width: 120, dataIndex: 'unit_price', render: (v, row) => <InputNumber size="small" value={v} onChange={val => updateLine(row.key, 'unit_price', val)} /> },
@@ -129,25 +139,37 @@ const InvoiceForm = () => {
         </div>
       )}
 
-      <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Steps size="small" current={STATUS_IDX[status] || 0} style={{ maxWidth: 400 }} items={STATUS_STEPS.map(s => ({ title: s.toUpperCase() }))} />
-        <Space>
-          {status === 'draft' && <Button type="primary" icon={<SendOutlined />} onClick={() => statusMutation.mutate('sent')} style={{ background: '#3b82f6' }}>Send / Print</Button>}
-          {['draft', 'sent'].includes(status) && isEdit && <Button type="primary" icon={<DollarOutlined />} onClick={() => { paymentForm.setFieldsValue({ amount: totals.balance_due, payment_date: dayjs(), payment_mode: 'neft' }); setPaymentModalOpen(true) }} style={{ background: '#10b981' }}>Record Payment</Button>}
-          {status === 'paid' && <Tag color="green" style={{ padding: '6px 12px', fontSize: 14 }}>✅ PAID</Tag>}
-        </Space>
-      </div>
+      <Row gutter={[16, 16]} align="middle" style={{ marginBottom: 24 }}>
+        <Col xs={24} lg={12}>
+          <Steps size="small" current={STATUS_IDX[status] || 0} items={STATUS_STEPS.map(s => ({ title: s.toUpperCase() }))} />
+        </Col>
+        <Col xs={24} lg={12} style={{ textAlign: 'right' }}>
+          <Space wrap>
+            {status === 'draft' && <Button type="primary" icon={<SendOutlined />} onClick={() => statusMutation.mutate('sent')} style={{ background: '#3b82f6' }}>Send / Print</Button>}
+            {['draft', 'sent'].includes(status) && isEdit && <Button type="primary" icon={<DollarOutlined />} onClick={() => { paymentForm.setFieldsValue({ amount: totals.balance_due, payment_date: dayjs(), payment_mode: 'neft' }); setPaymentModalOpen(true) }} style={{ background: '#10b981' }}>Record Payment</Button>}
+            {status === 'paid' && <Tag color="green" style={{ padding: '6px 12px', fontSize: 14 }}>✅ PAID</Tag>}
+          </Space>
+        </Col>
+      </Row>
 
       <Form form={form} layout="vertical" initialValues={{ status: 'draft', is_igst: false }}>
         <Row gutter={16}>
-          <Col span={8}><Form.Item name="customer_id" label="Customer" rules={[{ required: true }]}><Select showSearch options={customers} /></Form.Item></Col>
+          <Col span={8}>
+            <Form.Item name="customer_id" label="Customer" rules={[{ required: true }]}>
+              <Select 
+                showSearch 
+                options={customers.map(c => ({ value: c.id, label: c.name }))} 
+                filterOption={(input, option) => (option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
+              />
+            </Form.Item>
+          </Col>
           <Col span={4}><Form.Item name="invoice_date" label="Invoice Date"><DatePicker style={{ width: '100%' }} format="DD/MM/YYYY" /></Form.Item></Col>
           <Col span={4}><Form.Item name="due_date" label="Due Date"><DatePicker style={{ width: '100%' }} format="DD/MM/YYYY" /></Form.Item></Col>
           <Col span={4}><Form.Item name="payment_terms" label="Terms"><Select options={PAYMENT_TERMS} /></Form.Item></Col>
         </Row>
         <Row gutter={16}>
-          <Col span={6}><Form.Item name="so_id" label="SO Ref"><Select options={sos} allowClear /></Form.Item></Col>
-          <Col span={6}><Form.Item name="dc_id" label="DC Ref"><Select options={dcs} allowClear /></Form.Item></Col>
+          <Col span={6}><Form.Item name="so_id" label="SO Ref"><Select options={sos.map(s => ({ value: s.id, label: s.so_number }))} allowClear /></Form.Item></Col>
+          <Col span={6}><Form.Item name="dc_id" label="DC Ref"><Select options={dcs.map(d => ({ value: d.id, label: d.dc_number }))} allowClear /></Form.Item></Col>
           <Col span={6}><Form.Item name="is_igst" label="Use IGST (Inter-state)" valuePropName="checked"><Switch /></Form.Item></Col>
         </Row>
 

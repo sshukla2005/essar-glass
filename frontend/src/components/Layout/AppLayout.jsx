@@ -5,7 +5,9 @@ import {
   FileTextOutlined, ShoppingCartOutlined, DollarOutlined, AppstoreOutlined, ShoppingOutlined,
   EnvironmentOutlined, TeamOutlined, UserOutlined, ControlOutlined, PercentageOutlined,
   BarcodeOutlined, GroupOutlined, SettingOutlined, BankOutlined,
-  MenuFoldOutlined, MenuUnfoldOutlined, BuildOutlined, CarOutlined, RetweetOutlined
+  MenuFoldOutlined, MenuUnfoldOutlined, BuildOutlined, CarOutlined, RetweetOutlined,
+  SwapOutlined, DownOutlined, LogoutOutlined, LayoutOutlined, DatabaseOutlined,
+  UsergroupAddOutlined, ReconciliationOutlined, HistoryOutlined
 } from '@ant-design/icons'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
@@ -14,41 +16,40 @@ const { Sider, Header, Content } = Layout
 const { Text } = Typography
 
 const menuItems = [
-  { key: '/', icon: <DashboardOutlined />, label: 'Dashboard' },
-  { type: 'divider' },
-  { key: 'grp_crm', label: <span style={{ color: '#8b5cf6', fontSize: 11, textTransform: 'uppercase', fontWeight: 600 }}>🎯 CRM</span>, type: 'group', children: [
-    { key: '/crm/pipeline', icon: <FunnelPlotOutlined />, label: 'Pipeline' },
-    { key: '/crm/leads', icon: <UnorderedListOutlined />, label: 'All Leads' },
-    { key: '/crm/stages', icon: <NodeIndexOutlined />, label: 'Stages' },
+  { key: '/', icon: <AppstoreOutlined />, label: 'Dashboard' },
+  { key: 'grp_crm', icon: <TeamOutlined />, label: 'CRM', children: [
+    { key: '/crm/pipeline', label: 'Pipeline' },
+    { key: '/crm/leads', label: 'All Leads' },
+    { key: '/crm/stages', label: 'Stages' },
   ]},
-  { key: 'grp_sales', label: <span style={{ color: '#3b82f6', fontSize: 11, textTransform: 'uppercase', fontWeight: 600 }}>📄 Sales</span>, type: 'group', children: [
-    { key: '/quotations', icon: <FileTextOutlined />, label: 'Quotations' },
-    { key: '/sales-orders', icon: <ShoppingCartOutlined />, label: 'Sales Orders' },
-    { key: '/invoices', icon: <DollarOutlined />, label: 'Invoices' },
+  { key: 'grp_sales', icon: <FileTextOutlined />, label: 'Sales', children: [
+    { key: '/quotations', label: 'Quotations' },
+    { key: '/sales-orders', label: 'Sales Orders' },
+    { key: '/invoices', label: 'Invoices' },
   ]},
-  { key: 'grp_purchase', label: <span style={{ color: '#f59e0b', fontSize: 11, textTransform: 'uppercase', fontWeight: 600 }}>🛒 Purchase</span>, type: 'group', children: [
-    { key: '/purchase-orders', icon: <ShoppingOutlined />, label: 'Purchase Orders' },
+  { key: 'grp_purchase', icon: <ShoppingCartOutlined />, label: 'Purchase', children: [
+    { key: '/purchase-orders', label: 'Purchase Orders' },
   ]},
-  { key: 'grp_inventory', label: <span style={{ color: '#10b981', fontSize: 11, textTransform: 'uppercase', fontWeight: 600 }}>🏪 Inventory</span>, type: 'group', children: [
-    { key: '/inventory/stock', icon: <AppstoreOutlined />, label: 'Stock Overview' },
-    { key: '/delivery-challans', icon: <CarOutlined />, label: 'Delivery Challans' },
-    { key: '/inventory/movements', icon: <RetweetOutlined />, label: 'Stock Movements' },
+  { key: 'grp_inventory', icon: <DatabaseOutlined />, label: 'Inventory', children: [
+    { key: '/inventory/stock', label: 'Stock Overview' },
+    { key: '/delivery-challans', label: 'Delivery Challans' },
+    { key: '/inventory/movements', label: 'Stock Movements' },
   ]},
-  { key: 'grp_masters', label: <span style={{ color: '#6366f1', fontSize: 11, textTransform: 'uppercase', fontWeight: 600 }}>👥 Masters</span>, type: 'group', children: [
-    { key: '/masters/customers', icon: <TeamOutlined />, label: 'Customers' },
-    { key: '/masters/vendors', icon: <ShoppingOutlined />, label: 'Vendors' },
-    { key: '/masters/products', icon: <BuildOutlined />, label: 'Products' },
-    { key: '/masters/employees', icon: <UserOutlined />, label: 'Employees' },
+  { key: 'grp_masters', icon: <ReconciliationOutlined />, label: 'Masters', children: [
+    { key: '/masters/customers', label: 'Customers' },
+    { key: '/masters/vendors', label: 'Vendors' },
+    { key: '/masters/products', label: 'Products' },
+    { key: '/masters/employees', label: 'Employees' },
   ]},
-  { key: 'settings', icon: <SettingOutlined />, label: '⚙️ Settings', children: [
-    { key: '/settings/company', icon: <BankOutlined />, label: 'Company' },
-    { key: '/settings/branches', icon: <EnvironmentOutlined />, label: 'Branches' },
-    { key: '/settings/currencies', icon: <DollarOutlined />, label: 'Currencies' },
-    { key: '/settings/tax-groups', icon: <PercentageOutlined />, label: 'Tax Groups' },
-    { key: '/settings/taxes', icon: <PercentageOutlined />, label: 'Taxes' },
-    { key: '/settings/hsn-codes', icon: <BarcodeOutlined />, label: 'HSN/SAC' },
-    { key: '/settings/uom-categories', icon: <GroupOutlined />, label: 'UoM Categories' },
-    { key: '/settings/uoms', icon: <ControlOutlined />, label: 'Units of Measure' },
+  { key: 'grp_settings', icon: <SettingOutlined />, label: 'Settings', children: [
+    { key: '/settings/company', label: 'Company' },
+    { key: '/settings/branches', label: 'Branches' },
+    { key: '/settings/currencies', label: 'Currencies' },
+    { key: '/settings/tax-groups', label: 'Tax Groups' },
+    { key: '/settings/taxes', label: 'Taxes' },
+    { key: '/settings/hsn-codes', label: 'HSN/SAC' },
+    { key: '/settings/uom-categories', label: 'UoM Categories' },
+    { key: '/settings/uoms', label: 'Units of Measure' },
   ]},
 ]
 
@@ -71,62 +72,156 @@ const AppLayout = () => {
     left: 0,
     top: 0,
     zIndex: 100,
-    overflow: 'auto',
-    background: 'linear-gradient(180deg, #0f172a 0%, #1e293b 100%)',
-    boxShadow: '4px 0 10px rgba(0,0,0,0.1)'
+    background: '#1a337e', // Vibrant royal blue from image
+    boxShadow: '4px 0 10px rgba(0,0,0,0.1)',
+    display: 'flex',
+    flexDirection: 'column'
   }
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
       {/* Dynamic CSS styles injected directly into layout for rapid implementation */}
       <style>{`
+        /* Sidebar Item Styling */
         .ant-menu-dark.ant-menu-dark:not(.ant-menu-horizontal) .ant-menu-item-selected {
-          background-color: #6366f1 !important;
+          background-color: #111827 !important;
           color: white !important;
-          border-radius: 6px;
+          border-radius: 12px;
+          margin-bottom: 8px !important;
+          position: relative;
         }
-        .ant-menu-dark .ant-menu-item:hover, .ant-menu-dark .ant-menu-submenu-title:hover {
-          background-color: rgba(99, 102, 241, 0.2) !important;
+        
+        .ant-menu-dark.ant-menu-dark:not(.ant-menu-horizontal) .ant-menu-item-selected::after {
+          content: '';
+          position: absolute;
+          right: 16px;
+          top: 50%;
+          transform: translateY(-50%);
+          width: 6px;
+          height: 6px;
+          background: white;
+          border-radius: 50%;
+        }
+
+        .ant-menu-dark .ant-menu-item {
+          height: 40px !important;
+          line-height: 40px !important;
+          margin: 2px 0 !important;
+          font-weight: 500;
+          font-size: 13px;
+          color: rgba(255, 255, 255, 0.7) !important;
+          transition: all 0.3s;
+        }
+
+        .ant-menu-dark .ant-menu-item:hover, 
+        .ant-menu-dark .ant-menu-submenu-title:hover {
+          background-color: rgba(255, 255, 255, 0.1) !important;
           color: white !important;
-          border-left: 3px solid #6366f1;
-          border-radius: 6px;
+          border-radius: 8px;
         }
-        .ant-menu { background: transparent !important; }
-        .ant-layout-sider-children { display: flex; flex-direction: column; }
+
+        .ant-menu-dark .ant-menu-submenu-title {
+          height: 40px !important;
+          line-height: 40px !important;
+          margin: 2px 0 !important;
+          font-weight: 500;
+          font-size: 13px;
+          color: rgba(255, 255, 255, 0.7) !important;
+        }
+
+        .ant-menu { background: transparent !important; border: none !important; }
+        .ant-layout-sider-children { display: flex; flex-direction: column; overflow: hidden; }
+        .ant-menu-sub { background: rgba(0,0,0,0.1) !important; border-radius: 8px !important; margin: 4px 0 !important; }
+        
+        .ant-menu-submenu-arrow { color: rgba(255,255,255,0.4) !important; }
+        
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
       `}</style>
       
       <Sider
         collapsible
         collapsed={collapsed}
         onCollapse={setCollapsed}
+        trigger={null}
         width={250}
         style={siderStyle}
       >
         <div style={{
           padding: '20px 16px',
-          textAlign: 'center',
-          background: 'linear-gradient(90deg, #4f46e5 0%, #7c3aed 100%)',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.2)'
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12
         }}>
-          {collapsed ? (
-            <Avatar style={{ background: '#fff', color: '#4f46e5', fontWeight: 'bold' }} size={36}>EG</Avatar>
-          ) : (
-            <Space>
-              <Avatar style={{ background: '#fff', color: '#4f46e5', fontWeight: 'bold' }} size={36}>EG</Avatar>
-              <Text style={{ color: '#fff', fontWeight: 800, fontSize: 16, letterSpacing: '0.5px' }}>ESSAR Glass</Text>
-            </Space>
+          <div style={{
+            width: 40, height: 40, background: '#fff', borderRadius: 8,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            overflow: 'hidden', flexShrink: 0
+          }}>
+            <img src="/src/public/Essar-logo.webp" alt="Logo" style={{ width: '85%', height: '85%', objectFit: 'contain' }} />
+          </div>
+          {!collapsed && (
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <Text style={{ color: '#fff', fontWeight: 800, fontSize: 14, lineHeight: 1.1, letterSpacing: '0.5px' }}>ESSAR GLASS</Text>
+              <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 10, fontWeight: 600 }}>CENTER EG</Text>
+            </div>
           )}
         </div>
 
-        <Menu
-          theme="dark"
-          mode="inline"
-          selectedKeys={[selectedKey]}
-          defaultOpenKeys={['settings']}
-          items={menuItems}
-          onClick={handleMenuClick}
-          style={{ padding: '8px 12px', flex: 1, overflowY: 'auto' }}
-        />
+        <div style={{ flex: 1, overflowY: 'auto', padding: '8px 16px' }}>
+          <Menu
+            theme="dark"
+            mode="inline"
+            selectedKeys={[selectedKey]}
+            items={menuItems}
+            onClick={handleMenuClick}
+            style={{ border: 'none' }}
+          />
+        </div>
+
+        {/* Sidebar Footer - Compact Profile */}
+        <div style={{
+          padding: '12px 16px',
+          borderTop: '1px solid rgba(255,255,255,0.08)',
+          marginTop: 'auto',
+          background: 'rgba(0,0,0,0.1)'
+        }}>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: collapsed ? 'center' : 'space-between',
+            gap: 8
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <Avatar 
+                style={{ 
+                  background: 'rgba(255,255,255,0.1)', 
+                  border: '1px solid rgba(255,255,255,0.2)',
+                  color: '#fff',
+                  fontWeight: 600,
+                  fontSize: 12
+                }}
+                size={collapsed ? 28 : 32}
+              >
+                {user?.name?.charAt(0) || 'A'}
+              </Avatar>
+              {!collapsed && (
+                <div style={{ display: 'flex', flexDirection: 'column', maxWidth: 110 }}>
+                  <Text style={{ color: '#fff', fontWeight: 600, fontSize: 12 }} ellipsis>{user?.name || 'Admin User'}</Text>
+                  <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 10, fontWeight: 600 }}>{user?.role?.toUpperCase() || 'ADMIN'}</Text>
+                </div>
+              )}
+            </div>
+            {!collapsed && (
+              <Button 
+                type="text" 
+                icon={<LogoutOutlined style={{ color: 'rgba(255,255,255,0.5)', fontSize: 16 }} />} 
+                onClick={logout}
+                style={{ padding: 0, width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              />
+            )}
+          </div>
+        </div>
       </Sider>
 
       <Layout style={{ marginLeft: collapsed ? 80 : 250, transition: 'margin-left 0.2s cubic-bezier(0.2, 0, 0, 1) 0s' }}>

@@ -1,16 +1,12 @@
 import React, { useState } from 'react'
-import { Form, Input, Button, Card, Typography, Divider, App } from 'antd'
-import { UserOutlined, LockOutlined, EyeInvisibleOutlined, EyeTwoTone } from '@ant-design/icons'
+import { Form, Input, Button, Typography, Space, App } from 'antd'
 import { useNavigate } from 'react-router-dom'
 
 const { Title, Text } = Typography
 
-// Simple localStorage-based auth
 // Default credentials: admin / essar@123
 const USERS = [
-  { username: 'admin',   password: 'essar@123',  name: 'Admin',          role: 'admin' },
-  { username: 'sales',   password: 'sales@123',  name: 'Sales Manager',  role: 'sales' },
-  { username: 'accounts',password: 'acc@123',    name: 'Accounts',       role: 'accounts' },
+  { username: 'admin', password: 'essar@123', name: 'Admin', role: 'admin' },
 ]
 
 const LoginPage = () => {
@@ -39,103 +35,116 @@ const LoginPage = () => {
   }
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      background: 'linear-gradient(135deg, #1a237e 0%, #283593 40%, #3949ab 100%)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: 24,
-    }}>
-      {/* Background glass effect elements */}
-      <div style={{ position: 'absolute', top: '10%', left: '10%', width: 200, height: 200, borderRadius: '50%', background: 'rgba(255,215,0,0.08)', filter: 'blur(40px)' }} />
-      <div style={{ position: 'absolute', bottom: '15%', right: '10%', width: 300, height: 300, borderRadius: '50%', background: 'rgba(255,255,255,0.05)', filter: 'blur(60px)' }} />
-
-      <div style={{ width: '100%', maxWidth: 420, position: 'relative' }}>
-        {/* Logo */}
-        <div style={{ textAlign: 'center', marginBottom: 32 }}>
-          <div style={{
-            width: 72, height: 72, borderRadius: 20,
-            background: 'linear-gradient(135deg, #ffd700, #ffaa00)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            margin: '0 auto 16px', fontSize: 28, fontWeight: 900, color: '#1a237e',
-            boxShadow: '0 8px 32px rgba(255,215,0,0.3)',
-          }}>
-            EG
+    <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: '#fff' }}>
+      
+      {/* LEFT SIDE — Login Form */}
+      <div style={{ 
+        flex: 1, 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'center', 
+        padding: '40px' 
+      }}>
+        <div style={{ width: '100%', maxWidth: 400 }}>
+          <div style={{ marginBottom: 40 }}>
+            <Title level={2} style={{ margin: 0, fontWeight: 700, color: '#0f172a' }}>Welcome back</Title>
+            <Text style={{ color: '#64748b', fontSize: 16 }}>Sign in to your account to continue</Text>
           </div>
-          <Title level={3} style={{ color: '#fff', margin: 0 }}>ESSAR Glass</Title>
-          <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 13 }}>
-            AN ESSAR GROUP COMPANY
-          </Text>
-        </div>
 
-        {/* Login Card */}
-        <Card style={{
-          borderRadius: 16,
-          border: 'none',
-          boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
-          backdropFilter: 'blur(20px)',
-        }}>
-          <Title level={4} style={{ marginBottom: 4, textAlign: 'center' }}>Welcome Back 👋</Title>
-          <Text type="secondary" style={{ display: 'block', textAlign: 'center', marginBottom: 24 }}>
-            Sign in to your ERP account
-          </Text>
-
-          <Form form={form} layout="vertical" onFinish={handleLogin} size="large">
+          <Form 
+            form={form} 
+            layout="vertical" 
+            onFinish={handleLogin} 
+            requiredMark={false}
+          >
             <Form.Item 
               name="username" 
-              label="Username"
-              rules={[{ required: true, message: 'Please enter username' }]}
+              label={<Text strong style={{ color: '#1e293b' }}>Email or Username</Text>}
+              rules={[{ required: true, message: 'Please enter your username' }]}
+              style={{ marginBottom: 24 }}
             >
               <Input 
-                prefix={<UserOutlined style={{ color: '#94a3b8' }} />}
-                placeholder="Enter username"
+                placeholder="admin" 
+                style={{ height: 50, borderRadius: 10, fontSize: 15 }}
               />
             </Form.Item>
 
             <Form.Item 
               name="password" 
-              label="Password"
-              rules={[{ required: true, message: 'Please enter password' }]}
+              label={
+                <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
+                  <Text strong style={{ color: '#1e293b' }}>Password</Text>
+                  <Text style={{ color: '#2563eb', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}></Text>
+                </div>
+              }
+              rules={[{ required: true, message: 'Please enter your password' }]}
+              style={{ marginBottom: 32 }}
             >
-              <Input.Password
-                prefix={<LockOutlined style={{ color: '#94a3b8' }} />}
-                placeholder="Enter password"
-                iconRender={visible => visible ? <EyeTwoTone /> : <EyeInvisibleOutlined />}
+              <Input.Password 
+                placeholder="••••••••"
+                style={{ height: 50, borderRadius: 10, fontSize: 15 }}
               />
             </Form.Item>
 
             <Button 
               type="primary" 
               htmlType="submit" 
-              block 
               loading={loading}
-              size="large"
+              block
               style={{ 
-                height: 48, fontSize: 16, fontWeight: 600,
-                background: 'linear-gradient(135deg, #1a237e, #3949ab)',
-                border: 'none', borderRadius: 10,
+                height: 50, 
+                borderRadius: 10, 
+                backgroundColor: '#1a337e', 
+                border: 'none',
+                fontSize: 16,
+                fontWeight: 600,
+                boxShadow: '0 4px 12px rgba(26, 51, 126, 0.2)'
               }}
             >
               Sign In
             </Button>
           </Form>
 
-          <Divider style={{ margin: '20px 0 12px' }} />
-          
-          {/* Demo credentials */}
-          <div style={{ background: '#f8faff', borderRadius: 8, padding: '10px 14px' }}>
-            <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 4 }}>
-              🔑 Demo Credentials:
-            </Text>
-            <Text style={{ fontSize: 12 }}>
-              Admin: <Text code>admin</Text> / <Text code>essar@123</Text>
+          <div style={{ marginTop: 40, textAlign: 'center' }}>
+            <Text type="secondary" style={{ fontSize: 13 }}>
+              🔑 Credentials: <Text code>admin</Text> / <Text code>essar@123</Text>
             </Text>
           </div>
-        </Card>
+        </div>
+      </div>
 
-        <Text style={{ color: 'rgba(255,255,255,0.5)', display: 'block', textAlign: 'center', marginTop: 24, fontSize: 12 }}>
-          © 2026 Essar Sons, Vasai Virar. All rights reserved.
+      {/* RIGHT SIDE — Branding Area */}
+      <div style={{ 
+        flex: 1.2, 
+        backgroundColor: '#1a337e', // Same Royal Blue as Sidebar
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'center', 
+        padding: '60px',
+        color: '#fff',
+        flexDirection: 'column',
+        textAlign: 'center'
+      }}>
+        <div style={{ 
+          width: 80, height: 80, backgroundColor: '#fff', borderRadius: 16,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          marginBottom: 32, padding: 10, boxShadow: '0 10px 40px rgba(0,0,0,0.2)'
+        }}>
+          <img src="/src/public/Essar-logo.webp" alt="Logo" style={{ width: '80%', height: '80%', objectFit: 'contain' }} />
+        </div>
+        
+        <Title level={1} style={{ color: '#fff', fontSize: 48, fontWeight: 800, margin: '0 0 16px 0' }}>
+          Essar Glass
+        </Title>
+        
+        <Text style={{ 
+          color: 'rgba(255,255,255,0.7)', 
+          fontSize: 18, 
+          maxWidth: 460, 
+          lineHeight: 1.6,
+          fontWeight: 500
+        }}>
+          The complete platform for glass manufacturing, order management, and operational tracking.
         </Text>
       </div>
     </div>

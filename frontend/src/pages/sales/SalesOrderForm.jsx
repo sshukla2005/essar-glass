@@ -174,7 +174,15 @@ const SalesOrderForm = () => {
 
   const lineColumns = [
     { title: 'Product', width: 180, dataIndex: 'product_id', render: (v, row) => (
-      <Select size="small" value={v} style={{ width: '100%' }} showSearch options={products} onChange={val => updateLine(row.key, 'product_id', val)} />
+      <Select 
+        size="small" 
+        value={v} 
+        style={{ width: '100%' }} 
+        showSearch 
+        options={products.map(p => ({ value: p.id, label: p.name }))} 
+        filterOption={(input, option) => (option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
+        onChange={val => updateLine(row.key, 'product_id', val)} 
+      />
     )},
     { title: 'W(mm)', width: 80, dataIndex: 'width_mm', render: (v, row) => <InputNumber size="small" value={v} onChange={val => updateLine(row.key, 'width_mm', val)} /> },
     { title: 'H(mm)', width: 80, dataIndex: 'height_mm', render: (v, row) => <InputNumber size="small" value={v} onChange={val => updateLine(row.key, 'height_mm', val)} /> },
@@ -201,54 +209,63 @@ const SalesOrderForm = () => {
         </div>
       )}
 
-      <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Steps size="small" current={STATUS_IDX[status] || 0} style={{ maxWidth: 600 }} items={STATUS_STEPS.map(s => ({ title: s.replace('_', ' ').toUpperCase() }))} />
-        
-        <Space>
-          {isEdit && (
-            <Button 
-              icon={<DownloadOutlined />}
-              onClick={() => {
-                const recordData = form.getFieldsValue()
-                recordData.lines = lines
-                recordData.so_number = record?.so_number
-                recordData.subtotal = totals.subtotal
-                recordData.tax_amount = totals.tax_amount
-                recordData.total_amount = totals.total_amount
-                generateSOPDF(recordData)
-              }}
-            >
-              Download PDF
-            </Button>
-          )}
-          {status === 'draft' && <>
-            <Button type="primary" icon={<CheckCircleOutlined />} onClick={() => statusMutation.mutate('confirmed')} style={{ background: '#3b82f6' }}>Confirm Order</Button>
-            <Button icon={<ShoppingCartOutlined />} onClick={() => createPOMutation.mutate()} style={{ color: '#f59e0b', borderColor: '#f59e0b' }}>Create Purchase Order</Button>
-          </>}
-          {status === 'confirmed' && <Button type="primary" icon={<ToolOutlined />} onClick={() => statusMutation.mutate('in_production')} style={{ background: '#f59e0b' }}>Mark In Production</Button>}
-          {status === 'in_production' && <Button type="primary" icon={<GiftOutlined />} onClick={() => statusMutation.mutate('ready')} style={{ background: '#a855f7' }}>Mark Ready</Button>}
-          {status === 'ready' && <>
-            <Button type="primary" icon={<CarOutlined />} onClick={() => createDCMutation.mutate()} style={{ background: '#10b981' }}>Create Delivery</Button>
-            <Button type="primary" icon={<DollarOutlined />} onClick={() => createInvoiceMutation.mutate()} style={{ background: '#3b82f6' }}>Create Invoice</Button>
-          </>}
-          {status === 'delivered' && <Tag color="green" style={{ padding: '6px 12px', fontSize: 14 }}>✅ COMPLETED</Tag>}
-          {status === 'cancelled' && <Tag color="red" style={{ padding: '6px 12px', fontSize: 14 }}>❌ CANCELLED</Tag>}
-        </Space>
-      </div>
+      <Row gutter={[16, 16]} align="middle" style={{ marginBottom: 24 }}>
+        <Col xs={24} lg={14}>
+          <Steps size="small" current={STATUS_IDX[status] || 0} items={STATUS_STEPS.map(s => ({ title: s.replace('_', ' ').toUpperCase() }))} />
+        </Col>
+        <Col xs={24} lg={10} style={{ textAlign: 'right' }}>
+          <Space wrap>
+            {isEdit && (
+              <Button 
+                icon={<DownloadOutlined />}
+                onClick={() => {
+                  const recordData = form.getFieldsValue()
+                  recordData.lines = lines
+                  recordData.so_number = record?.so_number
+                  recordData.subtotal = totals.subtotal
+                  recordData.tax_amount = totals.tax_amount
+                  recordData.total_amount = totals.total_amount
+                  generateSOPDF(recordData)
+                }}
+              >
+                PDF
+              </Button>
+            )}
+            {status === 'draft' && <>
+              <Button type="primary" icon={<CheckCircleOutlined />} onClick={() => statusMutation.mutate('confirmed')} style={{ background: '#3b82f6' }}>Confirm Order</Button>
+              <Button icon={<ShoppingCartOutlined />} onClick={() => createPOMutation.mutate()} style={{ color: '#f59e0b', borderColor: '#f59e0b' }}>Create PO</Button>
+            </>}
+            {status === 'confirmed' && <Button type="primary" icon={<ToolOutlined />} onClick={() => statusMutation.mutate('in_production')} style={{ background: '#f59e0b' }}>Production</Button>}
+            {status === 'in_production' && <Button type="primary" icon={<GiftOutlined />} onClick={() => statusMutation.mutate('ready')} style={{ background: '#a855f7' }}>Ready</Button>}
+            {status === 'ready' && <>
+              <Button type="primary" icon={<CarOutlined />} onClick={() => createDCMutation.mutate()} style={{ background: '#10b981' }}>Delivery</Button>
+              <Button type="primary" icon={<DollarOutlined />} onClick={() => createInvoiceMutation.mutate()} style={{ background: '#3b82f6' }}>Invoice</Button>
+            </>}
+            {status === 'delivered' && <Tag color="green" style={{ padding: '6px 12px', fontSize: 14 }}>✅ COMPLETED</Tag>}
+            {status === 'cancelled' && <Tag color="red" style={{ padding: '6px 12px', fontSize: 14 }}>❌ CANCELLED</Tag>}
+          </Space>
+        </Col>
+      </Row>
 
       <Form form={form} layout="vertical" initialValues={{ status: 'draft' }}>
         <Row gutter={16}>
           <Col span={8}>
             <Form.Item name="customer_id" label="Customer" rules={[{ required: true }]}>
-              <Select showSearch options={customers} onChange={(val) => {
-                const c = customers.find(x => x.id === val); if (c) form.setFieldsValue({ payment_terms: c.payment_terms })
-              }} />
+              <Select 
+                showSearch 
+                placeholder="Select customer"
+                options={customers.map(c => ({ value: c.id, label: c.name }))} 
+                filterOption={(input, option) => (option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
+                onChange={(val) => {
+                  const c = customers.find(x => x.id === val); if (c) form.setFieldsValue({ payment_terms: c.payment_terms })
+                }} 
+              />
             </Form.Item>
           </Col>
           <Col span={4}><Form.Item name="order_date" label="Order Date"><DatePicker style={{ width: '100%' }} format="DD/MM/YYYY" /></Form.Item></Col>
           <Col span={4}><Form.Item name="delivery_date" label="Delivery Date"><DatePicker style={{ width: '100%' }} format="DD/MM/YYYY" /></Form.Item></Col>
-          <Col span={4}><Form.Item name="warehouse_id" label="Warehouse"><Select options={warehouses} /></Form.Item></Col>
-          <Col span={4}><Form.Item name="quotation_id" label="Quotation Ref"><Select options={quotations} allowClear /></Form.Item></Col>
+          <Col span={4}><Form.Item name="warehouse_id" label="Warehouse"><Select options={warehouses.map(w => ({ value: w.id, label: w.name }))} /></Form.Item></Col>
+          <Col span={4}><Form.Item name="quotation_id" label="Quotation Ref"><Select options={quotations.map(q => ({ value: q.id, label: q.quote_number }))} allowClear /></Form.Item></Col>
         </Row>
 
         <Divider orientation="left" style={{ color: '#3b82f6' }}>Order Lines</Divider>

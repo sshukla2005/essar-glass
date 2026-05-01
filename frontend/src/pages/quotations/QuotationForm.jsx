@@ -292,42 +292,44 @@ const QuotationForm = () => {
       )}
 
       {/* Top action row */}
-      <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Steps size="small" current={STATUS_IDX[status] || 0} style={{ maxWidth: 500 }}
-          items={STATUS_STEPS.map(s => ({ title: s.toUpperCase() }))} />
-        
-        <Space>
-          {isEdit && (
-            <Button 
-              icon={<DownloadOutlined />}
-              onClick={() => {
-                const recordData = form.getFieldsValue()
-                recordData.lines = lines
-                recordData.quote_number = record?.quote_number
-                recordData.subtotal = totals.subtotal
-                recordData.tax_amount = totals.tax_amount
-                recordData.total_amount = totals.total_amount
-                generateQuotationPDF(recordData)
-              }}
-            >
-              Download PDF
-            </Button>
-          )}
-          {status === 'draft' && <Button type="primary" icon={<CheckCircleOutlined />} onClick={() => confirmMutation.mutate()}
-            loading={confirmMutation.isPending} style={{ background: '#10b981', borderColor: '#10b981' }}>Confirm</Button>}
-          {status === 'confirmed' && (
-            <>
-              <Button type="primary" icon={<ShoppingCartOutlined />} onClick={() => convertMutation.mutate()} loading={convertMutation.isPending} style={{ background: '#6366f1' }}>
-                Convert to Sales Order
+      <Row gutter={[16, 16]} align="middle" style={{ marginBottom: 24 }}>
+        <Col xs={24} lg={12}>
+          <Steps size="small" current={STATUS_IDX[status] || 0} items={STATUS_STEPS.map(s => ({ title: s.toUpperCase() }))} />
+        </Col>
+        <Col xs={24} lg={12} style={{ textAlign: 'right' }}>
+          <Space wrap>
+            {isEdit && (
+              <Button 
+                icon={<DownloadOutlined />}
+                onClick={() => {
+                  const recordData = form.getFieldsValue()
+                  recordData.lines = lines
+                  recordData.quote_number = record?.quote_number
+                  recordData.subtotal = totals.subtotal
+                  recordData.tax_amount = totals.tax_amount
+                  recordData.total_amount = totals.total_amount
+                  generateQuotationPDF(recordData)
+                }}
+              >
+                PDF
               </Button>
-              <Popconfirm title="Cancel this quotation?" onConfirm={() => cancelMutation.mutate()}>
-                <Button danger icon={<CloseCircleOutlined />} loading={cancelMutation.isPending}>Cancel</Button>
-              </Popconfirm>
-            </>
-          )}
-          {status === 'cancelled' && <Tag color="red" style={{ padding: '6px 12px', fontSize: 14 }}>❌ CANCELLED</Tag>}
-        </Space>
-      </div>
+            )}
+            {status === 'draft' && <Button type="primary" icon={<CheckCircleOutlined />} onClick={() => confirmMutation.mutate()}
+              loading={confirmMutation.isPending} style={{ background: '#10b981', borderColor: '#10b981' }}>Confirm</Button>}
+            {status === 'confirmed' && (
+              <>
+                <Button type="primary" icon={<ShoppingCartOutlined />} onClick={() => convertMutation.mutate()} loading={convertMutation.isPending} style={{ background: '#6366f1' }}>
+                  Convert to SO
+                </Button>
+                <Popconfirm title="Cancel this quotation?" onConfirm={() => cancelMutation.mutate()}>
+                  <Button danger icon={<CloseCircleOutlined />} loading={cancelMutation.isPending}>Cancel</Button>
+                </Popconfirm>
+              </>
+            )}
+            {status === 'cancelled' && <Tag color="red" style={{ padding: '6px 12px', fontSize: 14 }}>❌ CANCELLED</Tag>}
+          </Space>
+        </Col>
+      </Row>
 
       <Form form={form} layout="vertical" disabled={status === 'converted'} initialValues={{ status: 'draft', dc_charges: 0, handling_charges: 0, other_charges: 0, advance_received: 0 }}>
         <Form.Item name="crm_lead_id" hidden><Input /></Form.Item>

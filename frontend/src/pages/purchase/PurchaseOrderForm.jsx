@@ -111,7 +111,17 @@ const PurchaseOrderForm = () => {
   const status = record?.status || 'draft'
 
   const lineColumns = [
-    { title: 'Product', width: 200, dataIndex: 'product_id', render: (v, row) => <Select size="small" value={v} style={{ width: '100%' }} showSearch options={products} onChange={val => updateLine(row.key, 'product_id', val)} /> },
+    { title: 'Product', width: 200, dataIndex: 'product_id', render: (v, row) => (
+      <Select 
+        size="small" 
+        value={v} 
+        style={{ width: '100%' }} 
+        showSearch 
+        options={products.map(p => ({ value: p.id, label: p.name }))} 
+        filterOption={(input, option) => (option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
+        onChange={val => updateLine(row.key, 'product_id', val)} 
+      />
+    )},
     { title: 'Description', width: 200, dataIndex: 'description', render: (v, row) => <Input size="small" value={v} onChange={e => updateLine(row.key, 'description', e.target.value)} /> },
     { title: 'Qty', width: 100, dataIndex: 'quantity', render: (v, row) => <InputNumber size="small" value={v} onChange={val => updateLine(row.key, 'quantity', val)} /> },
     { title: 'Unit Cost', width: 120, dataIndex: 'unit_price', render: (v, row) => <InputNumber size="small" value={v} onChange={val => updateLine(row.key, 'unit_price', val)} /> },
@@ -124,36 +134,47 @@ const PurchaseOrderForm = () => {
       breadcrumbs={[{ label: 'Purchase' }, { label: 'Purchase Orders', path: '/purchase-orders' }, { label: isEdit ? record?.po_number || 'Edit' : 'New' }]}
       onSave={() => handleSave(false)} onSaveNew={() => handleSave(true)} onDiscard={() => navigate('/purchase-orders')}>
 
-      <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Steps size="small" current={STATUS_IDX[status] || 0} style={{ maxWidth: 500 }} items={STATUS_STEPS.map(s => ({ title: s.toUpperCase() }))} />
-        
-        <Space>
-          {isEdit && (
-            <Button 
-              icon={<DownloadOutlined />}
-              onClick={() => {
-                const recordData = form.getFieldsValue()
-                recordData.lines = lines
-                recordData.po_number = record?.po_number
-                recordData.subtotal = totals.subtotal
-                recordData.tax_amount = totals.tax_amount
-                recordData.total_amount = totals.total_amount
-                generatePOPDF(recordData)
-              }}
-            >
-              Download PDF
-            </Button>
-          )}
-          {status === 'draft' && <Button type="primary" icon={<SendOutlined />} onClick={() => statusMutation.mutate('sent')} style={{ background: '#3b82f6' }}>Send to Vendor</Button>}
-          {status === 'sent' && <Button type="primary" icon={<CheckCircleOutlined />} onClick={() => statusMutation.mutate('confirmed')} style={{ background: '#f59e0b' }}>Confirm Receipt</Button>}
-          {status === 'confirmed' && <Button type="primary" icon={<InboxOutlined />} onClick={() => receiveMutation.mutate()} style={{ background: '#10b981' }}>Mark as Received</Button>}
-          {status === 'received' && <Tag color="green">✅ RECEIVED</Tag>}
-        </Space>
-      </div>
+      <Row gutter={[16, 16]} align="middle" style={{ marginBottom: 24 }}>
+        <Col xs={24} lg={12}>
+          <Steps size="small" current={STATUS_IDX[status] || 0} items={STATUS_STEPS.map(s => ({ title: s.toUpperCase() }))} />
+        </Col>
+        <Col xs={24} lg={12} style={{ textAlign: 'right' }}>
+          <Space wrap>
+            {isEdit && (
+              <Button 
+                icon={<DownloadOutlined />}
+                onClick={() => {
+                  const recordData = form.getFieldsValue()
+                  recordData.lines = lines
+                  recordData.po_number = record?.po_number
+                  recordData.subtotal = totals.subtotal
+                  recordData.tax_amount = totals.tax_amount
+                  recordData.total_amount = totals.total_amount
+                  generatePOPDF(recordData)
+                }}
+              >
+                PDF
+              </Button>
+            )}
+            {status === 'draft' && <Button type="primary" icon={<SendOutlined />} onClick={() => statusMutation.mutate('sent')} style={{ background: '#3b82f6' }}>Send to Vendor</Button>}
+            {status === 'sent' && <Button type="primary" icon={<CheckCircleOutlined />} onClick={() => statusMutation.mutate('confirmed')} style={{ background: '#f59e0b' }}>Confirm Receipt</Button>}
+            {status === 'confirmed' && <Button type="primary" icon={<InboxOutlined />} onClick={() => receiveMutation.mutate()} style={{ background: '#10b981' }}>Mark Received</Button>}
+            {status === 'received' && <Tag color="green">✅ RECEIVED</Tag>}
+          </Space>
+        </Col>
+      </Row>
 
       <Form form={form} layout="vertical" initialValues={{ status: 'draft' }}>
         <Row gutter={16}>
-          <Col span={8}><Form.Item name="vendor_id" label="Vendor" rules={[{ required: true }]}><Select showSearch options={vendors} /></Form.Item></Col>
+          <Col span={8}>
+            <Form.Item name="vendor_id" label="Vendor" rules={[{ required: true }]}>
+              <Select 
+                showSearch 
+                options={vendors.map(v => ({ value: v.id, label: v.name }))} 
+                filterOption={(input, option) => (option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
+              />
+            </Form.Item>
+          </Col>
           <Col span={4}><Form.Item name="po_date" label="Order Date"><DatePicker style={{ width: '100%' }} /></Form.Item></Col>
           <Col span={4}><Form.Item name="expected_delivery" label="Expected Delivery"><DatePicker style={{ width: '100%' }} /></Form.Item></Col>
           <Col span={4}><Form.Item name="vendor_reference" label="Vendor Ref / SO #"><Input /></Form.Item></Col>

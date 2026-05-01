@@ -37,7 +37,7 @@ const MasterForm = ({
   }
 
   return (
-    <div style={{ padding: '24px', maxWidth: 960, margin: '0 auto' }}>
+    <div style={{ padding: '16px 24px', width: '100%' }}>
       {/* Breadcrumb */}
       <Breadcrumb
         style={{ marginBottom: 12 }}

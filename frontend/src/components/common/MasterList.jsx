@@ -152,7 +152,7 @@ const MasterList = ({
   const allColumns = [...enhancedColumns, statusColumn, actionColumn]
 
   return (
-    <div style={{ padding: '24px' }}>
+    <div style={{ padding: '16px 24px' }}>
       {/* ── Page Header ──────────────────────────────────────────────── */}
       <div style={{ background: 'linear-gradient(90deg, #3b82f6 0%, #1e3a8a 100%)', padding: '16px 24px', borderRadius: 8, marginBottom: 16, color: 'white' }}>
         <Row justify="space-between" align="middle">
