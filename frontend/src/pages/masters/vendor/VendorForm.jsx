@@ -1,9 +1,8 @@
 // ─── VendorForm.jsx ──────────────────────────────────────────────────────────
 import React, { useEffect } from 'react'
-import { Form, Input, InputNumber, Select, Row, Col, Divider, Radio, Tabs } from 'antd'
+import { Form, Input, InputNumber, Select, Row, Col, Divider, Radio, Tabs, App } from 'antd'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { message } from 'antd'
 import MasterForm from '../../../components/common/MasterForm'
 import { vendorApi, currencyApi } from '../../../api'
 import { INDIAN_STATES } from '../../../utils/constants'
@@ -37,6 +36,7 @@ const MSME_TYPES = [
 ]
 
 const VendorForm = () => {
+  const { message } = App.useApp()
   const { id }      = useParams()
   const isEdit      = Boolean(id)
   const [form]      = Form.useForm()

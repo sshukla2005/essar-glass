@@ -71,9 +71,11 @@ const MasterForm = ({
                 Save &amp; New
               </Button>
             )}
-            <Button type="primary" onClick={onSave} icon={<SaveOutlined />} loading={isSaving}>
-              {isEdit ? 'Save Changes' : 'Save'}
-            </Button>
+            {onSave && (
+              <Button type="primary" onClick={onSave} icon={<SaveOutlined />} loading={isSaving} style={{ background: '#10b981' }}>
+                {isEdit ? 'Save Changes' : 'Save'}
+              </Button>
+            )}
           </Space>
         </Col>
       </Row>

@@ -18,12 +18,13 @@ const ProductList = () => (
           return <Tag color={colors[v] || 'default'}>{v}</Tag>
         }
       },
-      { title: 'Category',    dataIndex: 'category',   key: 'category',   width: 150 },
-      { title: 'UoM',         dataIndex: 'uom',        key: 'uom',        width: 100, render: v => v?.name || '—' },
-      { title: 'Sale Price',  dataIndex: 'sale_price', key: 'sale_price', width: 120,
+      { title: 'Sale Price',  dataIndex: 'sale_price', key: 'sale_price', width: 100,
         render: v => v != null ? `₹ ${v.toLocaleString('en-IN')}` : '—'
       },
-      { title: 'HSN Code',    dataIndex: 'hsn',        key: 'hsn',        width: 120, render: v => v?.code ? <Tag color="geekblue">{v.code}</Tag> : '—' },
+      { title: 'On Hand', dataIndex: 'on_hand_qty', width: 100, render: (v, r) => (
+        <span style={{ fontSize: 14, fontWeight: 700, color: v === 0 ? '#dc2626' : v < (r.min_qty||0) ? '#f59e0b' : '#10b981' }}>{v || 0}</span>
+      )},
+      { title: 'HSN Code',    dataIndex: 'hsn_id',        key: 'hsn',        width: 100, render: v => v ? <Tag color="geekblue">{v}</Tag> : '—' },
     ]}
     createPath="/masters/products/new"
     editPath={(r) => `/masters/products/${r.id}/edit`}

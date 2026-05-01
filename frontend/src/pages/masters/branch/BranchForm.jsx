@@ -1,8 +1,7 @@
 import React, { useEffect } from 'react'
-import { Form, Input, Select, Row, Col, Divider, Switch, Space } from 'antd'
+import { Form, Input, Select, Row, Col, Divider, Switch, Space, App } from 'antd'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { message } from 'antd'
 import MasterForm from '../../../components/common/MasterForm'
 import { branchApi, companyApi } from '../../../api'
 import { INDIAN_STATES } from '../../../utils/constants'
@@ -10,6 +9,7 @@ import { INDIAN_STATES } from '../../../utils/constants'
 const GSTIN_REGEX = /^\d{2}[A-Z]{5}\d{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/
 
 const BranchForm = () => {
+  const { message } = App.useApp()
   const { id }      = useParams()
   const isEdit      = Boolean(id)
   const [form]      = Form.useForm()

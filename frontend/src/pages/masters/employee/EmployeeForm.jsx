@@ -1,9 +1,8 @@
 // ─── EmployeeForm.jsx ────────────────────────────────────────────────────────
 import React, { useEffect } from 'react'
-import { Form, Input, InputNumber, Select, Row, Col, Divider, Tabs, DatePicker } from 'antd'
+import { Form, Input, InputNumber, Select, Row, Col, Divider, Tabs, DatePicker, App } from 'antd'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { message } from 'antd'
 import dayjs from 'dayjs'
 import MasterForm from '../../../components/common/MasterForm'
 import { employeeApi } from '../../../api'
@@ -32,6 +31,7 @@ const EMPLOYEE_TYPES = [
 ]
 
 const EmployeeForm = () => {
+  const { message } = App.useApp()
   const { id }      = useParams()
   const isEdit      = Boolean(id)
   const [form]      = Form.useForm()

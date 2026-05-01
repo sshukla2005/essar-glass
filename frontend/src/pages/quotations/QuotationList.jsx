@@ -3,8 +3,11 @@ import { Tag } from 'antd'
 import { useSearchParams } from 'react-router-dom'
 import MasterList from '../../components/common/MasterList'
 import { quotationApi } from '../../api'
+import { generateQuotationPDF } from '../../utils/pdfGenerator'
+import { Button, Tooltip } from 'antd'
+import { DownloadOutlined } from '@ant-design/icons'
 
-const STATUS_COLORS = { draft: 'blue', sent: 'orange', confirmed: 'green', cancelled: 'red' }
+const STATUS_COLORS = { draft: 'blue', sent: 'orange', confirmed: 'green', converted: 'purple', cancelled: 'red' }
 
 const QuotationList = () => {
   const [searchParams] = useSearchParams()
@@ -29,12 +32,17 @@ const QuotationList = () => {
           render: v => v != null ? `₹ ${Number(v).toLocaleString('en-IN')}` : '—' },
         { title: 'Total',      dataIndex: 'total_amount', key: 'total_amount', width: 130,
           render: v => v != null ? <b>₹ {Number(v).toLocaleString('en-IN')}</b> : '—' },
-        { title: 'Status',     dataIndex: 'status',       key: 'status',       width: 110,
-          render: v => <Tag color={STATUS_COLORS[v] || 'default'}>{v?.toUpperCase()}</Tag> },
+        { title: 'Status',     dataIndex: 'status',       key: 'status',       width: 120,
+          render: v => v === 'converted' ? <Tag color="purple">🔄 Converted</Tag> : <Tag color={STATUS_COLORS[v] || 'default'}>{v?.toUpperCase()}</Tag> },
       ]}
       createPath={leadId ? `/quotations/new?lead_id=${leadId}` : '/quotations/new'}
       editPath={(r) => `/quotations/${r.id}/edit`}
       searchPlaceholder="Search by quote number, salesperson..."
+      extraActions={(r) => (
+        <Tooltip title="Download PDF">
+          <Button type="text" size="small" icon={<DownloadOutlined />} style={{ color: '#10b981' }} onClick={() => generateQuotationPDF(r)} />
+        </Tooltip>
+      )}
     />
   )
 }

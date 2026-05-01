@@ -1,8 +1,7 @@
 import React, { useEffect } from 'react'
-import { Form, Input, Select, Row, Col, Divider, InputNumber } from 'antd'
+import { Form, Input, Select, Row, Col, Divider, InputNumber, App } from 'antd'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { message } from 'antd'
 import MasterForm from '../../../components/common/MasterForm'
 import { companyApi, currencyApi } from '../../../api'
 import { INDIAN_STATES, FISCAL_MONTHS } from '../../../utils/constants'
@@ -11,6 +10,7 @@ const GSTIN_REGEX = /^\d{2}[A-Z]{5}\d{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/
 const PAN_REGEX   = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/
 
 const CompanyForm = () => {
+  const { message } = App.useApp()
   const { id }       = useParams()
   const isEdit       = Boolean(id)
   const [form]       = Form.useForm()

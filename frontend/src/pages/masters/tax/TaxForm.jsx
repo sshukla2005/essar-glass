@@ -1,14 +1,14 @@
 import React, { useEffect } from 'react'
-import { Form, Input, InputNumber, Select, Row, Col, Divider, Switch } from 'antd'
+import { Form, Input, InputNumber, Select, Row, Col, Divider, Switch, App } from 'antd'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { message } from 'antd'
 import MasterForm from '../../../components/common/MasterForm'
 import { taxApi, taxGroupApi } from '../../../api'
 import { TAX_TYPES } from '../../../utils/constants'
 
 // ─── Tax Group Form ───────────────────────────────────────────────────────────
 export const TaxGroupForm = () => {
+  const { message } = App.useApp()
   const { id }      = useParams()
   const isEdit      = Boolean(id)
   const [form]      = Form.useForm()

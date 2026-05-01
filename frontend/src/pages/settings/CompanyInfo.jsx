@@ -1,9 +1,6 @@
 // ─── CompanyInfo.jsx ─────────────────────────────────────────────────────────
 import React, { useState } from 'react'
-import {
-  Card, Typography, Descriptions, Button, Form, Input, Row, Col, Space,
-  Breadcrumb, Divider, message, Avatar
-} from 'antd'
+import { Card, Typography, Descriptions, Button, Form, Input, Row, Col, Space, Breadcrumb, Divider, Avatar, App } from 'antd'
 import {
   EditOutlined, SaveOutlined, CloseOutlined, BankOutlined
 } from '@ant-design/icons'
@@ -11,16 +8,25 @@ import { Link } from 'react-router-dom'
 
 const { Title, Text } = Typography
 
-const defaultCompany = {
-  name:    'ESSAR Glass Manufacturing',
-  gstin:   '27AAAAA0000A1Z5',
-  pan:     'AAAAA0000A',
-  address: 'Plot No. 123, Industrial Area, MIDC, Pune',
-  phone:   '+91 20 1234 5678',
-  email:   'info@essarglass.com',
+const getStoredCompany = () => {
+  try {
+    const data = localStorage.getItem('company_info')
+    if (data) return JSON.parse(data)
+  } catch (e) {}
+  return {
+    name:    'ESSAR Glass Manufacturing',
+    gstin:   '27AAAAA0000A1Z5',
+    pan:     'AAAAA0000A',
+    address: 'Plot No. 123, Industrial Area, MIDC, Pune',
+    phone:   '+91 20 1234 5678',
+    email:   'info@essarglass.com',
+  }
 }
 
+const defaultCompany = getStoredCompany()
+
 const CompanyInfo = () => {
+  const { message } = App.useApp()
   const [editing, setEditing] = useState(false)
   const [form] = Form.useForm()
 

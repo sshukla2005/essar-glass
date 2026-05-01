@@ -1,12 +1,9 @@
 import React, { useState } from 'react'
-import {
-  Table, Button, Input, Space, Tag, Tooltip, Popconfirm,
-  Select, Card, Typography, Row, Col, Badge, Dropdown, message
-} from 'antd'
+import { Table, Button, Input, Space, Tag, Tooltip, Popconfirm, Select, Card, Typography, Row, Col, Badge, Dropdown, App } from 'antd'
 import {
   PlusOutlined, SearchOutlined, EditOutlined, CopyOutlined,
   StopOutlined, CheckCircleOutlined, MoreOutlined, ReloadOutlined,
-  FilterOutlined
+  FilterOutlined, DeleteOutlined
 } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -37,7 +34,9 @@ const MasterList = ({
   searchPlaceholder = 'Search...',
   nameField = 'name',
   extraFilters,
+  extraActions,
 }) => {
+  const { message } = App.useApp()
   const navigate     = useNavigate()
   const queryClient  = useQueryClient()
 
@@ -96,18 +95,26 @@ const MasterList = ({
       ]
       return (
         <Space size={4}>
+          {extraActions && extraActions(record)}
           <Tooltip title="Edit">
             <Button
-              type="primary"
-              ghost
+              type="text"
               size="small"
               icon={<EditOutlined />}
+              style={{ color: '#3b82f6' }}
               onClick={() => navigate(editPath(record))}
             />
           </Tooltip>
           <Dropdown menu={{ items: menuItems }} trigger={['click']}>
-            <Button size="small" icon={<MoreOutlined />} />
+            <Button size="small" type="text" icon={<MoreOutlined />} />
           </Dropdown>
+          {api.archive && (
+             <Popconfirm title="Delete this record completely?" onConfirm={() => {
+                archiveMutation.mutate({ id: record.id, active: false })
+             }}>
+               <Button type="text" danger size="small" icon={<DeleteOutlined />} />
+             </Popconfirm>
+          )}
         </Space>
       )
     },
@@ -147,17 +154,19 @@ const MasterList = ({
   return (
     <div style={{ padding: '24px' }}>
       {/* ── Page Header ──────────────────────────────────────────────── */}
-      <Row justify="space-between" align="middle" style={{ marginBottom: 16 }}>
-        <Col>
-          <Title level={4} style={{ margin: 0 }}>{title}</Title>
-          <Text type="secondary">{data?.total ?? 0} records</Text>
-        </Col>
-        <Col>
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate(createPath)}>
-            New {title}
-          </Button>
-        </Col>
-      </Row>
+      <div style={{ background: 'linear-gradient(90deg, #3b82f6 0%, #1e3a8a 100%)', padding: '16px 24px', borderRadius: 8, marginBottom: 16, color: 'white' }}>
+        <Row justify="space-between" align="middle">
+          <Col>
+            <Title level={4} style={{ margin: 0, color: 'white' }}>{title}</Title>
+            <Text style={{ color: 'rgba(255,255,255,0.8)' }}>{data?.total ?? 0} records</Text>
+          </Col>
+          <Col>
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate(createPath)} style={{ background: 'white', color: '#1e3a8a', fontWeight: 'bold' }}>
+              New {title}
+            </Button>
+          </Col>
+        </Row>
+      </div>
 
       {/* ── Filters ──────────────────────────────────────────────────── */}
       <Card size="small" style={{ marginBottom: 16 }}>
@@ -219,7 +228,10 @@ const MasterList = ({
         />
       </Card>
 
-      <style>{`.row-archived td { opacity: 0.5; }`}</style>
+      <style>{`
+        .row-archived td { opacity: 0.5; text-decoration: line-through; }
+        .ant-table-row:hover > td { background-color: #f0f9ff !important; }
+      `}</style>
     </div>
   )
 }

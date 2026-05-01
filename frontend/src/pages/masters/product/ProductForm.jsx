@@ -1,9 +1,8 @@
 // ─── ProductForm.jsx ─────────────────────────────────────────────────────────
 import React, { useEffect } from 'react'
-import { Form, Input, InputNumber, Select, Row, Col, Divider, Radio, Tabs, Switch } from 'antd'
+import { Form, Input, InputNumber, Select, Row, Col, Divider, Radio, Tabs, Switch, App } from 'antd'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { message } from 'antd'
 import MasterForm from '../../../components/common/MasterForm'
 import { productApi, uomApi, hsnApi, taxApi } from '../../../api'
 
@@ -29,6 +28,7 @@ const GLASS_COLORS = [
 ]
 
 const ProductForm = () => {
+  const { message } = App.useApp()
   const { id }      = useParams()
   const isEdit      = Boolean(id)
   const [form]      = Form.useForm()

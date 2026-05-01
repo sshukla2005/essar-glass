@@ -1,9 +1,8 @@
 import React, { useEffect, useMemo } from 'react'
-import { Form, Input, InputNumber, Select, Row, Col, Divider, Radio, Tabs, DatePicker, Steps, Slider, Button, Tag, Badge, Space } from 'antd'
+import { Form, Input, InputNumber, Select, Row, Col, Divider, Radio, Tabs, DatePicker, Steps, Slider, Button, Tag, Badge, Space, App } from 'antd'
 import { FileTextOutlined } from '@ant-design/icons'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { message } from 'antd'
 import dayjs from 'dayjs'
 import MasterForm from '../../components/common/MasterForm'
 import { crmLeadApi, crmStageApi, customerApi, quotationApi } from '../../api'
@@ -11,6 +10,7 @@ import { crmLeadApi, crmStageApi, customerApi, quotationApi } from '../../api'
 const { TextArea } = Input
 
 const LeadForm = () => {
+  const { message } = App.useApp()
   const { id } = useParams()
   const isEdit = Boolean(id)
   const [form] = Form.useForm()

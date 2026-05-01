@@ -1,23 +1,24 @@
-import { createMasterApi } from './axios'
-import api from './axios'
+import { createLocalApi, createStatusApi } from './localStorage'
 
-export const companyApi     = createMasterApi('companies')
-export const branchApi      = createMasterApi('branches')
-export const uomCategoryApi = createMasterApi('uom-categories')
-export const uomApi         = createMasterApi('uoms')
-export const taxGroupApi    = createMasterApi('tax-groups')
-export const taxApi         = createMasterApi('taxes')
-export const hsnApi         = createMasterApi('hsn-codes')
-export const currencyApi    = createMasterApi('currencies')
-export const customerApi    = createMasterApi('customers')
-export const vendorApi      = createMasterApi('vendors')
-export const employeeApi    = createMasterApi('employees')
-export const productApi     = createMasterApi('products')
-export const crmStageApi    = createMasterApi('crm-stages')
-export const crmLeadApi     = createMasterApi('crm-leads')
-
-export const quotationApi = {
-  ...createMasterApi('quotations'),
-  confirm: (id) => api.post(`/quotations/${id}/confirm`),
-  cancel:  (id) => api.post(`/quotations/${id}/cancel`),
-}
+export const companyApi     = createLocalApi('companies',      { field:'code',          prefix:'COMP' })
+export const branchApi      = createLocalApi('branches',       { field:'code',          prefix:'BR'   })
+export const uomCategoryApi = createLocalApi('uom_categories')
+export const uomApi         = createLocalApi('uoms')
+export const taxGroupApi    = createLocalApi('tax_groups')
+export const taxApi         = createLocalApi('taxes')
+export const hsnApi         = createLocalApi('hsn_codes')
+export const currencyApi    = createLocalApi('currencies')
+export const customerApi    = createLocalApi('customers',      { field:'customer_code', prefix:'CUST' })
+export const vendorApi      = createLocalApi('vendors',        { field:'vendor_code',   prefix:'VEND' })
+export const employeeApi    = createLocalApi('employees',      { field:'employee_code', prefix:'EMP'  })
+export const productApi     = createLocalApi('products',       { field:'internal_ref',  prefix:'PROD' })
+export const crmStageApi    = createLocalApi('crm_stages')
+export const crmLeadApi     = createStatusApi('crm_leads',     { field:'lead_number',   prefix:'OPP'  })
+export const quotationApi   = createStatusApi('quotations',    { field:'quote_number',  prefix:'QT'   })
+export const salesOrderApi  = createStatusApi('sales_orders',  { field:'so_number',     prefix:'SO'   })
+export const purchaseOrderApi = createStatusApi('purchase_orders', { field:'po_number', prefix:'PO'   })
+export const deliveryChallanApi = createStatusApi('delivery_challans', { field:'dc_number', prefix:'DC' })
+export const invoiceApi     = createStatusApi('invoices',      { field:'invoice_number', prefix:'INV' })
+export const paymentApi     = createLocalApi('payments',       { field:'payment_number', prefix:'PMT' })
+export const warehouseApi   = createLocalApi('warehouses',     { field:'code',           prefix:'WH'  })
+export const stockMovementApi = createLocalApi('stock_movements', { field:'move_number', prefix:'SM'  })

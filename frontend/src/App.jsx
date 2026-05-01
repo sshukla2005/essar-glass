@@ -2,7 +2,7 @@ import React from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
-import { ConfigProvider, theme } from 'antd'
+import { ConfigProvider, theme, App as AntApp } from 'antd'
 import AppLayout from './components/Layout/AppLayout'
 
 // ── Company ───────────────────────────────────────────────────────────────────
@@ -59,8 +59,30 @@ import QuotationForm from './pages/quotations/QuotationForm'
 // ── Settings ──────────────────────────────────────────────────────────────────
 import CompanyInfo from './pages/settings/CompanyInfo'
 
+// ── Auth ──────────────────────────────────────────────────────────────────────
+import LoginPage from './pages/auth/LoginPage'
+import ProtectedRoute from './components/auth/ProtectedRoute'
+
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 import Dashboard from './pages/Dashboard'
+
+// ── Sales ─────────────────────────────────────────────────────────────────────
+import SalesOrderList from './pages/sales/SalesOrderList'
+import SalesOrderForm from './pages/sales/SalesOrderForm'
+
+// ── Purchase ──────────────────────────────────────────────────────────────────
+import PurchaseOrderList from './pages/purchase/PurchaseOrderList'
+import PurchaseOrderForm from './pages/purchase/PurchaseOrderForm'
+
+// ── Inventory / Delivery ──────────────────────────────────────────────────────
+import DeliveryChallanList from './pages/delivery/DeliveryChallanList'
+import DeliveryChallanForm from './pages/delivery/DeliveryChallanForm'
+import StockOverview from './pages/inventory/StockOverview'
+import StockMovements from './pages/inventory/StockMovements'
+
+// ── Invoices ──────────────────────────────────────────────────────────────────
+import InvoiceList from './pages/invoices/InvoiceList'
+import InvoiceForm from './pages/invoices/InvoiceForm'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -84,9 +106,11 @@ const App = () => (
         },
       }}
     >
-      <BrowserRouter>
+      <AntApp>
+        <BrowserRouter>
         <Routes>
-          <Route element={<AppLayout />}>
+          <Route path="/login" element={<LoginPage />} />
+          <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
             <Route index element={<Dashboard />} />
 
             {/* ── CRM ────────────────────────────────────────────────── */}
@@ -102,6 +126,28 @@ const App = () => (
             <Route path="quotations"           element={<QuotationList />} />
             <Route path="quotations/new"       element={<QuotationForm />} />
             <Route path="quotations/:id/edit"  element={<QuotationForm />} />
+
+            {/* ── Sales ──────────────────────────────────────────────── */}
+            <Route path="sales-orders"              element={<SalesOrderList />} />
+            <Route path="sales-orders/new"          element={<SalesOrderForm />} />
+            <Route path="sales-orders/:id/edit"     element={<SalesOrderForm />} />
+
+            {/* ── Purchase ───────────────────────────────────────────── */}
+            <Route path="purchase-orders"           element={<PurchaseOrderList />} />
+            <Route path="purchase-orders/new"       element={<PurchaseOrderForm />} />
+            <Route path="purchase-orders/:id/edit"  element={<PurchaseOrderForm />} />
+
+            {/* ── Inventory ──────────────────────────────────────────── */}
+            <Route path="inventory/stock"           element={<StockOverview />} />
+            <Route path="inventory/movements"       element={<StockMovements />} />
+            <Route path="delivery-challans"         element={<DeliveryChallanList />} />
+            <Route path="delivery-challans/new"     element={<DeliveryChallanForm />} />
+            <Route path="delivery-challans/:id/edit" element={<DeliveryChallanForm />} />
+
+            {/* ── Invoices ───────────────────────────────────────────── */}
+            <Route path="invoices"                  element={<InvoiceList />} />
+            <Route path="invoices/new"              element={<InvoiceForm />} />
+            <Route path="invoices/:id/edit"         element={<InvoiceForm />} />
 
             {/* ── Masters: Customers ──────────────────────────────────── */}
             <Route path="masters/customers"          element={<CustomerList />} />
@@ -166,6 +212,7 @@ const App = () => (
           </Route>
         </Routes>
       </BrowserRouter>
+      </AntApp>
     </ConfigProvider>
     <ReactQueryDevtools initialIsOpen={false} />
   </QueryClientProvider>

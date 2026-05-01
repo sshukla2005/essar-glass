@@ -1,289 +1,368 @@
-// ─── Pipeline.jsx — CRM Kanban Board ────────────────────────────────────────
-import React, { useMemo, useState } from 'react'
-import {
-  Card, Tag, Typography, Button, Space, Badge, Dropdown, Modal, Input, Select,
-  InputNumber, Row, Col, Form, message, Spin, Empty
-} from 'antd'
-import {
-  PlusOutlined, MoreOutlined, EditOutlined, CopyOutlined,
-  TrophyOutlined, CloseCircleOutlined, StopOutlined,
+import React, { useState, useMemo } from 'react'
+import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { Button, Card, Tag, Modal, Form, Input, Select, Avatar, Tooltip, Dropdown, InputNumber, Badge, Typography, Space, Empty, App } from 'antd'
+import { 
+  PlusOutlined, UserOutlined, PhoneOutlined,
+  MoreOutlined, EditOutlined, TrophyOutlined,
+  CloseCircleOutlined, CopyOutlined, EllipsisOutlined,
+  DollarOutlined, CalendarOutlined
 } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { crmLeadApi, crmStageApi, customerApi } from '../../api'
 
-const { Title, Text } = Typography
-
-const PRIORITY_COLORS = { low: 'default', normal: 'blue', high: 'orange', urgent: 'red' }
+const { Text, Title } = Typography
 
 const Pipeline = () => {
-  const navigate    = useNavigate()
+  const { message } = App.useApp()
+  const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const [quickAddModal, setQuickAddModal] = useState(null)
+  const [lostModal, setLostModal] = useState(null)
   const [quickForm] = Form.useForm()
-  const [lostForm]  = Form.useForm()
-  const [quickModal, setQuickModal]       = useState({ open: false, stageId: null })
-  const [lostModal, setLostModal]         = useState({ open: false, leadId: null })
 
-  // ── Data ────────────────────────────────────────────────────────────────────
-  const { data: stagesData, isLoading: stagesLoading } = useQuery({
-    queryKey: ['crm-stages-pipeline'],
-    queryFn:  () => crmStageApi.list({ is_active: true, page_size: 100 }).then(r => r.data),
+  // Fetch stages sorted by sequence
+  const { data: stagesData } = useQuery({
+    queryKey: ['crm_stages'],
+    queryFn: () => crmStageApi.list({ page_size: 100 }).then(r => r.data),
   })
 
-  const { data: leadsData, isLoading: leadsLoading } = useQuery({
-    queryKey: ['crm-leads-pipeline'],
-    queryFn:  () => crmLeadApi.list({ page_size: 200 }).then(r => r.data),
+  const { data: leadsData } = useQuery({
+    queryKey: ['crm_leads'],
+    queryFn: () => crmLeadApi.list({ page_size: 500 }).then(r => r.data),
   })
 
   const { data: customers = [] } = useQuery({
     queryKey: ['customers-dropdown'],
-    queryFn:  () => customerApi.dropdown().then(r => r.data),
+    queryFn: () => customerApi.dropdown().then(r => r.data),
   })
 
   const stages = useMemo(() => {
-    const items = stagesData?.items || []
-    return [...items].sort((a, b) => a.sequence - b.sequence)
+    return (stagesData?.items || []).sort((a, b) => a.sequence - b.sequence)
   }, [stagesData])
 
+  const leads = leadsData?.items || []
+
+  // Group leads by stage
   const leadsByStage = useMemo(() => {
-    const leads = leadsData?.items || []
-    const map = {}
-    stages.forEach(s => { map[s.id] = [] })
-    leads.forEach(l => {
-      const sid = l.stage_id || (stages[0]?.id)
-      if (map[sid]) map[sid].push(l)
-      else if (stages[0]) map[stages[0].id]?.push(l)
+    const grouped = {}
+    stages.forEach(s => { grouped[s.id] = [] })
+    leads.forEach(lead => {
+      if (lead.is_active !== false) {
+        const sid = lead.stage_id || stages[0]?.id
+        if (grouped[sid]) grouped[sid].push(lead)
+        else grouped[sid] = [lead]
+      }
     })
-    return map
-  }, [leadsData, stages])
+    return grouped
+  }, [leads, stages])
 
-  // ── Mutations ───────────────────────────────────────────────────────────────
-  const moveMutation = useMutation({
-    mutationFn: ({ id, data }) => crmLeadApi.update(id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['crm-leads-pipeline'] })
-    },
-  })
+  // Drag end handler
+  const onDragEnd = async (result) => {
+    const { destination, source, draggableId } = result
+    if (!destination) return
+    if (destination.droppableId === source.droppableId && 
+        destination.index === source.index) return
+    
+    const newStageId = parseInt(destination.droppableId)
+    const leadId = parseInt(draggableId)
+    const targetStage = stages.find(s => s.id === newStageId)
 
-  const createMutation = useMutation({
-    mutationFn: (data) => crmLeadApi.create(data),
-    onSuccess: () => {
-      message.success('Lead created')
-      queryClient.invalidateQueries({ queryKey: ['crm-leads-pipeline'] })
-      setQuickModal({ open: false, stageId: null })
-      quickForm.resetFields()
-    },
-  })
-
-  const cloneMutation = useMutation({
-    mutationFn: (id) => crmLeadApi.clone(id),
-    onSuccess: () => {
-      message.success('Lead cloned')
-      queryClient.invalidateQueries({ queryKey: ['crm-leads-pipeline'] })
-    },
-  })
-
-  const archiveMutation = useMutation({
-    mutationFn: ({ id, active }) => crmLeadApi.archive(id, active),
-    onSuccess: () => {
-      message.success('Lead updated')
-      queryClient.invalidateQueries({ queryKey: ['crm-leads-pipeline'] })
-    },
-  })
-
-  // ── Handlers ────────────────────────────────────────────────────────────────
-  const handleMoveStage = (leadId, stageId) => {
-    moveMutation.mutate({ id: leadId, data: { stage_id: stageId } })
-  }
-
-  const handleWon = (leadId) => {
-    const wonStage = stages.find(s => s.is_won)
-    if (wonStage) handleMoveStage(leadId, wonStage.id)
-  }
-
-  const handleLost = (leadId) => {
-    setLostModal({ open: true, leadId })
-    lostForm.resetFields()
-  }
-
-  const handleLostConfirm = async () => {
-    const values = await lostForm.validateFields()
-    const lostStage = stages.find(s => s.is_lost)
-    if (lostStage) {
-      moveMutation.mutate({
-        id: lostModal.leadId,
-        data: { stage_id: lostStage.id, lost_reason: values.lost_reason },
-      })
+    if (targetStage?.is_lost) {
+      setLostModal({ leadId, stageId: newStageId })
+      return
     }
-    setLostModal({ open: false, leadId: null })
+
+    await crmLeadApi.update(leadId, { stage_id: newStageId })
+    queryClient.invalidateQueries({ queryKey: ['crm_leads'] })
+    message.success(`Moved to ${targetStage?.name}`)
   }
 
-  const handleQuickCreate = async () => {
-    const values = await quickForm.validateFields()
-    values.stage_id = quickModal.stageId
-    createMutation.mutate(values)
+  // Quick add lead to stage
+  const handleQuickAdd = async (values) => {
+    const data = {
+      ...values,
+      stage_id: quickAddModal,
+      lead_number: null,
+      is_active: true,
+    }
+    await crmLeadApi.create(data)
+    queryClient.invalidateQueries({ queryKey: ['crm_leads'] })
+    message.success('Lead added!')
+    quickForm.resetFields()
+    setQuickAddModal(null)
   }
 
-  const getCardMenuItems = (lead) => [
-    { key: 'edit', icon: <EditOutlined />, label: 'Edit', onClick: () => navigate(`/crm/leads/${lead.id}/edit`) },
+  // Stage column colors
+  const stageColors = {
+    won:  { bg: '#f0fdf4', border: '#86efac', header: '#16a34a' },
+    lost: { bg: '#fff1f2', border: '#fca5a5', header: '#dc2626' },
+    normal: { bg: '#f8faff', border: '#e2e8f0', header: '#3b82f6' },
+  }
+
+  const getStageStyle = (stage) => {
+    if (stage.is_won)  return stageColors.won
+    if (stage.is_lost) return stageColors.lost
+    return stageColors.normal
+  }
+
+  // Priority colors
+  const priorityColors = { low: 'default', normal: 'blue', high: 'orange', urgent: 'red' }
+
+  // Card menu items
+  const getCardMenu = (lead) => [
+    { key: 'edit',  icon: <EditOutlined />,        label: 'Edit',         onClick: () => navigate(`/crm/leads/${lead.id}/edit`) },
+    { key: 'won',   icon: <TrophyOutlined />,       label: 'Mark as Won',  onClick: () => markWon(lead), disabled: lead.stage?.is_won },
+    { key: 'lost',  icon: <CloseCircleOutlined />,   label: 'Mark as Lost', onClick: () => setLostModal({ leadId: lead.id, stageId: stages.find(s=>s.is_lost)?.id }), disabled: lead.stage?.is_lost },
+    { key: 'clone', icon: <CopyOutlined />,          label: 'Duplicate',    onClick: () => cloneLead(lead.id) },
     { type: 'divider' },
-    ...stages.filter(s => s.id !== lead.stage_id).map(s => ({
-      key: `move-${s.id}`, label: `Move to ${s.name}`,
-      onClick: () => handleMoveStage(lead.id, s.id),
-    })),
-    { type: 'divider' },
-    { key: 'won', icon: <TrophyOutlined />, label: 'Mark as Won', onClick: () => handleWon(lead.id) },
-    { key: 'lost', icon: <CloseCircleOutlined />, label: 'Mark as Lost', danger: true, onClick: () => handleLost(lead.id) },
-    { type: 'divider' },
-    { key: 'clone', icon: <CopyOutlined />, label: 'Duplicate', onClick: () => cloneMutation.mutate(lead.id) },
-    { key: 'archive', icon: <StopOutlined />, label: lead.is_active ? 'Archive' : 'Unarchive',
-      danger: lead.is_active, onClick: () => archiveMutation.mutate({ id: lead.id, active: !lead.is_active }) },
+    { key: 'archive', label: 'Archive', danger: true, onClick: () => archiveLead(lead.id) },
   ]
 
-  const getColumnBg = (stage) => {
-    if (stage.is_won)  return '#f6ffed'
-    if (stage.is_lost) return '#fff1f0'
-    return '#f0f5ff'
+  const markWon = async (lead) => {
+    const wonStage = stages.find(s => s.is_won)
+    if (!wonStage) return
+    await crmLeadApi.update(lead.id, { stage_id: wonStage.id })
+    queryClient.invalidateQueries({ queryKey: ['crm_leads'] })
+    message.success('🏆 Marked as Won!')
   }
 
-  const formatCurrency = (v) => v != null ? `₹ ${Number(v).toLocaleString('en-IN')}` : '—'
+  const cloneLead = async (id) => {
+    await crmLeadApi.clone(id)
+    queryClient.invalidateQueries({ queryKey: ['crm_leads'] })
+    message.success('Lead duplicated')
+  }
 
-  if (stagesLoading || leadsLoading) {
-    return <div style={{ padding: 48, textAlign: 'center' }}><Spin size="large" /></div>
+  const archiveLead = async (id) => {
+    await crmLeadApi.archive(id, false)
+    queryClient.invalidateQueries({ queryKey: ['crm_leads'] })
+    message.success('Lead archived')
+  }
+
+  const handleLostConfirm = async (values) => {
+    await crmLeadApi.update(lostModal.leadId, { 
+      stage_id: lostModal.stageId,
+      lost_reason: values.lost_reason 
+    })
+    queryClient.invalidateQueries({ queryKey: ['crm_leads'] })
+    message.info('Lead marked as lost')
+    setLostModal(null)
+  }
+
+  // Revenue total per stage
+  const stageRevenue = (stageId) => {
+    const total = (leadsByStage[stageId] || [])
+      .reduce((sum, l) => sum + (l.expected_revenue || 0), 0)
+    return total.toLocaleString('en-IN')
   }
 
   return (
-    <div style={{ padding: '24px' }}>
-      <Row justify="space-between" align="middle" style={{ marginBottom: 16 }}>
-        <Col>
+    <div style={{ height: 'calc(100vh - 64px)', display: 'flex', flexDirection: 'column', background: '#f1f5f9' }}>
+      {/* Header */}
+      <div style={{ padding: '16px 24px', background: '#fff', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
           <Title level={4} style={{ margin: 0 }}>Pipeline</Title>
-          <Text type="secondary">{leadsData?.total || 0} opportunities</Text>
-        </Col>
-        <Col>
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/crm/leads/new')}>
-            New Opportunity
-          </Button>
-        </Col>
-      </Row>
-
-      {/* ── Kanban Board ──────────────────────────────────────────────── */}
-      <div style={{
-        display: 'flex', gap: 16, overflowX: 'auto', paddingBottom: 16,
-        minHeight: 400,
-      }}>
-        {stages.map(stage => {
-          const leads = leadsByStage[stage.id] || []
-          const totalRevenue = leads.reduce((sum, l) => sum + (l.expected_revenue || 0), 0)
-          return (
-            <div key={stage.id} style={{
-              minWidth: 300, maxWidth: 300, flexShrink: 0,
-              background: getColumnBg(stage),
-              borderRadius: 8, padding: 12,
-            }}>
-              {/* Column Header */}
-              <div style={{ marginBottom: 12, padding: '8px 4px', borderBottom: '2px solid rgba(0,0,0,0.06)' }}>
-                <Space>
-                  <Text strong style={{ fontSize: 14 }}>{stage.name}</Text>
-                  <Badge count={leads.length} style={{ background: '#1677ff' }} />
-                </Space>
-                <div><Text type="secondary" style={{ fontSize: 12 }}>{formatCurrency(totalRevenue)}</Text></div>
-              </div>
-
-              {/* Cards */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minHeight: 200 }}>
-                {leads.length === 0 && (
-                  <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No leads" style={{ margin: '40px 0' }} />
-                )}
-                {leads.map(lead => (
-                  <Card
-                    key={lead.id}
-                    size="small"
-                    style={{
-                      borderRadius: 8, cursor: 'pointer',
-                      transition: 'box-shadow 0.2s',
-                    }}
-                    hoverable
-                    styles={{ body: { padding: '10px 12px' } }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                      <a
-                        onClick={() => navigate(`/crm/leads/${lead.id}/edit`)}
-                        style={{ color: '#1677ff', fontWeight: 500, fontSize: 13, flex: 1 }}
-                      >
-                        {lead.name}
-                      </a>
-                      <Dropdown menu={{ items: getCardMenuItems(lead) }} trigger={['click']}>
-                        <Button size="small" type="text" icon={<MoreOutlined />} style={{ marginLeft: 4 }} />
-                      </Dropdown>
-                    </div>
-                    {lead.customer?.name && (
-                      <div><Text type="secondary" style={{ fontSize: 12 }}>{lead.customer.name}</Text></div>
-                    )}
-                    <div style={{ marginTop: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <Text strong style={{ fontSize: 13 }}>{formatCurrency(lead.expected_revenue)}</Text>
-                      <Tag color={PRIORITY_COLORS[lead.priority] || 'default'} style={{ margin: 0 }}>
-                        {lead.priority}
-                      </Tag>
-                    </div>
-                    {lead.expected_closing && (
-                      <div><Text type="secondary" style={{ fontSize: 11 }}>Close: {lead.expected_closing}</Text></div>
-                    )}
-                    {lead.salesperson && (
-                      <div><Text type="secondary" style={{ fontSize: 11 }}>{lead.salesperson}</Text></div>
-                    )}
-                  </Card>
-                ))}
-              </div>
-
-              {/* Add Button */}
-              <Button
-                type="dashed" block icon={<PlusOutlined />}
-                style={{ marginTop: 8 }}
-                onClick={() => { setQuickModal({ open: true, stageId: stage.id }); quickForm.resetFields() }}
-              >
-                Add
-              </Button>
-            </div>
-          )
-        })}
+          <Text type="secondary">{leads.filter(l => l.is_active !== false).length} opportunities</Text>
+        </div>
+        <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/crm/leads/new')} size="large">
+          New Opportunity
+        </Button>
       </div>
 
-      {/* ── Quick Create Modal ────────────────────────────────────────── */}
+      {/* Kanban Board */}
+      <div style={{ flex: 1, overflowX: 'auto', overflowY: 'hidden', padding: '16px 24px' }}>
+        <DragDropContext onDragEnd={onDragEnd}>
+          <div style={{ display: 'flex', gap: 12, height: '100%', minHeight: 600 }}>
+            {stages.map(stage => {
+              const colors = getStageStyle(stage)
+              const stageLeads = leadsByStage[stage.id] || []
+              return (
+                <div key={stage.id} style={{ 
+                  width: 280, minWidth: 280, display: 'flex', flexDirection: 'column',
+                  background: colors.bg, borderRadius: 12, border: `1px solid ${colors.border}`,
+                  overflow: 'hidden'
+                }}>
+                  {/* Column Header */}
+                  <div style={{ 
+                    padding: '12px 16px', borderBottom: `2px solid ${colors.border}`,
+                    background: '#fff'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Text strong style={{ color: colors.header, fontSize: 14 }}>
+                        {stage.name}
+                      </Text>
+                      <Badge count={stageLeads.length} style={{ backgroundColor: colors.header }} />
+                    </div>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      ₹ {stageRevenue(stage.id)}
+                    </Text>
+                  </div>
+
+                  {/* Droppable Area */}
+                  <Droppable droppableId={String(stage.id)}>
+                    {(provided, snapshot) => (
+                      <div
+                        ref={provided.innerRef}
+                        {...provided.droppableProps}
+                        style={{ 
+                          flex: 1, overflowY: 'auto', padding: '8px',
+                          background: snapshot.isDraggingOver ? 'rgba(99,102,241,0.05)' : 'transparent',
+                          transition: 'background 0.2s',
+                          minHeight: 200
+                        }}
+                      >
+                        {stageLeads.length === 0 && (
+                          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No leads" style={{ margin: '40px 0' }} />
+                        )}
+                        {stageLeads.map((lead, index) => (
+                          <Draggable key={lead.id} draggableId={String(lead.id)} index={index}>
+                            {(provided, snapshot) => (
+                              <div
+                                ref={provided.innerRef}
+                                {...provided.draggableProps}
+                                {...provided.dragHandleProps}
+                                style={{
+                                  ...provided.draggableProps.style,
+                                  marginBottom: 8,
+                                }}
+                              >
+                                <Card
+                                  size="small"
+                                  style={{
+                                    borderRadius: 8,
+                                    border: snapshot.isDragging ? '2px solid #6366f1' : '1px solid #e2e8f0',
+                                    boxShadow: snapshot.isDragging ? '0 8px 24px rgba(99,102,241,0.2)' : '0 1px 4px rgba(0,0,0,0.06)',
+                                    cursor: 'grab',
+                                    transform: snapshot.isDragging ? 'rotate(2deg)' : 'none',
+                                    transition: 'box-shadow 0.2s',
+                                  }}
+                                  bodyStyle={{ padding: '10px 12px' }}
+                                >
+                                  {/* Card Header: Avatar + Name + Menu */}
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                      <Avatar size={32} style={{ background: '#6366f1', fontSize: 13, flexShrink: 0 }}>
+                                        {lead.name?.charAt(0)?.toUpperCase()}
+                                      </Avatar>
+                                      <Text 
+                                        strong 
+                                        style={{ fontSize: 13, cursor: 'pointer', color: '#1e293b' }}
+                                        onClick={() => navigate(`/crm/leads/${lead.id}/edit`)}
+                                      >
+                                        {lead.name}
+                                      </Text>
+                                    </div>
+                                    <Dropdown menu={{ items: getCardMenu(lead) }} trigger={['click']}>
+                                      <Button type="text" size="small" icon={<MoreOutlined />} style={{ padding: '0 4px', minWidth: 24 }} />
+                                    </Dropdown>
+                                  </div>
+
+                                  {/* Customer name */}
+                                  {lead.company_name && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                                      <UserOutlined style={{ color: '#94a3b8', fontSize: 11 }} />
+                                      <Text type="secondary" style={{ fontSize: 12 }}>{lead.company_name}</Text>
+                                    </div>
+                                  )}
+
+                                  {/* Phone */}
+                                  {lead.phone && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                                      <PhoneOutlined style={{ color: '#94a3b8', fontSize: 11 }} />
+                                      <Text type="secondary" style={{ fontSize: 12 }}>{lead.phone}</Text>
+                                    </div>
+                                  )}
+
+                                  {/* Revenue + Priority */}
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
+                                    {lead.expected_revenue > 0 && (
+                                      <Text style={{ color: '#16a34a', fontWeight: 600, fontSize: 13 }}>
+                                        ₹ {(lead.expected_revenue || 0).toLocaleString('en-IN')}
+                                      </Text>
+                                    )}
+                                    <Tag color={priorityColors[lead.priority] || 'blue'} style={{ margin: 0, fontSize: 11 }}>
+                                      {lead.priority || 'normal'}
+                                    </Tag>
+                                  </div>
+
+                                  {/* Closing date */}
+                                  {lead.expected_closing && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 6 }}>
+                                      <CalendarOutlined style={{ color: '#94a3b8', fontSize: 11 }} />
+                                      <Text type="secondary" style={{ fontSize: 11 }}>{lead.expected_closing}</Text>
+                                    </div>
+                                  )}
+                                </Card>
+                              </div>
+                            )}
+                          </Draggable>
+                        ))}
+                        {provided.placeholder}
+                      </div>
+                    )}
+                  </Droppable>
+
+                  {/* Add Button */}
+                  <div style={{ padding: '8px', borderTop: `1px solid ${colors.border}`, background: '#fff' }}>
+                    <Button 
+                      type="dashed" 
+                      block 
+                      icon={<PlusOutlined />}
+                      onClick={() => { setQuickAddModal(stage.id); quickForm.resetFields() }}
+                      style={{ borderColor: colors.header, color: colors.header }}
+                    >
+                      Add
+                    </Button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </DragDropContext>
+      </div>
+
+      {/* Quick Add Modal */}
       <Modal
-        title="Quick Create Opportunity"
-        open={quickModal.open}
-        onOk={handleQuickCreate}
-        onCancel={() => setQuickModal({ open: false, stageId: null })}
-        confirmLoading={createMutation.isPending}
+        title="Quick Add Lead"
+        open={quickAddModal !== null}
+        onCancel={() => setQuickAddModal(null)}
+        footer={null}
       >
-        <Form form={quickForm} layout="vertical">
+        <Form form={quickForm} layout="vertical" onFinish={handleQuickAdd}>
           <Form.Item name="name" label="Opportunity Title" rules={[{ required: true }]}>
-            <Input placeholder="e.g., Glass supply for new project" />
+            <Input placeholder="e.g., Glass partition for office" />
           </Form.Item>
-          <Form.Item name="customer_id" label="Customer">
-            <Select showSearch allowClear placeholder="Select customer"
-              options={customers.map(c => ({ value: c.id, label: c.name }))}
-              filterOption={(i, o) => o.label.toLowerCase().includes(i.toLowerCase())}
-            />
+          <Form.Item name="company_name" label="Company / Customer Name">
+            <Input placeholder="Customer company" />
+          </Form.Item>
+          <Form.Item name="phone" label="Phone">
+            <Input placeholder="+91 XXXXX XXXXX" />
           </Form.Item>
           <Form.Item name="expected_revenue" label="Expected Revenue (₹)">
-            <InputNumber min={0} style={{ width: '100%' }} placeholder="0" />
+            <InputNumber style={{ width: '100%' }} min={0} />
           </Form.Item>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <Button onClick={() => setQuickAddModal(null)}>Cancel</Button>
+            <Button type="primary" htmlType="submit">Add Lead</Button>
+          </div>
         </Form>
       </Modal>
 
-      {/* ── Lost Reason Modal ─────────────────────────────────────────── */}
+      {/* Lost Reason Modal */}
       <Modal
-        title="Mark as Lost"
-        open={lostModal.open}
-        onOk={handleLostConfirm}
-        onCancel={() => setLostModal({ open: false, leadId: null })}
-        confirmLoading={moveMutation.isPending}
+        title="💔 Mark as Lost"
+        open={lostModal !== null}
+        onCancel={() => setLostModal(null)}
+        footer={null}
       >
-        <Form form={lostForm} layout="vertical">
-          <Form.Item name="lost_reason" label="Lost Reason" rules={[{ required: true, message: 'Please provide a reason' }]}>
-            <Input.TextArea rows={3} placeholder="Why was this opportunity lost?" />
+        <Form layout="vertical" onFinish={handleLostConfirm}>
+          <Form.Item name="lost_reason" label="Reason for losing" rules={[{ required: true, message: 'Please enter reason' }]}>
+            <Input.TextArea rows={3} placeholder="e.g., Budget constraints, competitor pricing..." />
           </Form.Item>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <Button onClick={() => setLostModal(null)}>Cancel</Button>
+            <Button danger htmlType="submit">Mark as Lost</Button>
+          </div>
         </Form>
       </Modal>
     </div>
