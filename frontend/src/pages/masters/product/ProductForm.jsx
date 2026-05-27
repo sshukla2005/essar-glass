@@ -1,23 +1,23 @@
 // ─── ProductForm.jsx ─────────────────────────────────────────────────────────
 import React, { useEffect } from 'react'
-import { Form, Input, InputNumber, Select, Row, Col, Divider, Radio, Tabs, Switch, App } from 'antd'
+import { Form, Input, InputNumber, Select, Row, Col, Divider, Radio, Tabs, Switch, App, Tag } from 'antd'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import MasterForm from '../../../components/common/MasterForm'
 import { productApi, uomApi, hsnApi, taxApi } from '../../../api'
+import CompanySelector from '../../../components/common/CompanySelector'
 
 const { TextArea } = Input
 
 const GLASS_TYPES = [
-  { value: 'float',      label: 'Float Glass' },
-  { value: 'tempered',   label: 'Tempered Glass' },
-  { value: 'laminated',  label: 'Laminated Glass' },
-  { value: 'reflective', label: 'Reflective Glass' },
-  { value: 'mirror',     label: 'Mirror' },
-  { value: 'frosted',    label: 'Frosted Glass' },
-  { value: 'toughened',  label: 'Toughened Glass' },
-  { value: 'insulated',  label: 'Insulated Glass Unit' },
+  { value: 'Annealed', label: 'Annealed' },
+  { value: 'Toughened', label: 'Toughened' },
+  { value: 'Laminated', label: 'Laminated' },
+  { value: 'DGU', label: 'DGU' },
 ]
+
+const GLASS_CATEGORIES = ['Clear', 'Xtra Clear', 'Tinted', 'Reflective', 'Mirror']
+const GLASS_THICKNESSES = [3.5, 4, 5, 6, 8, 10, 12]
 
 const GLASS_COLORS = [
   { value: 'clear',  label: 'Clear' },
@@ -65,6 +65,30 @@ const ProductForm = () => {
       })
     }
   }, [record])
+
+  // Watch glass_category + thickness_mm for auto-price
+  const glassCategory = Form.useWatch('glass_category', form)
+  const thicknessMm   = Form.useWatch('thickness_mm', form)
+
+  useEffect(() => {
+    if (glassCategory && thicknessMm) {
+      try {
+        const matrix = JSON.parse(
+          localStorage.getItem('glass_rate_matrix') || '{}'
+        )
+        const baseRate = matrix?.base_rates?.[glassCategory]
+        if (baseRate && thicknessMm) {
+          const perSqmt = parseFloat(thicknessMm) * baseRate
+          const perSqft = parseFloat((perSqmt / 10.764).toFixed(2))
+          const currentPrice = form.getFieldValue('sale_price')
+          if (!currentPrice || currentPrice === 0) {
+            form.setFieldValue('sale_price', perSqft)
+            message.info(`Auto-calculated: ₹${perSqft}/sqft from rate matrix`)
+          }
+        }
+      } catch(e) {}
+    }
+  }, [glassCategory, thicknessMm])
 
   const saveMutation = useMutation({
     mutationFn: (data) => isEdit ? productApi.update(id, data) : productApi.create(data),
@@ -171,8 +195,22 @@ const ProductForm = () => {
               </Form.Item>
             </Col>
             <Col span={6}>
+              <Form.Item name="glass_category" label="Glass Category">
+                <Select
+                  placeholder="Select category"
+                  options={GLASS_CATEGORIES.map(c => ({ value: c, label: c }))}
+                />
+              </Form.Item>
+            </Col>
+            <Col span={6}>
               <Form.Item name="thickness_mm" label="Thickness (mm)">
-                <InputNumber min={0} step={0.5} style={{ width: '100%' }} placeholder="e.g., 4, 5, 6, 8, 10, 12" />
+                <Select
+                  placeholder="Select thickness"
+                  options={GLASS_THICKNESSES.map(t => ({
+                    value: t,
+                    label: `${t}mm`
+                  }))}
+                />
               </Form.Item>
             </Col>
             <Col span={6}>
@@ -180,6 +218,8 @@ const ProductForm = () => {
                 <Select placeholder="Select color" options={GLASS_COLORS} />
               </Form.Item>
             </Col>
+          </Row>
+          <Row gutter={16}>
             <Col span={6}>
               <Form.Item name="coating" label="Coating"><Input placeholder="e.g., Low-E, Reflective" /></Form.Item>
             </Col>
@@ -275,6 +315,7 @@ const ProductForm = () => {
       <Form form={form} layout="vertical" initialValues={{
         product_type: 'storable', can_be_sold: true, can_be_purchased: true, on_hand_qty: 0,
       }}>
+        <CompanySelector form={form} />
         <Tabs items={tabItems} size="large" />
       </Form>
     </MasterForm>

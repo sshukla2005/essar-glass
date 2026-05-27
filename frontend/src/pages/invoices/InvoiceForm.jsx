@@ -6,6 +6,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import dayjs from 'dayjs'
 import MasterForm from '../../components/common/MasterForm'
 import { invoiceApi, customerApi, productApi, salesOrderApi, deliveryChallanApi, paymentApi } from '../../api'
+import CompanySelector from '../../components/common/CompanySelector'
 
 const PAYMENT_TERMS = [{ value: 'immediate', label: 'Immediate' }, { value: '15_days', label: '15 Days' }, { value: '30_days', label: '30 Days' }]
 const PAYMENT_MODES = [{ value: 'cash', label: 'Cash' }, { value: 'cheque', label: 'Cheque' }, { value: 'neft', label: 'NEFT/RTGS' }, { value: 'upi', label: 'UPI' }]
@@ -153,6 +154,7 @@ const InvoiceForm = () => {
       </Row>
 
       <Form form={form} layout="vertical" initialValues={{ status: 'draft', is_igst: false }}>
+        <CompanySelector form={form} />
         <Row gutter={16}>
           <Col span={8}>
             <Form.Item name="customer_id" label="Customer" rules={[{ required: true }]}>

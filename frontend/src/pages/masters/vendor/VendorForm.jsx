@@ -6,6 +6,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import MasterForm from '../../../components/common/MasterForm'
 import { vendorApi, currencyApi } from '../../../api'
 import { INDIAN_STATES } from '../../../utils/constants'
+import CompanySelector from '../../../components/common/CompanySelector'
 
 const { TextArea } = Input
 
@@ -258,6 +259,7 @@ const VendorForm = () => {
       <Form form={form} layout="vertical" initialValues={{
         vendor_type: 'company', country: 'India', gst_treatment: 'unregistered', msme_type: 'none',
       }}>
+        <CompanySelector form={form} />
         <Tabs items={tabItems} size="large" />
       </Form>
     </MasterForm>

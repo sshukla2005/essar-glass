@@ -58,6 +58,18 @@ import QuotationForm from './pages/quotations/QuotationForm'
 
 // ── Settings ──────────────────────────────────────────────────────────────────
 import CompanyInfo from './pages/settings/CompanyInfo'
+import GlassCalcSettings from './pages/settings/GlassCalcSettings'
+import GlassRateMatrix from './pages/settings/GlassRateMatrix'
+import GlassDropdownSettings from './pages/settings/GlassDropdownSettings'
+import ProcessMasterList from './pages/settings/ProcessMasterList'
+import ProcessMasterForm from './pages/settings/ProcessMasterForm'
+import UomRateMaster from './pages/settings/UomRateMaster'
+
+// ── Workshop ──────────────────────────────────────────────────────────────────
+import WorkshopOrderList from './pages/workshop/WorkshopOrderList'
+import WorkshopOrderForm from './pages/workshop/WorkshopOrderForm'
+import TougheningList from './pages/workshop/TougheningList'
+import TougheningForm from './pages/workshop/TougheningForm'
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 import LoginPage from './pages/auth/LoginPage'
@@ -65,6 +77,10 @@ import ProtectedRoute from './components/auth/ProtectedRoute'
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 import Dashboard from './pages/Dashboard'
+
+// ── Super Admin ───────────────────────────────────────────────────────────────
+import SuperAdminDashboard from './pages/SuperAdminDashboard'
+import UserManagement from './pages/super/UserManagement'
 
 // ── Sales ─────────────────────────────────────────────────────────────────────
 import SalesOrderList from './pages/sales/SalesOrderList'
@@ -94,6 +110,21 @@ const queryClient = new QueryClient({
   },
 })
 
+const fixFarma = () => {
+  try {
+    const pm = JSON.parse(
+      localStorage.getItem('process_masters') || '[]'
+    )
+    const updated = pm.map(p =>
+      p.name === 'Forma / Template'
+        ? { ...p, name: 'Farma / Template' }
+        : p
+    )
+    localStorage.setItem('process_masters', JSON.stringify(updated))
+  } catch {}
+}
+fixFarma()
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <ConfigProvider
@@ -110,6 +141,8 @@ const App = () => (
         <BrowserRouter>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/super-dashboard" element={<ProtectedRoute><SuperAdminDashboard /></ProtectedRoute>} />
+          <Route path="/super/users" element={<ProtectedRoute><UserManagement /></ProtectedRoute>} />
           <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
             <Route index element={<Dashboard />} />
 
@@ -186,6 +219,10 @@ const App = () => (
 
             {/* ── Settings: Company ───────────────────────────────────── */}
             <Route path="settings/company" element={<CompanyInfo />} />
+            <Route path="settings/glass-calc" element={<GlassCalcSettings />} />
+            <Route path="settings/glass-rate-matrix" element={<GlassRateMatrix />} />
+            <Route path="settings/glass-dropdowns" element={<GlassDropdownSettings />} />
+            <Route path="settings/uom-rates" element={<UomRateMaster />} />
 
             {/* ── Settings: Branches ──────────────────────────────────── */}
             <Route path="settings/branches"           element={<BranchList />} />
@@ -206,6 +243,19 @@ const App = () => (
             <Route path="settings/uom-categories"           element={<UomCategoryList />} />
             <Route path="settings/uom-categories/new"       element={<UomCategoryForm />} />
             <Route path="settings/uom-categories/:id/edit"  element={<UomCategoryForm />} />
+
+            {/* ── Workshop ──────────────────────────────────────────── */}
+            <Route path="workshop/orders"              element={<WorkshopOrderList />} />
+            <Route path="workshop/orders/new"          element={<WorkshopOrderForm />} />
+            <Route path="workshop/orders/:id/edit"     element={<WorkshopOrderForm />} />
+            <Route path="workshop/toughening"          element={<TougheningList />} />
+            <Route path="workshop/toughening/new"      element={<TougheningForm />} />
+            <Route path="workshop/toughening/:id/edit" element={<TougheningForm />} />
+
+            {/* ── Settings: Process Masters ─────────────────────────── */}
+            <Route path="settings/process-masters"           element={<ProcessMasterList />} />
+            <Route path="settings/process-masters/new"       element={<ProcessMasterForm />} />
+            <Route path="settings/process-masters/:id/edit"  element={<ProcessMasterForm />} />
 
             {/* Catch-all */}
             <Route path="*" element={<Navigate to="/" replace />} />

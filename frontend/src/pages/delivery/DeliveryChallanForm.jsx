@@ -6,6 +6,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import dayjs from 'dayjs'
 import MasterForm from '../../components/common/MasterForm'
 import { deliveryChallanApi, customerApi, productApi, stockMovementApi, salesOrderApi } from '../../api'
+import CompanySelector from '../../components/common/CompanySelector'
 
 const STATUS_STEPS = ['draft', 'dispatched', 'delivered']
 const STATUS_IDX = { draft: 0, dispatched: 1, delivered: 2, returned: 0 }
@@ -131,6 +132,7 @@ const DeliveryChallanForm = () => {
       </Row>
 
       <Form form={form} layout="vertical" initialValues={{ status: 'draft' }}>
+        <CompanySelector form={form} />
         <Row gutter={16}>
           <Col span={8}>
             <Form.Item name="customer_id" label="Customer" rules={[{ required: true }]}>

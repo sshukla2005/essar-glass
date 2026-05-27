@@ -35,6 +35,8 @@ const MasterList = ({
   nameField = 'name',
   extraFilters,
   extraActions,
+  extraHeaderActions,
+  apiFilters,
 }) => {
   const { message } = App.useApp()
   const navigate     = useNavigate()
@@ -47,8 +49,15 @@ const MasterList = ({
 
   // ── Fetch data ────────────────────────────────────────────────────────────
   const { data, isLoading, isFetching } = useQuery({
-    queryKey: [queryKey, page, pageSize, search, isActive, extraFilters],
-    queryFn:  () => api.list({ page, page_size: pageSize, search, is_active: isActive, ...extraFilters }).then(r => r.data),
+    queryKey: [queryKey, page, pageSize, search, isActive, extraFilters, apiFilters],
+    queryFn:  () => api.list({
+      page,
+      page_size: pageSize,
+      search,
+      is_active: isActive,
+      ...(typeof extraFilters === 'object' && !React.isValidElement(extraFilters) ? extraFilters : {}),
+      ...(apiFilters || {}),
+    }).then(r => r.data),
     keepPreviousData: true,
   })
 
@@ -161,9 +170,12 @@ const MasterList = ({
             <Text style={{ color: 'rgba(255,255,255,0.8)' }}>{data?.total ?? 0} records</Text>
           </Col>
           <Col>
-            <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate(createPath)} style={{ background: 'white', color: '#1e3a8a', fontWeight: 'bold' }}>
-              New {title}
-            </Button>
+            <Space>
+              {extraHeaderActions}
+              <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate(createPath)} style={{ background: 'white', color: '#1e3a8a', fontWeight: 'bold' }}>
+                New {title}
+              </Button>
+            </Space>
           </Col>
         </Row>
       </div>

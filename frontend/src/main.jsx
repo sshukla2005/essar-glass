@@ -5,7 +5,10 @@ import { seedDefaults, resetAndReseed } from './api/seedData'
 import 'antd/dist/reset.css'
 import './index.css'
 
-if (localStorage.getItem('_essar_seeded_v3') && !localStorage.getItem('_essar_seeded_v4')) {
+// Force reseed with latest demo data
+const currentVersion = '_essar_seeded_v10'
+const hasLatest = localStorage.getItem(currentVersion)
+if (!hasLatest) {
   resetAndReseed()
 } else {
   seedDefaults()

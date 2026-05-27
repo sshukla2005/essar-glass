@@ -1,12 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Form, Input, InputNumber, Select, Row, Col, Divider, DatePicker, Button, Table, Steps, Space, Tag, App } from 'antd'
+import { Form, Input, InputNumber, Select, Row, Col, Divider, DatePicker, Button, Table, Steps, Space, Tag, App, Typography } from 'antd'
 import { PlusOutlined, DeleteOutlined, SendOutlined, CheckCircleOutlined, InboxOutlined, DownloadOutlined } from '@ant-design/icons'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useLocation, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import dayjs from 'dayjs'
 import MasterForm from '../../components/common/MasterForm'
-import { purchaseOrderApi, vendorApi, productApi, stockMovementApi } from '../../api'
+import { purchaseOrderApi, vendorApi, productApi, stockMovementApi, salesOrderApi } from '../../api'
 import { generatePOPDF } from '../../utils/pdfGenerator'
+import CompanySelector from '../../components/common/CompanySelector'
+
+const { Text } = Typography
 
 const STATUS_STEPS = ['draft', 'sent', 'confirmed', 'received']
 const STATUS_IDX = { draft: 0, sent: 1, confirmed: 2, received: 3, cancelled: 0 }
@@ -28,9 +31,113 @@ const PurchaseOrderForm = () => {
   const { data: vendors = [] } = useQuery({ queryKey: ['vendors-dd'], queryFn: () => vendorApi.dropdown().then(r => r.data) })
   const { data: products = [] } = useQuery({ queryKey: ['products-dd'], queryFn: () => productApi.dropdown().then(r => r.data) })
 
+  const location = useLocation()
+  const [searchParams] = useSearchParams()
+
+  const vendorList = Array.isArray(vendors) ? vendors : (vendors?.items || [])
+  const productList = Array.isArray(products) ? products : (products?.items || [])
+
+  const buildPoLinesFromSo = (soGroups, soLines) => {
+    if (soGroups?.length) {
+      return soGroups.flatMap((group, gi) =>
+        (group.sizes || []).map((size, si) => {
+          const allProcs = [
+            ...(group.processes || []),
+            ...(size.size_processes || [])
+          ]
+          const processNote = allProcs
+            .map(p => p.process_name || `Process ${p.process_id}`)
+            .filter(Boolean)
+            .join(', ')
+
+          return {
+            key: Date.now() + gi + si + Math.random(),
+            description: group.description || '',
+            product_id: group.product_id || null,
+            width_mm: size.width_inch
+              ? Math.round(size.width_inch * 25.4) : null,
+            height_mm: size.height_inch
+              ? Math.round(size.height_inch * 25.4) : null,
+            quantity: size.quantity || 1,
+            unit_price: group.rate || 0,
+            subtotal: size.subtotal || 0,
+            is_toughened: group.is_toughened ||
+              group.glass_type === 'Toughened',
+            process_note: processNote || '',
+            // For toughening PO
+            tgh_sqmt: size.tgh_sqmt || 0,
+          }
+        })
+      )
+    }
+
+    return (soLines || []).map((line, idx) => ({
+      key: Date.now() + idx + Math.random(),
+      description: line.description || '',
+      product_id: line.product_id || null,
+      width_mm: line.width_mm || null,
+      height_mm: line.height_mm || null,
+      quantity: line.quantity || 1,
+      unit_price: line.unit_price || 0,
+      subtotal: line.subtotal || 0,
+      is_toughened: line.is_toughened || false,
+      process_note: [
+        ...(line.processes || []),
+        ...(line.size_processes || [])
+      ].map(p => p.process_name || '').filter(Boolean).join(', '),
+      tgh_sqmt: line.tgh_sqmt || 0,
+    }))
+  }
+
   useEffect(() => {
-    if (!isEdit) form.setFieldValue('po_date', dayjs())
-  }, [])
+    if (!isEdit) {
+      form.setFieldValue('po_date', dayjs())
+
+      // 1. From WO state
+      if (location.state?.from_wo) {
+        const stateLines = location.state.lines || []
+        const poLines = stateLines.map((line, idx) => ({
+          key: Date.now() + idx + Math.random(),
+          description: line.description || '',
+          product_id: null,
+          width_mm: line.act_w_mm || null,
+          height_mm: line.act_h_mm || null,
+          quantity: line.qty || 1,
+          unit_price: 0,
+          subtotal: 0,
+          tax_amount: 0,
+          is_toughened: line.is_toughened || false,
+          process_note: line.process_label || '',
+          tgh_sqmt: line.tgh_sqmt || 0,
+        }))
+        setLines(poLines)
+        if (location.state.vendor_name) {
+          const matchedVendor = vendorList.find(v => v.name.toLowerCase() === location.state.vendor_name.toLowerCase())
+          if (matchedVendor) {
+            form.setFieldValue('vendor_id', matchedVendor.id)
+          }
+        }
+        form.setFieldValue('vendor_reference', `WO #${location.state.from_wo}`)
+      }
+
+      // 2. From SO query param
+      const soIdParam = searchParams.get('so_id')
+      if (soIdParam) {
+        const loadPoFromSo = async () => {
+          try {
+            const so = (await salesOrderApi.get(parseInt(soIdParam))).data
+            form.setFieldValue('vendor_reference', so.so_number)
+            if (so.groups?.length || so.lines?.length) {
+              setLines(buildPoLinesFromSo(so.groups, so.lines))
+            }
+          } catch (e) {
+            message.error('Failed to load Sales Order data')
+          }
+        }
+        loadPoFromSo()
+      }
+    }
+  }, [location.state, searchParams, vendors])
 
   useEffect(() => {
     if (record) {
@@ -122,9 +229,19 @@ const PurchaseOrderForm = () => {
         onChange={val => updateLine(row.key, 'product_id', val)} 
       />
     )},
-    { title: 'Description', width: 200, dataIndex: 'description', render: (v, row) => <Input size="small" value={v} onChange={e => updateLine(row.key, 'description', e.target.value)} /> },
+    { title: 'Description', width: 200, dataIndex: 'description', render: (v, row) => (
+      <div>
+        <Input size="small" value={v} onChange={e => updateLine(row.key, 'description', e.target.value)} />
+        {row.process_note && (
+          <div style={{ marginTop: 2, fontSize: 11, color: '#8c8c8c' }}>
+            {row.process_note}
+          </div>
+        )}
+      </div>
+    )},
     { title: 'Qty', width: 100, dataIndex: 'quantity', render: (v, row) => <InputNumber size="small" value={v} onChange={val => updateLine(row.key, 'quantity', val)} /> },
     { title: 'Unit Cost', width: 120, dataIndex: 'unit_price', render: (v, row) => <InputNumber size="small" value={v} onChange={val => updateLine(row.key, 'unit_price', val)} /> },
+    { title: 'Remarks', width: 180, dataIndex: 'process_note', render: (v) => <Text type="secondary" style={{ fontSize: 11 }}>{v || ''}</Text> },
     { title: 'Subtotal', width: 120, dataIndex: 'subtotal', render: v => <b>₹ {Number(v||0).toLocaleString()}</b> },
     { title: '', width: 40, render: (_, row) => <Button size="small" type="text" danger icon={<DeleteOutlined />} onClick={() => setLines(lines.filter(l => l.key !== row.key))} /> },
   ]
@@ -165,6 +282,7 @@ const PurchaseOrderForm = () => {
       </Row>
 
       <Form form={form} layout="vertical" initialValues={{ status: 'draft' }}>
+        <CompanySelector form={form} />
         <Row gutter={16}>
           <Col span={8}>
             <Form.Item name="vendor_id" label="Vendor" rules={[{ required: true }]}>

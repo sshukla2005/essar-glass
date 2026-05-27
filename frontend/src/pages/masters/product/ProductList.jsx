@@ -18,6 +18,9 @@ const ProductList = () => (
           return <Tag color={colors[v] || 'default'}>{v}</Tag>
         }
       },
+      { title: 'Category', dataIndex: 'glass_category', key: 'glass_category', width: 110,
+        render: v => v ? <Tag color="blue">{v}</Tag> : '—'
+      },
       { title: 'Sale Price',  dataIndex: 'sale_price', key: 'sale_price', width: 100,
         render: v => v != null ? `₹ ${v.toLocaleString('en-IN')}` : '—'
       },

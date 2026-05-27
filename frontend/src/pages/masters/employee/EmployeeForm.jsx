@@ -7,6 +7,7 @@ import dayjs from 'dayjs'
 import MasterForm from '../../../components/common/MasterForm'
 import { employeeApi } from '../../../api'
 import { INDIAN_STATES } from '../../../utils/constants'
+import CompanySelector from '../../../components/common/CompanySelector'
 
 const { TextArea } = Input
 
@@ -235,6 +236,7 @@ const EmployeeForm = () => {
       onDiscard={() => navigate('/masters/employees')}
     >
       <Form form={form} layout="vertical" initialValues={{ employee_type: 'regular', notice_period: 30 }}>
+        <CompanySelector form={form} />
         <Tabs items={tabItems} size="large" />
       </Form>
     </MasterForm>

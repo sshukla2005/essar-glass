@@ -19,9 +19,11 @@ const STATUS_COLORS = {
 const SalesOrderList = () => {
   const { data: customers = [] } = useQuery({ queryKey: ['customers-dd'], queryFn: () => customerApi.dropdown().then(r => r.data) })
   
+  const customerList = Array.isArray(customers) ? customers : (customers?.items || [])
+  
   const columns = [
     { title: 'SO Number', dataIndex: 'so_number', width: 120 },
-    { title: 'Customer', dataIndex: 'customer_id', render: v => customers.find(c => c.value === v)?.label || v },
+    { title: 'Customer', dataIndex: 'customer_id', render: v => customerList.find(c => c.value === v || c.id === v)?.label || customerList.find(c => c.id === v)?.name || v },
     { title: 'Quotation Ref', dataIndex: 'quotation_id', render: v => v ? `QT${String(v).padStart(4,'0')}` : '—' },
     { title: 'Order Date', dataIndex: 'order_date' },
     { title: 'Delivery Date', dataIndex: 'delivery_date' },

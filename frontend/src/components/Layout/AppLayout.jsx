@@ -1,5 +1,6 @@
-import React, { useState } from 'react'
-import { Layout, Menu, Typography, Space, Avatar, App, Button } from 'antd'
+import React, { useState, useMemo } from 'react'
+import AIAssistant from '../AIAssistant'
+import { Layout, Menu, Typography, Space, Avatar, App, Button, Select, Tag } from 'antd'
 import {
   DashboardOutlined, AimOutlined, FunnelPlotOutlined, UnorderedListOutlined, NodeIndexOutlined,
   FileTextOutlined, ShoppingCartOutlined, DollarOutlined, AppstoreOutlined, ShoppingOutlined,
@@ -7,7 +8,8 @@ import {
   BarcodeOutlined, GroupOutlined, SettingOutlined, BankOutlined,
   MenuFoldOutlined, MenuUnfoldOutlined, BuildOutlined, CarOutlined, RetweetOutlined,
   SwapOutlined, DownOutlined, LogoutOutlined, LayoutOutlined, DatabaseOutlined,
-  UsergroupAddOutlined, ReconciliationOutlined, HistoryOutlined
+  UsergroupAddOutlined, ReconciliationOutlined, HistoryOutlined, CalculatorOutlined,
+  ToolOutlined, FireOutlined
 } from '@ant-design/icons'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
@@ -35,6 +37,10 @@ const menuItems = [
     { key: '/delivery-challans', label: 'Delivery Challans' },
     { key: '/inventory/movements', label: 'Stock Movements' },
   ]},
+  { key: 'grp_workshop', icon: <ToolOutlined />, label: 'Workshop', children: [
+    { key: '/workshop/orders', label: 'Workshop Orders' },
+    { key: '/workshop/toughening', label: 'Toughening', icon: <FireOutlined /> },
+  ]},
   { key: 'grp_masters', icon: <ReconciliationOutlined />, label: 'Masters', children: [
     { key: '/masters/customers', label: 'Customers' },
     { key: '/masters/vendors', label: 'Vendors' },
@@ -43,6 +49,9 @@ const menuItems = [
   ]},
   { key: 'grp_settings', icon: <SettingOutlined />, label: 'Settings', children: [
     { key: '/settings/company', label: 'Company' },
+    { key: '/settings/glass-calc', label: 'Glass Calc Settings', icon: <CalculatorOutlined /> },
+    { key: '/settings/glass-rate-matrix', label: 'Glass Rate Matrix', icon: <CalculatorOutlined /> },
+    { key: '/settings/glass-dropdowns', label: 'Glass Dropdowns', icon: <ControlOutlined /> },
     { key: '/settings/branches', label: 'Branches' },
     { key: '/settings/currencies', label: 'Currencies' },
     { key: '/settings/tax-groups', label: 'Tax Groups' },
@@ -50,6 +59,8 @@ const menuItems = [
     { key: '/settings/hsn-codes', label: 'HSN/SAC' },
     { key: '/settings/uom-categories', label: 'UoM Categories' },
     { key: '/settings/uoms', label: 'Units of Measure' },
+    { key: '/settings/process-masters', label: 'Process Masters', icon: <ToolOutlined /> },
+    { key: '/settings/uom-rates', label: 'UOM Rates', icon: '📐' },
   ]},
 ]
 
@@ -58,7 +69,13 @@ const AppLayout = () => {
   const [collapsed, setCollapsed] = useState(false)
   const navigate = useNavigate()
   const location = useLocation()
-  const { user, logout } = useAuth()
+  const { user, isSuperAdmin, activeCompanyId, setActiveCompany, logout } = useAuth()
+
+  const companies = useMemo(() => {
+    try {
+      return JSON.parse(localStorage.getItem('companies_master') || '[]')
+    } catch { return [] }
+  }, [])
 
   const handleMenuClick = ({ key }) => {
     if (key.startsWith('/')) navigate(key)
@@ -244,6 +261,28 @@ const AppLayout = () => {
             }
           </Space>
           <Space size="large">
+            {isSuperAdmin && (
+              <Space style={{ marginRight: 16 }}>
+                <Text type="secondary" style={{ fontSize: 12 }}>Viewing:</Text>
+                <Select
+                  size="small"
+                  value={activeCompanyId || 'all'}
+                  style={{ width: 160 }}
+                  onChange={val => {
+                    setActiveCompany(val === 'all' ? null : val)
+                    window.location.reload()
+                  }}
+                  options={[
+                    { value: 'all', label: '🌐 All Companies' },
+                    ...companies.map(c => ({
+                      value: c.id,
+                      label: `${c.short_name} — ${c.name}`
+                    }))
+                  ]}
+                />
+                <Button size="small" type="link" onClick={() => window.location.href = '/super-dashboard'}>Group Dashboard</Button>
+              </Space>
+            )}
             <Space style={{ cursor: 'pointer' }}>
               <Avatar style={{ background: '#6366f1' }}>
                 {user?.name?.charAt(0) || 'A'}
@@ -258,6 +297,7 @@ const AppLayout = () => {
           <Outlet />
         </Content>
       </Layout>
+      <AIAssistant />
     </Layout>
   )
 }

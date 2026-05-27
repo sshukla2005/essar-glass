@@ -10,8 +10,26 @@ const notFound = () => Promise.reject({ response: { status: 404, data: { detail:
 export const createLocalApi = (key, codeConfig = null) => ({
 
   list: (params = {}) => {
-    const { page = 1, page_size = 20, search = '', is_active, ...extraFilters } = params
+    const { page = 1, page_size = 20, search = '', is_active, company_id, ...extraFilters } = params
     let records = getAll(key)
+
+    // Company filter — if company_id provided, filter by it
+    // If not provided, check active user's company
+    const filterCompanyId = company_id || (() => {
+      try {
+        const user = JSON.parse(localStorage.getItem('auth_user') || 'null')
+        if (!user || user.role === 'superadmin') return null
+        return user.company_id || null
+      } catch { return null }
+    })()
+
+    if (filterCompanyId) {
+      records = records.filter(r =>
+        r.company_id === filterCompanyId ||
+        r.company_id === undefined  // legacy records without company_id
+      )
+    }
+
     if (is_active !== undefined && is_active !== null && is_active !== '')
       records = records.filter(r => r.is_active === is_active)
     if (search && search.trim()) {
@@ -29,7 +47,16 @@ export const createLocalApi = (key, codeConfig = null) => ({
     return ok({ items, total, page: Number(page), page_size: Number(page_size), pages: Math.ceil(total / page_size) || 1 })
   },
 
-  dropdown: () => ok(getAll(key).filter(r => r.is_active !== false)),
+  dropdown: () => {
+    let records = getAll(key).filter(r => r.is_active !== false)
+    try {
+      const user = JSON.parse(localStorage.getItem('auth_user') || 'null')
+      if (user && user.role !== 'superadmin' && user.company_id) {
+        records = records.filter(r => r.company_id === user.company_id || r.company_id === undefined)
+      }
+    } catch {}
+    return ok(records)
+  },
 
   get: (id) => {
     const rec = getAll(key).find(r => r.id === parseInt(id))

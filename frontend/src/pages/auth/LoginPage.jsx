@@ -4,11 +4,6 @@ import { useNavigate } from 'react-router-dom'
 
 const { Title, Text } = Typography
 
-// Default credentials: admin / essar@123
-const USERS = [
-  { username: 'admin', password: 'essar@123', name: 'Admin', role: 'admin' },
-]
-
 const LoginPage = () => {
   const { message } = App.useApp()
   const [loading, setLoading] = useState(false)
@@ -17,19 +12,44 @@ const LoginPage = () => {
 
   const handleLogin = async (values) => {
     setLoading(true)
-    await new Promise(r => setTimeout(r, 800)) // simulate auth
-    
-    const user = USERS.find(u => 
-      u.username === values.username && u.password === values.password
-    )
-    
-    if (user) {
-      localStorage.setItem('auth_user', JSON.stringify(user))
-      localStorage.setItem('auth_token', 'essar_token_' + Date.now())
-      message.success(`Welcome back, ${user.name}! 👋`)
-      navigate('/')
-    } else {
-      message.error('Invalid username or password')
+    try {
+      // Call backend auth endpoint
+      const formData = new FormData()
+      formData.append('username', values.username)
+      formData.append('password', values.password)
+
+      const response = await fetch(
+        'http://localhost:8000/api/v1/auth/login',
+        {
+          method: 'POST',
+          body: formData,
+        }
+      )
+
+      if (!response.ok) {
+        const err = await response.json()
+        message.error(err.detail || 'Invalid username or password')
+        setLoading(false)
+        return
+      }
+
+      const data = await response.json()
+
+      // Store JWT token and user info
+      localStorage.setItem('auth_token', data.access_token)
+      localStorage.setItem('auth_user', JSON.stringify(data.user))
+
+      message.success(`Welcome, ${data.user.name}! 👋`)
+
+      // Route based on role
+      if (data.user.role === 'superadmin') {
+        navigate('/super-dashboard')
+      } else {
+        navigate('/')
+      }
+    } catch (err) {
+      console.error('Login error:', err)
+      message.error('Connection error. Is the backend running?')
     }
     setLoading(false)
   }
@@ -105,10 +125,20 @@ const LoginPage = () => {
             </Button>
           </Form>
 
-          <div style={{ marginTop: 40, textAlign: 'center' }}>
-            <Text type="secondary" style={{ fontSize: 13 }}>
-              🔑 Credentials: <Text code>admin</Text> / <Text code>essar@123</Text>
-            </Text>
+          <div style={{ marginTop: 40 }}>
+            <div style={{ background: '#f8faff', borderRadius: 8, padding: '10px 14px' }}>
+              <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 6 }}>
+                🔑 Demo Credentials:
+              </Text>
+              <div style={{ fontSize: 12, lineHeight: 2 }}>
+                <Text>Super Admin: </Text><Text code>superadmin</Text>
+                {' / '}<Text code>super@123</Text><br/>
+                <Text>Admin (Essar): </Text><Text code>admin</Text>
+                {' / '}<Text code>essar@123</Text><br/>
+                <Text>Sales: </Text><Text code>sales</Text>
+                {' / '}<Text code>sales@123</Text>
+              </div>
+            </div>
           </div>
         </div>
       </div>

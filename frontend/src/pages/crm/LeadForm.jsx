@@ -1,11 +1,12 @@
-import React, { useEffect, useMemo } from 'react'
-import { Form, Input, InputNumber, Select, Row, Col, Divider, Radio, Tabs, DatePicker, Steps, Slider, Button, Tag, Badge, Space, App } from 'antd'
-import { FileTextOutlined } from '@ant-design/icons'
+import React, { useEffect, useMemo, useState } from 'react'
+import { Form, Input, InputNumber, Select, Row, Col, Divider, Radio, Tabs, DatePicker, Steps, Slider, Button, Tag, Badge, Space, App, Modal } from 'antd'
+import { FileTextOutlined, PlusOutlined } from '@ant-design/icons'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import dayjs from 'dayjs'
 import MasterForm from '../../components/common/MasterForm'
 import { crmLeadApi, crmStageApi, customerApi, quotationApi } from '../../api'
+import CompanySelector from '../../components/common/CompanySelector'
 
 const { TextArea } = Input
 
@@ -16,6 +17,11 @@ const LeadForm = () => {
   const [form] = Form.useForm()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+
+  const [customerSearch, setCustomerSearch]       = useState('')
+  const [createCustModal, setCreateCustModal]     = useState(false)
+  const [newCustName, setNewCustName]             = useState('')
+  const [createCustForm]                          = Form.useForm()
 
   const { data: record, isLoading } = useQuery({
     queryKey: ['crm-leads', id], queryFn: () => crmLeadApi.get(id).then(r => r.data), enabled: isEdit,
@@ -30,8 +36,21 @@ const LeadForm = () => {
   // ── Linked quotations count (smart button) ─────────────────────────────────
   const { data: quotationsData } = useQuery({
     queryKey: ['quotations-for-lead', id],
-    queryFn: () => quotationApi.list({ crm_lead_id: id, page_size: 1 }).then(r => r.data),
-    enabled: isEdit,
+    enabled: !!id,
+    queryFn: async () => {
+      try {
+        const allQuotes = JSON.parse(localStorage.getItem('quotations') || '[]')
+        const linked = allQuotes.filter(q =>
+          q.is_active !== false &&
+          (String(q.crm_lead_id) === String(id) || q.crm_lead_id === parseInt(id))
+        )
+        return { total: linked.length, items: linked }
+      } catch {
+        return { total: 0, items: [] }
+      }
+    },
+    refetchOnWindowFocus: true,
+    staleTime: 0,
   })
   const quotationCount = quotationsData?.total || 0
 
@@ -66,16 +85,133 @@ const LeadForm = () => {
     if (stage) form.setFieldValue('stage_id', stage.id)
   }
 
+  // ── Inline customer creation ───────────────────────────────────────────────
+  const handleCreateCustomerInline = async (values) => {
+    try {
+      const allCustomers = JSON.parse(
+        localStorage.getItem('customers') || '[]'
+      )
+      const newId   = allCustomers.length
+        ? Math.max(...allCustomers.map(r => r.id || 0)) + 1
+        : 1
+      const newCode = `CUST${String(newId).padStart(4, '0')}`
+
+      let company_id = 1
+      try {
+        const u = JSON.parse(localStorage.getItem('auth_user') || '{}')
+        company_id = u.company_id || 1
+      } catch {}
+
+      const newCustomer = {
+        id:            newId,
+        name:          values.name.trim(),
+        customer_code: newCode,
+        customer_type: values.customer_type || 'company',
+        phone:         values.phone   || null,
+        mobile:        values.mobile  || null,
+        email:         values.email   || null,
+        city:          values.city    || null,
+        state:         values.state   || null,
+        gstin:         values.gstin   || null,
+        payment_terms: values.payment_terms || null,
+        company_id,
+        is_active:  true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }
+
+      allCustomers.push(newCustomer)
+      localStorage.setItem('customers', JSON.stringify(allCustomers))
+
+      // Link this new customer to the form
+      form.setFieldsValue({
+        customer_id: newId,
+        company_name: newCustomer.name,
+        phone:  newCustomer.phone  || form.getFieldValue('phone'),
+        email:  newCustomer.email  || form.getFieldValue('email'),
+        mobile: newCustomer.mobile || form.getFieldValue('mobile'),
+      })
+
+      // Refresh customers dropdown
+      queryClient.invalidateQueries({ queryKey: ['customers-dropdown'] })
+      queryClient.invalidateQueries({ queryKey: ['customers'] })
+
+      message.success(
+        `✅ Customer "${newCustomer.name}" (${newCode}) created and linked!`
+      )
+      setCreateCustModal(false)
+      createCustForm.resetFields()
+      setCustomerSearch('')
+    } catch (e) {
+      message.error('Failed to create customer')
+    }
+  }
+
   const tabItems = [
     { key: 'lead', label: 'Lead Info', children: (
       <>
         <Row gutter={16}>
           <Col span={8}>
             <Form.Item name="customer_id" label="Customer">
-              <Select showSearch allowClear placeholder="Select customer"
-                options={customers.map(c => ({ value: c.id, label: c.name }))}
-                filterOption={(i, o) => o.label.toLowerCase().includes(i.toLowerCase())}
-                onChange={(val) => { const c = customers.find(x => x.id === val); if (c) form.setFieldsValue({ company_name: c.name, phone: c.phone, email: c.email }) }}
+              <Select
+                showSearch
+                allowClear
+                placeholder="Search or create customer..."
+                filterOption={false}
+                onSearch={val => setCustomerSearch(val)}
+                onChange={(val) => {
+                  if (val) {
+                    const allCusts = JSON.parse(localStorage.getItem('customers') || '[]')
+                    const cust = allCusts.find(c => c.id === val)
+                    if (cust) {
+                      form.setFieldsValue({
+                        company_name: cust.name,
+                        phone:   cust.phone  || form.getFieldValue('phone'),
+                        email:   cust.email  || form.getFieldValue('email'),
+                        mobile:  cust.mobile || form.getFieldValue('mobile'),
+                      })
+                    }
+                  }
+                }}
+                notFoundContent={
+                  customerSearch.trim() ? (
+                    <div
+                      style={{
+                        padding: '8px 12px', cursor: 'pointer', color: '#6366f1',
+                        fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8,
+                        borderRadius: 6, background: '#f5f3ff', margin: 4,
+                      }}
+                      onMouseDown={(e) => {
+                        e.preventDefault()
+                        setNewCustName(customerSearch.trim())
+                        createCustForm.setFieldsValue({ name: customerSearch.trim() })
+                        setCreateCustModal(true)
+                      }}
+                    >
+                      <PlusOutlined />
+                      Create "{customerSearch}" as new customer
+                    </div>
+                  ) : (
+                    <div style={{ padding: 8, color: '#94a3b8', textAlign: 'center' }}>
+                      Type to search customers
+                    </div>
+                  )
+                }
+                options={customers
+                  .filter(c => {
+                    if (!customerSearch.trim()) return true
+                    return c.name?.toLowerCase().includes(customerSearch.toLowerCase())
+                  })
+                  .map(c => ({
+                    value: c.id,
+                    label: (
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>{c.name}</span>
+                        <span style={{ color: '#94a3b8', fontSize: 11 }}>{c.customer_code}</span>
+                      </div>
+                    ),
+                  }))
+                }
               />
             </Form.Item>
           </Col>
@@ -128,6 +264,7 @@ const LeadForm = () => {
       )}
 
       <Form form={form} layout="vertical" initialValues={{ lead_type: 'opportunity', priority: 'normal', probability: 10, expected_revenue: 0, stage_id: stages[0]?.id }}>
+        <CompanySelector form={form} />
         <Row gutter={16} align="middle">
           <Col span={14}><Form.Item name="name" label="Opportunity Title" rules={[{ required: true }]}><Input style={{ fontSize: 16, fontWeight: 500 }} /></Form.Item></Col>
           <Col span={10}><Form.Item name="priority" label="Priority"><Radio.Group>
@@ -143,6 +280,62 @@ const LeadForm = () => {
         {isEdit && <div style={{ marginTop: 16 }}><Button icon={<FileTextOutlined />}
           onClick={() => navigate(`/quotations/new?lead_id=${id}&customer_id=${form.getFieldValue('customer_id') || ''}`)}>Create Quotation</Button></div>}
       </Form>
+
+      {/* ── Create Customer Modal ──────────────────────────────────── */}
+      <Modal
+        title={<Space><PlusOutlined style={{ color: '#6366f1' }} /><span>Create New Customer</span></Space>}
+        open={createCustModal}
+        onCancel={() => { setCreateCustModal(false); createCustForm.resetFields() }}
+        footer={null}
+        width={520}
+      >
+        <div style={{
+          background: '#f5f3ff', border: '1px solid #e0d9ff', borderRadius: 8,
+          padding: '10px 14px', marginBottom: 16, fontSize: 13, color: '#6366f1',
+        }}>
+          💡 This customer will be saved to Masters → Customers automatically
+        </div>
+
+        <Form form={createCustForm} layout="vertical" onFinish={handleCreateCustomerInline}>
+          <Row gutter={16}>
+            <Col span={16}>
+              <Form.Item name="name" label="Customer Name" rules={[{ required: true, message: 'Name is required' }]}>
+                <Input placeholder="Full company or person name" />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="customer_type" label="Type" initialValue="company">
+                <Select options={[
+                  { value: 'company',    label: 'Company' },
+                  { value: 'individual', label: 'Individual' },
+                ]} />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="phone" label="Phone"><Input placeholder="+91 XXXXX XXXXX" /></Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="email" label="Email"><Input placeholder="email@company.com" type="email" /></Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="gstin" label="GSTIN (optional)">
+                <Input placeholder="22AAAAA0000A1Z5" maxLength={15} style={{ textTransform: 'uppercase' }} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="city" label="City"><Input placeholder="Mumbai" /></Form.Item>
+            </Col>
+          </Row>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
+            <Button onClick={() => { setCreateCustModal(false); createCustForm.resetFields() }}>Cancel</Button>
+            <Button type="primary" htmlType="submit" style={{ background: '#6366f1', borderColor: '#6366f1' }}>Create & Link Customer</Button>
+          </div>
+        </Form>
+      </Modal>
     </MasterForm>
   )
 }
