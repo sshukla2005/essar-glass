@@ -54,11 +54,17 @@ from app.models.user           import User
 from app.models.company        import Company
 from app.models.process_master import ProcessMaster
 from app.models.warehouse      import Warehouse
+from app.models.company_settings import CompanySetting
+
+from app.routers.settings import router as settings_router
 
 PREFIX = "/api/v1"
 
 # Auth
 app.include_router(auth_router, prefix=f"{PREFIX}")
+
+# Settings
+app.include_router(settings_router)
 
 # Auto CRUD routers (all modules in 3 lines each)
 for router_cfg in [

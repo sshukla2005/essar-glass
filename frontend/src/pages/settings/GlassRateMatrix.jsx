@@ -1,4 +1,5 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
+import { settingsApi } from '../../api/settingsApi'
 import {
   Card, Table, InputNumber, Button, Divider,
   Typography, Row, Col, App, Space, Tag, Select
@@ -21,6 +22,16 @@ const GlassRateMatrix = () => {
   }
 
   const [matrix, setMatrix] = useState(getMatrix)
+
+  // Load from backend on mount (overrides localStorage if backend has data)
+  useEffect(() => {
+    settingsApi.get(settingsApi.KEYS.GLASS_RATE_MATRIX).then(data => {
+      if (data && Object.keys(data).length > 0) {
+        setMatrix(data)
+        localStorage.setItem('glass_rate_matrix', JSON.stringify(data))
+      }
+    }).catch(() => {})
+  }, [])
   const [preview, setPreview] = useState(null)
   const [prevCat, setPrevCat] = useState('Clear')
   const [prevThick, setPrevThick] = useState('4')
@@ -50,9 +61,10 @@ const GlassRateMatrix = () => {
     setMatrix(prev => ({ ...prev, [field]: value }))
   }
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const toSave = { ...matrix, updated_at: new Date().toISOString() }
     localStorage.setItem('glass_rate_matrix', JSON.stringify(toSave))
+    await settingsApi.save(settingsApi.KEYS.GLASS_RATE_MATRIX, toSave)
     message.success('✅ Glass Rate Matrix saved! New quotations will use updated rates.')
   }
 

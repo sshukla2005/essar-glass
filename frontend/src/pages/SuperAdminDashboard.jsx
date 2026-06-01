@@ -1,4 +1,10 @@
 import React, { useMemo, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import {
+  companyApi, quotationApi, salesOrderApi,
+  invoiceApi, customerApi, employeeApi,
+  productApi, crmLeadApi, purchaseOrderApi
+} from '../api'
 import {
   Row, Col, Card, Typography, Tag, Table,
   Statistic, Select, Tabs, Progress, Badge,
@@ -24,21 +30,57 @@ const SuperAdminDashboard = () => {
   const { user, logout } = useAuth()
   const [activeTab, setActiveTab] = useState('overview')
 
-  const companies = useMemo(() => {
-    try {
-      return JSON.parse(localStorage.getItem('companies_master') || '[]')
-    } catch { return [] }
-  }, [])
+  const { data: companiesData } = useQuery({
+    queryKey: ['superadmin-companies'],
+    queryFn: () => companyApi.list({ page: 1, page_size: 50 }).then(r => r.data),
+    staleTime: 60000,
+  })
+  const companies = companiesData?.items || []
+
+  const { data: allQuotationsData } = useQuery({
+    queryKey: ['superadmin-quotations'],
+    queryFn: () => quotationApi.list({ page: 1, page_size: 1000 }).then(r => r.data),
+    staleTime: 30000,
+  })
+  const { data: allSalesOrdersData } = useQuery({
+    queryKey: ['superadmin-sales-orders'],
+    queryFn: () => salesOrderApi.list({ page: 1, page_size: 1000 }).then(r => r.data),
+    staleTime: 30000,
+  })
+  const { data: allInvoicesData } = useQuery({
+    queryKey: ['superadmin-invoices'],
+    queryFn: () => invoiceApi.list({ page: 1, page_size: 1000 }).then(r => r.data),
+    staleTime: 30000,
+  })
+  const { data: allCustomersData } = useQuery({
+    queryKey: ['superadmin-customers'],
+    queryFn: () => customerApi.list({ page: 1, page_size: 1000 }).then(r => r.data),
+    staleTime: 60000,
+  })
+  const { data: allEmployeesData } = useQuery({
+    queryKey: ['superadmin-employees'],
+    queryFn: () => employeeApi.list({ page: 1, page_size: 500 }).then(r => r.data),
+    staleTime: 60000,
+  })
+  const { data: allLeadsData } = useQuery({
+    queryKey: ['superadmin-leads'],
+    queryFn: () => crmLeadApi.list({ page: 1, page_size: 1000 }).then(r => r.data),
+    staleTime: 30000,
+  })
+  const { data: allPurchaseOrdersData } = useQuery({
+    queryKey: ['superadmin-purchase-orders'],
+    queryFn: () => purchaseOrderApi.list({ page: 1, page_size: 1000 }).then(r => r.data),
+    staleTime: 30000,
+  })
 
   const companyMetrics = useMemo(() => {
-    const quotations      = JSON.parse(localStorage.getItem('quotations')      || '[]')
-    const salesOrders     = JSON.parse(localStorage.getItem('sales_orders')    || '[]')
-    const invoices        = JSON.parse(localStorage.getItem('invoices')        || '[]')
-    const customers       = JSON.parse(localStorage.getItem('customers')       || '[]')
-    const employees       = JSON.parse(localStorage.getItem('employees')       || '[]')
-    const products        = JSON.parse(localStorage.getItem('products')        || '[]')
-    const leads           = JSON.parse(localStorage.getItem('crm_leads')       || '[]')
-    const purchaseOrders  = JSON.parse(localStorage.getItem('purchase_orders') || '[]')
+    const quotations     = allQuotationsData?.items     || []
+    const salesOrders    = allSalesOrdersData?.items    || []
+    const invoices       = allInvoicesData?.items       || []
+    const customers      = allCustomersData?.items      || []
+    const employees      = allEmployeesData?.items      || []
+    const leads          = allLeadsData?.items          || []
+    const purchaseOrders = allPurchaseOrdersData?.items || []
 
     return companies.map(company => {
       const cId = company.id
@@ -47,7 +89,6 @@ const SuperAdminDashboard = () => {
       const cInvs   = invoices.filter(i => i.company_id === cId)
       const cCusts  = customers.filter(c => c.company_id === cId)
       const cEmps   = employees.filter(e => e.company_id === cId)
-      const cProds  = products.filter(p => p.company_id === cId)
       const cLeads  = leads.filter(l => l.company_id === cId)
       const cPOs    = purchaseOrders.filter(p => p.company_id === cId)
 
@@ -82,9 +123,9 @@ const SuperAdminDashboard = () => {
         const mMonth = d.getMonth()
         const mRev = cInvs
           .filter(inv => {
-            if (!inv.created_at) return false
             const id = new Date(inv.created_at)
-            return id.getFullYear() === mYear &&
+            return !isNaN(id) &&
+                   id.getFullYear() === mYear &&
                    id.getMonth() === mMonth &&
                    ['paid','sent'].includes(inv.status)
           })
@@ -93,14 +134,22 @@ const SuperAdminDashboard = () => {
       })
 
       return {
-        ...company, revenue, purchaseCost, grossMargin, outstanding, activeSOs,
-        totalQuotes: cQuotes.length, totalSOs: cSOs.length,
-        totalCustomers: cCusts.length, totalEmployees: cEmps.length,
-        totalProducts: cProds.length, wonLeads, totalLeads: cLeads.length,
+        ...company,
+        revenue, purchaseCost, grossMargin, outstanding, activeSOs,
+        totalQuotes: cQuotes.length,
+        totalSOs: cSOs.length,
+        totalCustomers: cCusts.length,
+        totalEmployees: cEmps.length,
+        wonLeads,
+        totalLeads: cLeads.length,
         monthlyRevenue,
       }
     })
-  }, [companies])
+  }, [
+    companies,
+    allQuotationsData, allSalesOrdersData, allInvoicesData,
+    allCustomersData, allEmployeesData, allLeadsData, allPurchaseOrdersData
+  ])
 
   const groupRevenueData = useMemo(() => {
     const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']

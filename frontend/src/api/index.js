@@ -100,6 +100,8 @@ export const currencyApi = createLocalApi('currencies')
 export const paymentApi = createLocalApi('payments', { field: 'payment_number', prefix: 'PMT' })
 
 // ── Glass rate matrix (localStorage — config only) ─
+export { settingsApi } from './settingsApi'
+
 export const glassRateApi = {
   get: () => {
     try {

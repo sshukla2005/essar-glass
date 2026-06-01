@@ -14,6 +14,7 @@ from app.models.inventory  import StockMovement
 from app.models.workshop   import WorkshopOrder, TougheningBatch
 from app.models.process_master import ProcessMaster
 from app.models.warehouse import Warehouse
+from app.models.company_settings import CompanySetting
 
 __all__ = [
     "Company", "User", "Customer", "Vendor", "Product",
@@ -21,4 +22,5 @@ __all__ = [
     "SalesOrder", "PurchaseOrder", "DeliveryChallan",
     "Invoice", "StockMovement", "WorkshopOrder",
     "TougheningBatch", "ProcessMaster", "Warehouse",
+    "CompanySetting",
 ]

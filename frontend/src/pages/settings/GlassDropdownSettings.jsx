@@ -1,4 +1,5 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
+import { settingsApi } from '../../api/settingsApi'
 import {
   Card, Button, Tag, Input, Select, InputNumber,
   Divider, Row, Col, Typography, App, Space,
@@ -30,6 +31,16 @@ const GlassDropdownSettings = () => {
     ...getConfig(),
   }))
 
+  // Load from backend on mount
+  useEffect(() => {
+    settingsApi.get(settingsApi.KEYS.GLASS_DROPDOWN_CONFIG).then(data => {
+      if (data && Object.keys(data).length > 0) {
+        setConfig(prev => ({ ...DEFAULT_CONFIG, ...prev, ...data }))
+        localStorage.setItem('glass_dropdown_config', JSON.stringify(data))
+      }
+    }).catch(() => {})
+  }, [])
+
   // New value inputs
   const [newThickness, setNewThickness] = useState('')
   const [newType,      setNewType]      = useState('')
@@ -48,9 +59,10 @@ const GlassDropdownSettings = () => {
   const [newProcRate, setNewProcRate] = useState(0)
   const [newProcUnit, setNewProcUnit] = useState('sqft')
 
-  const saveConfig = () => {
+  const saveConfig = async () => {
     const toSave = { ...config, updated_at: new Date().toISOString() }
     localStorage.setItem('glass_dropdown_config', JSON.stringify(toSave))
+    await settingsApi.save(settingsApi.KEYS.GLASS_DROPDOWN_CONFIG, toSave)
     message.success('✅ Dropdown settings saved!')
   }
 

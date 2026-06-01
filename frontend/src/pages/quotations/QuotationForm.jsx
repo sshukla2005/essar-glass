@@ -269,6 +269,8 @@ const QuotationForm = () => {
   const [unit, setUnit] = useState('inch')
   const [groups, setGroups] = useState([emptyGroup()])
   const [dropdownConfig] = useState(getDropdownConfig)
+  const [customSearchVal, setCustomSearchVal] = useState({})
+  // key format: `${group_key}_thickness` | `${group_key}_type` | `${group_key}_category`
   const [gstMode, setGstMode] = useState('cgst_sgst')
   const [hardwareItems, setHardwareItems] = useState([])
   const [laborItems, setLaborItems] = useState([])
@@ -1489,10 +1491,27 @@ const QuotationForm = () => {
                     { value: '__custom__', label: '+ Add custom...' }
                   ]}
                   onChange={val => {
-                    if (val === '__custom__') return
+                    if (val === '__custom__') {
+                      const raw = customSearchVal[`${group.group_key}_thickness`]
+                      const num = parseFloat(raw)
+                      if (!raw || isNaN(num)) return
+                      try {
+                        const cfg = JSON.parse(localStorage.getItem('glass_dropdown_config') || '{}')
+                        const existing = cfg.thicknesses || [3.5, 4, 5, 6, 8, 10, 12]
+                        if (!existing.includes(num)) {
+                          const updated = [...existing, num].sort((a, b) => a - b)
+                          localStorage.setItem('glass_dropdown_config', JSON.stringify({ ...cfg, thicknesses: updated }))
+                          message.success(`${num}mm added!`)
+                        }
+                      } catch {}
+                      updateGroup(group.group_key, 'glass_thickness', num)
+                      setCustomSearchVal(prev => ({ ...prev, [`${group.group_key}_thickness`]: '' }))
+                      return
+                    }
                     updateGroup(group.group_key, 'glass_thickness', val)
                   }}
-                  onSearch={searchVal => {
+                  onSearch={val => {
+                    setCustomSearchVal(prev => ({ ...prev, [`${group.group_key}_thickness`]: val }))
                   }}
                   filterOption={(input, option) => {
                     if (option.value === '__custom__') return true
@@ -1540,8 +1559,25 @@ const QuotationForm = () => {
                     return String(option.label).toLowerCase()
                       .includes(input.toLowerCase())
                   }}
+                  onSearch={val => {
+                    setCustomSearchVal(prev => ({ ...prev, [`${group.group_key}_type`]: val }))
+                  }}
                   onChange={val => {
-                    if (val === '__custom__') return
+                    if (val === '__custom__') {
+                      const raw = (customSearchVal[`${group.group_key}_type`] || '').trim()
+                      if (!raw) return
+                      try {
+                        const cfg = JSON.parse(localStorage.getItem('glass_dropdown_config') || '{}')
+                        const existing = cfg.glass_types || ['Annealed', 'Toughened', 'Laminated', 'DGU']
+                        if (!existing.includes(raw)) {
+                          localStorage.setItem('glass_dropdown_config', JSON.stringify({ ...cfg, glass_types: [...existing, raw] }))
+                          message.success(`"${raw}" added to types!`)
+                        }
+                      } catch {}
+                      updateGroup(group.group_key, 'glass_type', raw)
+                      setCustomSearchVal(prev => ({ ...prev, [`${group.group_key}_type`]: '' }))
+                      return
+                    }
                     updateGroup(group.group_key, 'glass_type', val)
                   }}
                   onInputKeyDown={e => {
@@ -1549,17 +1585,10 @@ const QuotationForm = () => {
                       const val = e.target.value.trim()
                       if (!val || val === '__custom__') return
                       try {
-                        const cfg = JSON.parse(
-                          localStorage.getItem('glass_dropdown_config') || '{}'
-                        )
-                        const existing = cfg.glass_types ||
-                          ['Annealed','Toughened','Laminated','DGU']
+                        const cfg = JSON.parse(localStorage.getItem('glass_dropdown_config') || '{}')
+                        const existing = cfg.glass_types || ['Annealed', 'Toughened', 'Laminated', 'DGU']
                         if (!existing.includes(val)) {
-                          localStorage.setItem('glass_dropdown_config',
-                            JSON.stringify({
-                              ...cfg, glass_types: [...existing, val]
-                            })
-                          )
+                          localStorage.setItem('glass_dropdown_config', JSON.stringify({ ...cfg, glass_types: [...existing, val] }))
                           message.success(`"${val}" added to types!`)
                         }
                       } catch {}
@@ -1587,8 +1616,25 @@ const QuotationForm = () => {
                     return String(option.label).toLowerCase()
                       .includes(input.toLowerCase())
                   }}
+                  onSearch={val => {
+                    setCustomSearchVal(prev => ({ ...prev, [`${group.group_key}_category`]: val }))
+                  }}
                   onChange={val => {
-                    if (val === '__custom__') return
+                    if (val === '__custom__') {
+                      const raw = (customSearchVal[`${group.group_key}_category`] || '').trim()
+                      if (!raw) return
+                      try {
+                        const cfg = JSON.parse(localStorage.getItem('glass_dropdown_config') || '{}')
+                        const existing = cfg.categories || ['Clear', 'Xtra Clear', 'Tinted', 'Reflective', 'Mirror']
+                        if (!existing.includes(raw)) {
+                          localStorage.setItem('glass_dropdown_config', JSON.stringify({ ...cfg, categories: [...existing, raw] }))
+                          message.success(`"${raw}" added to categories!`)
+                        }
+                      } catch {}
+                      updateGroup(group.group_key, 'glass_category', raw)
+                      setCustomSearchVal(prev => ({ ...prev, [`${group.group_key}_category`]: '' }))
+                      return
+                    }
                     updateGroup(group.group_key, 'glass_category', val)
                   }}
                   onInputKeyDown={e => {
@@ -1596,17 +1642,10 @@ const QuotationForm = () => {
                       const val = e.target.value.trim()
                       if (!val || val === '__custom__') return
                       try {
-                        const cfg = JSON.parse(
-                          localStorage.getItem('glass_dropdown_config') || '{}'
-                        )
-                        const existing = cfg.categories ||
-                          ['Clear','Xtra Clear','Tinted','Reflective','Mirror']
+                        const cfg = JSON.parse(localStorage.getItem('glass_dropdown_config') || '{}')
+                        const existing = cfg.categories || ['Clear', 'Xtra Clear', 'Tinted', 'Reflective', 'Mirror']
                         if (!existing.includes(val)) {
-                          localStorage.setItem('glass_dropdown_config',
-                            JSON.stringify({
-                              ...cfg, categories: [...existing, val]
-                            })
-                          )
+                          localStorage.setItem('glass_dropdown_config', JSON.stringify({ ...cfg, categories: [...existing, val] }))
                           message.success(`"${val}" added to categories!`)
                         }
                       } catch {}

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { Table, InputNumber, Button, App, Typography, Card, Tag, Divider } from 'antd'
 import { SaveOutlined, PlusOutlined, DeleteOutlined } from '@ant-design/icons'
+import { settingsApi } from '../../api/settingsApi'
 
 const { Text } = Typography
 
@@ -20,16 +21,36 @@ const UomRateMaster = () => {
   const [newUom, setNewUom] = useState('')
 
   useEffect(() => {
-    try {
-      const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]')
-      if (stored.length === 0) {
-        setRows(DEFAULT_UOMS.map((r, i) => ({ ...r, key: i })))
+    // Try backend first, fallback to localStorage
+    settingsApi.get(settingsApi.KEYS.UOM_RATE_MASTER).then(data => {
+      if (data && Array.isArray(data) && data.length > 0) {
+        setRows(data.map((r, i) => ({ ...r, key: i })))
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
       } else {
-        setRows(stored.map((r, i) => ({ ...r, key: i })))
+        // Fallback to localStorage
+        try {
+          const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]')
+          if (stored.length === 0) {
+            setRows(DEFAULT_UOMS.map((r, i) => ({ ...r, key: i })))
+          } else {
+            setRows(stored.map((r, i) => ({ ...r, key: i })))
+          }
+        } catch {
+          setRows(DEFAULT_UOMS.map((r, i) => ({ ...r, key: i })))
+        }
       }
-    } catch {
-      setRows(DEFAULT_UOMS.map((r, i) => ({ ...r, key: i })))
-    }
+    }).catch(() => {
+      try {
+        const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]')
+        if (stored.length === 0) {
+          setRows(DEFAULT_UOMS.map((r, i) => ({ ...r, key: i })))
+        } else {
+          setRows(stored.map((r, i) => ({ ...r, key: i })))
+        }
+      } catch {
+        setRows(DEFAULT_UOMS.map((r, i) => ({ ...r, key: i })))
+      }
+    })
   }, [])
 
   const save = (list) => {
@@ -58,10 +79,10 @@ const UomRateMaster = () => {
     save(rows.filter(r => r.key !== key))
   }
 
-  const handleSave = () => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(
-      rows.map(({ key, ...rest }) => rest)
-    ))
+  const handleSave = async () => {
+    const clean = rows.map(({ key, ...rest }) => rest)
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(clean))
+    await settingsApi.save(settingsApi.KEYS.UOM_RATE_MASTER, clean)
     message.success('UOM rates saved!')
   }
 

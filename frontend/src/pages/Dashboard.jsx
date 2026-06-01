@@ -1,4 +1,9 @@
 import React, { useState, useMemo } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import {
+  quotationApi, salesOrderApi, invoiceApi,
+  customerApi, deliveryChallanApi
+} from '../api'
 import { Row, Col, Card, Typography, Space, Radio, Table, Tag, Button } from 'antd'
 import {
   ArrowUpOutlined, ArrowDownOutlined,
@@ -13,10 +18,7 @@ import { useNavigate } from 'react-router-dom'
 
 const { Title, Text } = Typography
 
-// ── Read from localStorage ────────────────────────────────────────
-const read = (key) => {
-  try { return JSON.parse(localStorage.getItem(key) || '[]') } catch { return [] }
-}
+
 
 const StatCard = ({ title, value, percentage, isUp, textUp, textDown }) => (
   <Card
@@ -53,31 +55,51 @@ const Dashboard = () => {
   const [timeRange, setTimeRange] = useState('yearly')
   const navigate = useNavigate()
 
-  // ── Read all data from localStorage ────────────────────────────
-  const stats = useMemo(() => {
-    const quotations   = read('quotations')
-    const salesOrders  = read('sales_orders')
-    const invoices     = read('invoices')
-    const customers    = read('customers')
-    const products     = read('products')
-    const leads        = read('crm_leads')
-    const deliveries   = read('delivery_challans')
+  // ── Fetch real data from backend ──────────────────────────────
+  const { data: quotationsData } = useQuery({
+    queryKey: ['dashboard-quotations'],
+    queryFn: () => quotationApi.list({ page: 1, page_size: 500 }).then(r => r.data),
+    staleTime: 30000,
+  })
+  const { data: salesOrdersData } = useQuery({
+    queryKey: ['dashboard-sales-orders'],
+    queryFn: () => salesOrderApi.list({ page: 1, page_size: 500 }).then(r => r.data),
+    staleTime: 30000,
+  })
+  const { data: invoicesData } = useQuery({
+    queryKey: ['dashboard-invoices'],
+    queryFn: () => invoiceApi.list({ page: 1, page_size: 500 }).then(r => r.data),
+    staleTime: 30000,
+  })
+  const { data: customersData } = useQuery({
+    queryKey: ['dashboard-customers'],
+    queryFn: () => customerApi.list({ page: 1, page_size: 500 }).then(r => r.data),
+    staleTime: 60000,
+  })
+  const { data: deliveriesData } = useQuery({
+    queryKey: ['dashboard-deliveries'],
+    queryFn: () => deliveryChallanApi.list({ page: 1, page_size: 500 }).then(r => r.data),
+    staleTime: 30000,
+  })
 
-    // KPI 1: Total Quotations
-    const totalQuotes = quotations.filter(q => q.is_active !== false).length
+  const stats = useMemo(() => {
+    const quotations  = quotationsData?.items  || []
+    const salesOrders = salesOrdersData?.items || []
+    const invoices    = invoicesData?.items    || []
+    const customers   = customersData?.items   || []
+    const deliveries  = deliveriesData?.items  || []
+
+    const totalQuotes   = quotationsData?.total || quotations.length
     const pendingQuotes = quotations.filter(q => q.status === 'draft').length
 
-    // KPI 2: Active Sales Orders (in production / confirmed)
-    const activeSOs = salesOrders.filter(s => 
-      ['confirmed', 'in_production'].includes(s.status) && s.is_active !== false
+    const activeSOs = salesOrders.filter(s =>
+      ['confirmed', 'in_production'].includes(s.status)
     ).length
     const readySOs = salesOrders.filter(s => s.status === 'ready').length
 
-    // KPI 3: Dispatch Ready (SO status = ready or delivery = dispatched)
-    const dispatchReady = salesOrders.filter(s => s.status === 'ready').length
+    const dispatchReady    = salesOrders.filter(s => s.status === 'ready').length
     const awaitingDispatch = deliveries.filter(d => d.status === 'draft').length
 
-    // KPI 4: Total Revenue from confirmed invoices
     const totalRevenue = invoices
       .filter(i => ['paid', 'sent'].includes(i.status))
       .reduce((sum, i) => sum + (i.total_amount || 0), 0)
@@ -85,33 +107,23 @@ const Dashboard = () => {
       .filter(i => i.status === 'draft')
       .reduce((sum, i) => sum + (i.total_amount || 0), 0)
 
-    // Chart data — build monthly from quotations
     const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
     const chartData = months.map((name, idx) => {
       const monthQuotes = quotations.filter(q => {
-        if (!q.created_at) return false
-        const d = new Date(q.created_at)
-        return d.getMonth() === idx
+        const d = new Date(q.created_at || q.quote_date)
+        return !isNaN(d) && d.getMonth() === idx
       })
-      const total = monthQuotes.reduce((sum, q) => sum + (q.total_amount || 0), 0)
-      return { name, quotations: total }
+      return { name, quotations: monthQuotes.reduce((s, q) => s + (q.total_amount || 0), 0) }
     })
 
-    // Has any data at all?
-    const hasQuoteData = quotations.length > 0
-    // If no real data, show zeros not mock
-    const finalChart = hasQuoteData ? chartData : months.map(name => ({ name, quotations: 0 }))
-
-    // Recent Sales Orders for live tracking
-    const recentSOs = salesOrders
-      .filter(s => s.is_active !== false)
-      .reverse()
+    const recentSOs = [...salesOrders]
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
       .slice(0, 5)
       .map(s => {
         const cust = customers.find(c => c.id === s.customer_id)
         return {
           key: s.id,
-          order: `${s.so_number || 'SO-'} / ${cust?.name || 'Customer'}`,
+          order: `${s.so_number || 'SO-'} / ${cust?.name || s.customer_name || 'Customer'}`,
           process: s.status === 'in_production' ? 'Processing' :
                    s.status === 'confirmed'     ? 'Confirmed'  :
                    s.status === 'ready'         ? 'Ready'      :
@@ -123,17 +135,16 @@ const Dashboard = () => {
         }
       })
 
-    // Recent invoices for payments table
-    const recentInvoices = invoices
-      .reverse()
+    const recentInvoices = [...invoices]
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
       .slice(0, 6)
       .map(i => {
         const cust = customers.find(c => c.id === i.customer_id)
         return {
           key: i.id,
           status: i.status || 'draft',
-          customer: cust?.name || 'Guest Customer',
-          amount: i.total_amount || 0
+          customer: cust?.name || 'Customer',
+          amount: i.total_amount || 0,
         }
       })
 
@@ -142,13 +153,13 @@ const Dashboard = () => {
       activeSOs, readySOs,
       dispatchReady, awaitingDispatch,
       totalRevenue, pendingRevenue,
-      chartData: finalChart,
+      chartData,
       recentSOs,
       recentInvoices,
-      totalCustomers: customers.length,
-      lowStockCount: products.filter(p => p.product_type === 'storable' && (p.on_hand_qty || 0) < (p.min_qty || 0)).length,
+      totalCustomers: customersData?.total || customers.length,
+      lowStockCount: 0,
     }
-  }, [])
+  }, [quotationsData, salesOrdersData, invoicesData, customersData, deliveriesData])
 
   const getChartData = () => {
     if (timeRange === '7days')  return stats.chartData.slice(-3)
