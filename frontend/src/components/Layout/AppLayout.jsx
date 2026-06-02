@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import AIAssistant from '../AIAssistant'
 import { Layout, Menu, Typography, Space, Avatar, App, Button, Select, Tag } from 'antd'
 import {
@@ -75,6 +75,20 @@ const AppLayout = () => {
     try {
       return JSON.parse(localStorage.getItem('companies_master') || '[]')
     } catch { return [] }
+  }, [])
+
+  // ── Dynamic company logo ────────────────────────────────────────────────
+  const [companyLogo, setCompanyLogo] = useState(() => {
+    try {
+      const u = JSON.parse(localStorage.getItem('auth_user') || '{}')
+      return u?.company?.logo || null
+    } catch { return null }
+  })
+
+  useEffect(() => {
+    const handler = (e) => setCompanyLogo(e.detail.logo)
+    window.addEventListener('company-logo-updated', handler)
+    return () => window.removeEventListener('company-logo-updated', handler)
   }, [])
 
   const handleMenuClick = ({ key }) => {
@@ -170,13 +184,28 @@ const AppLayout = () => {
           alignItems: 'center',
           gap: 12
         }}>
-          <div style={{
-            width: 40, height: 40, background: '#fff', borderRadius: 8,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            overflow: 'hidden', flexShrink: 0
-          }}>
-            <img src="/src/public/Essar-logo.webp" alt="Logo" style={{ width: '85%', height: '85%', objectFit: 'contain' }} />
-          </div>
+          {companyLogo ? (
+            <div style={{
+              width: 40, height: 40, borderRadius: 8,
+              overflow: 'hidden', flexShrink: 0,
+              background: '#fff',
+              display: 'flex', alignItems: 'center', justifyContent: 'center'
+            }}>
+              <img
+                src={companyLogo}
+                alt="Logo"
+                style={{ width: '85%', height: '85%', objectFit: 'contain' }}
+              />
+            </div>
+          ) : (
+            <div style={{
+              width: 40, height: 40, background: '#fff', borderRadius: 8,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              overflow: 'hidden', flexShrink: 0
+            }}>
+              <img src="/src/public/Essar-logo.webp" alt="Logo" style={{ width: '85%', height: '85%', objectFit: 'contain' }} />
+            </div>
+          )}
           {!collapsed && (
             <div style={{ display: 'flex', flexDirection: 'column' }}>
               <Text style={{ color: '#fff', fontWeight: 800, fontSize: 14, lineHeight: 1.1, letterSpacing: '0.5px' }}>ESSAR GLASS</Text>

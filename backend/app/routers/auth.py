@@ -3,6 +3,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.user import User
+from app.models.company import Company
 from app.services.auth_service import verify_password, create_access_token
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
@@ -29,6 +30,19 @@ def login(
         company_id=user.company_id
     )
 
+    # Fetch company data including logo
+    company_data = None
+    if user.company_id:
+        company = db.query(Company).filter(Company.id == user.company_id).first()
+        if company:
+            company_data = {
+                "id": company.id,
+                "name": company.name,
+                "short_name": company.short_name,
+                "color": company.color,
+                "logo": company.logo,
+            }
+
     return {
         "access_token": token,
         "token_type":   "bearer",
@@ -39,6 +53,7 @@ def login(
             "role":       user.role,
             "company_id": user.company_id,
             "permissions":user.permissions,
+            "company":    company_data,
         }
     }
 

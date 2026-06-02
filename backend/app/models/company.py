@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean
+from sqlalchemy import Column, Integer, String, Boolean, Text
 from app.database import Base
 from app.models.base import TimestampMixin, SoftDeleteMixin
 
@@ -19,3 +19,5 @@ class Company(Base, TimestampMixin, SoftDeleteMixin):
     email      = Column(String(200), nullable=True)
     website    = Column(String(200), nullable=True)
     pan_number = Column(String(20),  nullable=True)
+    logo       = Column(Text, nullable=True)  # base64 data URL
+

@@ -1,9 +1,10 @@
-import React, { useEffect } from 'react'
-import { Form, Input, Select, Row, Col, Divider, InputNumber, App } from 'antd'
+import React, { useEffect, useRef, useState } from 'react'
+import { Form, Input, Select, Row, Col, Divider, InputNumber, App, Button, Space } from 'antd'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { UploadOutlined } from '@ant-design/icons'
 import MasterForm from '../../../components/common/MasterForm'
-import { companyApi, currencyApi } from '../../../api'
+import { companyApi, currencyApi, companyLogoApi } from '../../../api'
 import { INDIAN_STATES, FISCAL_MONTHS } from '../../../utils/constants'
 
 const GSTIN_REGEX = /^\d{2}[A-Z]{5}\d{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/
@@ -16,6 +17,11 @@ const CompanyForm = () => {
   const [form]       = Form.useForm()
   const navigate     = useNavigate()
   const queryClient  = useQueryClient()
+
+  // ── Logo state ────────────────────────────────────────────────────────────
+  const logoInputRef = useRef(null)
+  const [logoPreview, setLogoPreview] = useState(null)
+  const [logoUploading, setLogoUploading] = useState(false)
 
   // ── Fetch existing record ─────────────────────────────────────────────────
   const { data: record, isLoading } = useQuery({
@@ -31,8 +37,52 @@ const CompanyForm = () => {
   })
 
   useEffect(() => {
-    if (record) form.setFieldsValue(record)
+    if (record) {
+      form.setFieldsValue(record)
+      if (record.logo) setLogoPreview(record.logo)
+    }
   }, [record])
+
+  // ── Logo handlers ─────────────────────────────────────────────────────────
+  const handleLogoUpload = async (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    if (file.size > 2 * 1024 * 1024) {
+      message.error('File too large. Max 2MB.')
+      return
+    }
+    setLogoUploading(true)
+    try {
+      const res = await companyLogoApi.upload(file)
+      setLogoPreview(res.data.logo)
+      message.success('Logo uploaded!')
+      queryClient.invalidateQueries({ queryKey: ['companies'] })
+      // Update sidebar logo immediately
+      window.dispatchEvent(new CustomEvent('company-logo-updated', {
+        detail: { logo: res.data.logo }
+      }))
+    } catch (err) {
+      message.error('Upload failed. Try again.')
+    } finally {
+      setLogoUploading(false)
+      e.target.value = ''
+    }
+  }
+
+  const handleLogoRemove = async () => {
+    setLogoUploading(true)
+    try {
+      await companyLogoApi.remove()
+      setLogoPreview(null)
+      message.success('Logo removed.')
+      queryClient.invalidateQueries({ queryKey: ['companies'] })
+      window.dispatchEvent(new CustomEvent('company-logo-updated', { detail: { logo: null } }))
+    } catch (err) {
+      message.error('Failed to remove logo.')
+    } finally {
+      setLogoUploading(false)
+    }
+  }
 
   // ── Save mutation ─────────────────────────────────────────────────────────
   const saveMutation = useMutation({
@@ -75,6 +125,77 @@ const CompanyForm = () => {
       onDiscard={() => navigate('/masters/companies')}
     >
       <Form form={form} layout="vertical" initialValues={{ country: 'India', fiscal_year_start: 4, fiscal_year_end: 3 }}>
+
+        {/* ── Logo Upload Section ─────────────────────────────────────── */}
+        {isEdit && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 24,
+            padding: '16px 0',
+            marginBottom: 24,
+            borderBottom: '1px solid #f0f0f0'
+          }}>
+            {/* Logo Preview */}
+            <div style={{
+              width: 100, height: 100,
+              border: '2px dashed #d1d5db',
+              borderRadius: 12,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              overflow: 'hidden',
+              background: '#f9fafb',
+              flexShrink: 0,
+            }}>
+              {logoPreview ? (
+                <img
+                  src={logoPreview}
+                  alt="Company Logo"
+                  style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                />
+              ) : (
+                <span style={{ fontSize: 32 }}>🏢</span>
+              )}
+            </div>
+
+            <div>
+              <div style={{ fontWeight: 600, marginBottom: 4, color: '#0f172a' }}>
+                Company Logo
+              </div>
+              <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 12 }}>
+                PNG, JPG, WEBP — max 2MB. Recommended: 200×200px
+              </div>
+              <Space>
+                <Button
+                  icon={<UploadOutlined />}
+                  onClick={() => logoInputRef.current?.click()}
+                  loading={logoUploading}
+                  style={{ borderColor: '#6366f1', color: '#6366f1' }}
+                >
+                  {logoPreview ? 'Change Logo' : 'Upload Logo'}
+                </Button>
+                {logoPreview && (
+                  <Button
+                    danger
+                    size="small"
+                    onClick={handleLogoRemove}
+                    loading={logoUploading}
+                  >
+                    Remove
+                  </Button>
+                )}
+              </Space>
+              <input
+                ref={logoInputRef}
+                type="file"
+                accept="image/*"
+                style={{ display: 'none' }}
+                onChange={handleLogoUpload}
+              />
+            </div>
+          </div>
+        )}
 
         {/* ── Identity ──────────────────────────────────────────────────── */}
         <Divider orientation="left">Company Identity</Divider>

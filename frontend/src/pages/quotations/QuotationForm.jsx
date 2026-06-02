@@ -68,6 +68,52 @@ const CEILING_OPTIONS = [
   { value: 'plus30mm', label: '+30mm'          },
 ]
 
+const parseGlassDescription = (name, dropdownConfig) => {
+  if (!name) return {}
+
+  const result = {
+    glass_thickness: null,
+    glass_type: null,
+    glass_category: null,
+  }
+
+  const str = name.trim()
+
+  // ── Thickness: match patterns like "3.5mm", "6 mm", "10MM" ──
+  const thicknessMatch = str.match(/(\d+(?:\.\d+)?)\s*mm/i)
+  if (thicknessMatch) {
+    result.glass_thickness = parseFloat(thicknessMatch[1])
+  }
+
+  // ── Glass Types (order matters — check longer names first) ──
+  const glassTypes = dropdownConfig?.glass_types?.length
+    ? dropdownConfig.glass_types
+    : ['Annealed', 'Toughened', 'Laminated', 'DGU']
+
+  const sortedTypes = [...glassTypes].sort((a, b) => b.length - a.length)
+  for (const t of sortedTypes) {
+    if (str.toLowerCase().includes(t.toLowerCase())) {
+      result.glass_type = t
+      break
+    }
+  }
+
+  // ── Glass Categories ──
+  const glassCategories = dropdownConfig?.categories?.length
+    ? dropdownConfig.categories
+    : ['Clear', 'Xtra Clear', 'Tinted', 'Reflective', 'Mirror']
+
+  const sortedCats = [...glassCategories].sort((a, b) => b.length - a.length)
+  for (const c of sortedCats) {
+    if (str.toLowerCase().includes(c.toLowerCase())) {
+      result.glass_category = c
+      break
+    }
+  }
+
+  return result
+}
+
 const buildDescription = (group) => {
   const parts = []
   if (group.glass_category) parts.push(group.glass_category)
@@ -1265,16 +1311,35 @@ const QuotationForm = () => {
             itemName.toLowerCase().includes(p.name.toLowerCase().split(' ')[0])
           )
 
+          // Parse glass attributes from description
+          const parsed = parseGlassDescription(itemName.trim(), dropdownConfig)
+
+          // Auto-calculate rate from matrix if thickness + category found
+          let autoRate = sqft_rate || matchedProduct?.sale_price || 0
+          if (!autoRate && parsed.glass_category && parsed.glass_thickness) {
+            autoRate = calcRateFromMatrix(parsed.glass_category, parsed.glass_thickness)
+          }
+
           currentGroup = {
             group_key: Date.now() + Math.random() + i,
             product_id: matchedProduct?.id || null,
             description: itemName.trim(),
-            rate: sqft_rate || matchedProduct?.sale_price || 0,
+            glass_thickness: parsed.glass_thickness || matchedProduct?.thickness_mm || null,
+            glass_type: parsed.glass_type || null,
+            glass_category: parsed.glass_category || null,
+            is_toughened: parsed.glass_type === 'Toughened',
+            ceiling_inches: 6,
+            rate: autoRate,
             rate_rft: rft_rate || 0,
             cep: cep,
+            cep_polish_rate: 15,
+            cep_polish_rate_custom: null,
             pricing_method: 'per_sqft',
             discount_pct: 0,
             tax_rate: 18,
+            custom_costing: true,
+            manual_rate: null,
+            cep_rft_multiplier: null,
             sizes: [],
             processes: []
           }
@@ -1286,12 +1351,22 @@ const QuotationForm = () => {
             group_key: Date.now() + Math.random() + i,
             product_id: null,
             description: 'Imported Glass',
+            glass_thickness: null,
+            glass_type: null,
+            glass_category: null,
+            is_toughened: false,
+            ceiling_inches: 6,
             rate: sqft_rate || 0,
             rate_rft: rft_rate || 0,
             cep: cep,
+            cep_polish_rate: 15,
+            cep_polish_rate_custom: null,
             pricing_method: 'per_sqft',
             discount_pct: 0,
             tax_rate: 18,
+            custom_costing: true,
+            manual_rate: null,
+            cep_rft_multiplier: null,
             sizes: [],
             processes: []
           }

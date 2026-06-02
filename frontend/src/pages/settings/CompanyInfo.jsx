@@ -1,154 +1,229 @@
-// ─── CompanyInfo.jsx ─────────────────────────────────────────────────────────
-import React, { useState } from 'react'
-import { Card, Typography, Descriptions, Button, Form, Input, Row, Col, Space, Breadcrumb, Divider, Avatar, App } from 'antd'
-import {
-  EditOutlined, SaveOutlined, CloseOutlined, BankOutlined
-} from '@ant-design/icons'
+import React, { useState, useRef, useEffect } from 'react'
+import { Card, Typography, Form, Input, Row, Col, Space, Button, App, Divider } from 'antd'
+import { SaveOutlined, CloseOutlined, UploadOutlined, DeleteOutlined } from '@ant-design/icons'
 import { Link } from 'react-router-dom'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { companyApi, companyLogoApi } from '../../api'
 
 const { Title, Text } = Typography
 
-const getStoredCompany = () => {
-  try {
-    const data = localStorage.getItem('company_info')
-    if (data) return JSON.parse(data)
-  } catch (e) {}
-  return {
-    name:    'ESSAR Glass Manufacturing',
-    gstin:   '27AAAAA0000A1Z5',
-    pan:     'AAAAA0000A',
-    address: 'Plot No. 123, Industrial Area, MIDC, Pune',
-    phone:   '+91 20 1234 5678',
-    email:   'info@essarglass.com',
-  }
-}
-
-const defaultCompany = getStoredCompany()
-
 const CompanyInfo = () => {
   const { message } = App.useApp()
-  const [editing, setEditing] = useState(false)
   const [form] = Form.useForm()
+  const queryClient = useQueryClient()
+  const logoInputRef = useRef(null)
+  const [logoPreview, setLogoPreview] = useState(null)
+  const [logoUploading, setLogoUploading] = useState(false)
+
+  // Get company_id from auth user
+  const getCompanyId = () => {
+    try {
+      const user = JSON.parse(localStorage.getItem('auth_user') || '{}')
+      return user?.company_id || 1
+    } catch { return 1 }
+  }
+
+  const companyId = getCompanyId()
+
+  const { data: companyData, isLoading } = useQuery({
+    queryKey: ['company-info', companyId],
+    queryFn: () => companyApi.get(companyId).then(r => r.data),
+    enabled: !!companyId,
+  })
+
+  useEffect(() => {
+    if (companyData) {
+      form.setFieldsValue({
+        name: companyData.name || '',
+        gstin: companyData.gstin || '',
+        pan: companyData.pan || '',
+        address: companyData.address || '',
+        phone: companyData.phone || '',
+        email: companyData.email || '',
+      })
+      if (companyData.logo) setLogoPreview(companyData.logo)
+    }
+  }, [companyData, form])
+
+  const saveMutation = useMutation({
+    mutationFn: (data) => companyApi.update(companyId, data),
+    onSuccess: () => {
+      message.success('Company details saved!')
+      queryClient.invalidateQueries({ queryKey: ['company-info'] })
+      queryClient.invalidateQueries({ queryKey: ['companies'] })
+    },
+    onError: () => message.error('Failed to save. Try again.'),
+  })
 
   const handleSave = async () => {
     try {
-      await form.validateFields()
-      message.info('Settings module coming soon')
-      setEditing(false)
-    } catch (_) {}
+      const values = await form.validateFields()
+      await saveMutation.mutateAsync(values)
+    } catch {}
+  }
+
+  const handleLogoUpload = async (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    if (file.size > 2 * 1024 * 1024) {
+      message.error('File too large. Max 2MB.')
+      return
+    }
+    setLogoUploading(true)
+    try {
+      const res = await companyLogoApi.upload(file)
+      setLogoPreview(res.data.logo)
+      message.success('Logo uploaded!')
+      queryClient.invalidateQueries({ queryKey: ['company-info'] })
+      window.dispatchEvent(new CustomEvent('company-logo-updated', {
+        detail: { logo: res.data.logo }
+      }))
+    } catch {
+      message.error('Upload failed. Try again.')
+    } finally {
+      setLogoUploading(false)
+      e.target.value = ''
+    }
+  }
+
+  const handleLogoRemove = async () => {
+    setLogoUploading(true)
+    try {
+      await companyLogoApi.remove()
+      setLogoPreview(null)
+      message.success('Logo removed.')
+      queryClient.invalidateQueries({ queryKey: ['company-info'] })
+      window.dispatchEvent(new CustomEvent('company-logo-updated', { detail: { logo: null } }))
+    } catch {
+      message.error('Failed to remove logo.')
+    } finally {
+      setLogoUploading(false)
+    }
   }
 
   return (
     <div style={{ padding: '24px', maxWidth: 900, margin: '0 auto' }}>
-      <Breadcrumb
-        style={{ marginBottom: 12 }}
-        items={[
-          { title: <Link to="/">Home</Link> },
-          { title: 'Settings' },
-          { title: 'Company' },
-        ]}
-      />
+      <div style={{ marginBottom: 12, fontSize: 13, color: '#94a3b8' }}>
+        <Link to="/">Home</Link> / <Link to="/settings">Settings</Link> / Company
+      </div>
 
-      <Row justify="space-between" align="middle" style={{ marginBottom: 20 }}>
-        <Col>
-          <Space>
-            <Avatar size={40} style={{ background: '#1677ff' }} icon={<BankOutlined />} />
-            <div>
-              <Title level={4} style={{ margin: 0 }}>Company Information</Title>
-              <Text type="secondary">Manage your company details</Text>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+        <div>
+          <Title level={4} style={{ margin: 0 }}>Company Information</Title>
+          <Text type="secondary">Manage your company details</Text>
+        </div>
+        <Button
+          type="primary"
+          icon={<SaveOutlined />}
+          loading={saveMutation.isPending}
+          onClick={handleSave}
+        >
+          Save
+        </Button>
+      </div>
+
+      <Card loading={isLoading}>
+        {/* Logo Section */}
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 24,
+          padding: '16px 0', marginBottom: 24,
+          borderBottom: '1px solid #f0f0f0'
+        }}>
+          <div style={{
+            width: 100, height: 100,
+            border: '2px dashed #d1d5db',
+            borderRadius: 12,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            overflow: 'hidden', background: '#f9fafb', flexShrink: 0,
+          }}>
+            {logoPreview ? (
+              <img
+                src={logoPreview}
+                alt="Company Logo"
+                style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+              />
+            ) : (
+              <span style={{ fontSize: 40 }}>🏢</span>
+            )}
+          </div>
+          <div>
+            <div style={{ fontWeight: 600, marginBottom: 4 }}>Company Logo</div>
+            <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 12 }}>
+              PNG, JPG, WEBP — max 2MB. Recommended: 200×200px
             </div>
-          </Space>
-        </Col>
-        <Col>
-          {!editing ? (
-            <Button type="primary" icon={<EditOutlined />} onClick={() => {
-              form.setFieldsValue(defaultCompany)
-              setEditing(true)
-            }}>
-              Edit
-            </Button>
-          ) : (
             <Space>
-              <Button icon={<CloseOutlined />} onClick={() => setEditing(false)}>Cancel</Button>
-              <Button type="primary" icon={<SaveOutlined />} onClick={handleSave}>Save</Button>
+              <Button
+                icon={<UploadOutlined />}
+                onClick={() => logoInputRef.current?.click()}
+                loading={logoUploading}
+                style={{ borderColor: '#6366f1', color: '#6366f1' }}
+              >
+                {logoPreview ? 'Change Logo' : 'Upload Logo'}
+              </Button>
+              {logoPreview && (
+                <Button
+                  danger size="small"
+                  icon={<DeleteOutlined />}
+                  onClick={handleLogoRemove}
+                  loading={logoUploading}
+                >
+                  Remove
+                </Button>
+              )}
             </Space>
-          )}
-        </Col>
-      </Row>
+            <input
+              ref={logoInputRef}
+              type="file"
+              accept="image/*"
+              style={{ display: 'none' }}
+              onChange={handleLogoUpload}
+            />
+          </div>
+        </div>
 
-      {!editing ? (
-        <Card>
-          <Descriptions
-            bordered
-            column={2}
-            size="middle"
-            labelStyle={{ fontWeight: 600, background: '#fafafa', width: 180 }}
-          >
-            <Descriptions.Item label="Company Name" span={2}>
-              <Text strong style={{ fontSize: 16 }}>{defaultCompany.name}</Text>
-            </Descriptions.Item>
-            <Descriptions.Item label="GSTIN">
-              <Text code>{defaultCompany.gstin}</Text>
-            </Descriptions.Item>
-            <Descriptions.Item label="PAN">
-              <Text code>{defaultCompany.pan}</Text>
-            </Descriptions.Item>
-            <Descriptions.Item label="Address" span={2}>
-              {defaultCompany.address}
-            </Descriptions.Item>
-            <Descriptions.Item label="Phone">
-              {defaultCompany.phone}
-            </Descriptions.Item>
-            <Descriptions.Item label="Email">
-              <a href={`mailto:${defaultCompany.email}`}>{defaultCompany.email}</a>
-            </Descriptions.Item>
-          </Descriptions>
-        </Card>
-      ) : (
-        <Card>
-          <Form form={form} layout="vertical" initialValues={defaultCompany}>
-            <Divider orientation="left">Company Details</Divider>
-            <Row gutter={16}>
-              <Col span={24}>
-                <Form.Item name="name" label="Company Name" rules={[{ required: true }]}>
-                  <Input placeholder="Company name" />
-                </Form.Item>
-              </Col>
-            </Row>
-            <Row gutter={16}>
-              <Col span={12}>
-                <Form.Item name="gstin" label="GSTIN">
-                  <Input placeholder="27AAAAA0000A1Z5" maxLength={15} style={{ textTransform: 'uppercase' }} />
-                </Form.Item>
-              </Col>
-              <Col span={12}>
-                <Form.Item name="pan" label="PAN">
-                  <Input placeholder="AAAAA0000A" maxLength={10} style={{ textTransform: 'uppercase' }} />
-                </Form.Item>
-              </Col>
-            </Row>
-            <Row gutter={16}>
-              <Col span={24}>
-                <Form.Item name="address" label="Address">
-                  <Input.TextArea rows={2} placeholder="Full address" />
-                </Form.Item>
-              </Col>
-            </Row>
-            <Row gutter={16}>
-              <Col span={12}>
-                <Form.Item name="phone" label="Phone">
-                  <Input placeholder="+91 XX XXXX XXXX" />
-                </Form.Item>
-              </Col>
-              <Col span={12}>
-                <Form.Item name="email" label="Email">
-                  <Input placeholder="info@company.com" type="email" />
-                </Form.Item>
-              </Col>
-            </Row>
-          </Form>
-        </Card>
-      )}
+        {/* Company Details Form */}
+        <Form form={form} layout="vertical">
+          <Divider orientation="left">Company Details</Divider>
+          <Row gutter={16}>
+            <Col span={24}>
+              <Form.Item name="name" label="Company Name" rules={[{ required: true }]}>
+                <Input placeholder="Company name" />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="gstin" label="GSTIN">
+                <Input placeholder="27AAAAA0000A1Z5" maxLength={15} style={{ textTransform: 'uppercase' }} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="pan" label="PAN">
+                <Input placeholder="AAAAA0000A" maxLength={10} style={{ textTransform: 'uppercase' }} />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={16}>
+            <Col span={24}>
+              <Form.Item name="address" label="Address">
+                <Input.TextArea rows={2} placeholder="Full address" />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="phone" label="Phone">
+                <Input placeholder="+91 XX XXXX XXXX" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="email" label="Email">
+                <Input placeholder="info@company.com" type="email" />
+              </Form.Item>
+            </Col>
+          </Row>
+        </Form>
+      </Card>
     </div>
   )
 }

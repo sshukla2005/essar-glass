@@ -118,3 +118,18 @@ export const glassRateApi = {
     return Promise.resolve({ data })
   }
 }
+
+export const companyLogoApi = {
+  upload: async (file) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    const res = await api.post('/api/v1/settings/company/logo', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+    return { data: res.data }
+  },
+  remove: async () => {
+    const res = await api.delete('/api/v1/settings/company/logo')
+    return { data: res.data }
+  }
+}
