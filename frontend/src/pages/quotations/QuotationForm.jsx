@@ -499,8 +499,8 @@ const QuotationForm = () => {
     const area_sqft_pc = (ceilFn(w_inch) * ceilFn(h_inch)) / 144
     const total_sqft = area_sqft_pc * qty
     const running_ft = (w_inch + h_inch) * 2 * qty / 12
-    const charged_w_inch = parseFloat(ceil3(w_inch).toFixed(4))
-    const charged_h_inch = parseFloat(ceil3(h_inch).toFixed(4))
+    const charged_w_inch = parseFloat(ceilFn(w_inch).toFixed(4))
+    const charged_h_inch = parseFloat(ceilFn(h_inch).toFixed(4))
     const charged_sqft = (charged_w_inch * charged_h_inch * qty) / 144
     const getCepMultiplier = () => {
       if (group.cep_rft_multiplier) return group.cep_rft_multiplier
@@ -898,26 +898,39 @@ const QuotationForm = () => {
     const grandTotal = subIII + cgst + sgst + igst
     const balance = grandTotal - (advanceRec || 0)
 
-    let totalCost = 0
+    let glassCost = 0
     groups.forEach(g => {
+      let costPerSqft = 0
       const prod = products.find(x => x.id === g.product_id)
       if (prod?.cost_price) {
-        g.sizes.forEach(s => {
-          totalCost += (s.total_sqft || 0) * prod.cost_price
-        })
+        costPerSqft = prod.cost_price
+      } else if (g.glass_category && g.glass_thickness) {
+        try {
+          const matrix = JSON.parse(localStorage.getItem('glass_rate_matrix') || '{}')
+          const costRate = matrix?.cost_rates?.[g.glass_category]
+          if (costRate) costPerSqft = parseFloat((parseFloat(g.glass_thickness) * costRate / 10.764).toFixed(2))
+        } catch {}
       }
-      ; (g.processes || []).forEach(p => {
-        totalCost += (p.amount || 0) * 0.7
+      if (!costPerSqft && g.rate > 0) costPerSqft = parseFloat((g.rate * 0.70).toFixed(2))
+      g.sizes.forEach(s => {
+        glassCost += (s.total_sqft || 0) * costPerSqft
+      })
+      ;(g.processes || []).forEach(p => {
+        glassCost += (p.amount || 0) * 0.7
       })
     })
-    const marginAmt = subIII - totalCost
+
+    const totalCost = glassCost + hwCostTotal + lbCostTotal
+    // True selling = grandTotal (includes GST)
+    const trueSelling = grandTotal
+    const marginAmt = trueSelling - totalCost
     const marginPct = totalCost > 0 ? (marginAmt / totalCost) * 100 : 100
 
     return {
       subI, procTotal, hwTotal, lbTotal, dcCharges, subII,
       discountAmt, subIII, cgst, sgst, igst,
       grandTotal, advanceRec, balance,
-      totalCost, marginAmt, marginPct,
+      totalCost, glassCost, marginAmt, marginPct,
       hwCostTotal, lbCostTotal
     }
   }, [groups, hardwareItems, laborItems, dcCharges, discountAmt, advanceRec, gstMode, products])
@@ -1252,14 +1265,27 @@ const QuotationForm = () => {
       })
     })
 
-    const totalSelling   = allRows.reduce((s,r) => s + r.selling_amount, 0)
-    const totalCost      = allRows.reduce((s,r) => s + r.cost_amount,    0)
-    const totalMargin    = parseFloat((totalSelling - totalCost).toFixed(2))
+    const glassSellingTotal = allRows.reduce((s,r) => s + r.selling_amount, 0)
+    const glassCostTotal    = allRows.reduce((s,r) => s + r.cost_amount,    0)
+    // Include hardware and labor
+    const hwSell = hardwareItems.reduce((s,h) => s + (h.amount||0), 0)
+    const hwCost = hardwareItems.reduce((s,h) => s + (h.cost_amount||(h.qty||0)*(h.cost_rate||0)), 0)
+    const lbSell = laborItems.reduce((s,l) => s + (l.amount||0), 0)
+    const lbCost = laborItems.reduce((s,l) => s + (l.cost_amount||(l.qty||0)*(l.cost_rate||0)), 0)
+    const subBeforeGst = glassSellingTotal + hwSell + lbSell
+    // Add GST
+    let gstAmt = 0
+    if (gstMode === 'igst') gstAmt = subBeforeGst * 0.18
+    else if (gstMode === 'cgst_sgst') gstAmt = subBeforeGst * 0.18
+    const totalSelling = parseFloat((subBeforeGst + gstAmt).toFixed(2))
+    const totalCost = parseFloat((glassCostTotal + hwCost + lbCost).toFixed(2))
+    const totalMargin = parseFloat((totalSelling - totalCost).toFixed(2))
     const totalMarginPct = totalCost > 0
       ? parseFloat(((totalMargin/totalCost)*100).toFixed(2)) : 100
 
     setGlobalComparison({
-      allRows, totalSelling, totalCost, totalMargin, totalMarginPct
+      allRows, totalSelling, totalCost, totalMargin, totalMarginPct,
+      glassSellingTotal, glassCostTotal, hwSell, hwCost, lbSell, lbCost, gstAmt
     })
   }
 
@@ -1529,7 +1555,49 @@ const QuotationForm = () => {
         <Row gutter={16}>
           <Col span={8}>
             <Form.Item name="customer_id" label="Customer" rules={[{ required: true }]}>
-              <Select showSearch placeholder="Select customer" options={customers.map(c => ({ value: c.id, label: c.name }))} filterOption={(i, o) => o.label.toLowerCase().includes(i.toLowerCase())} onChange={handleCustomerChange} />
+              <Select
+                showSearch
+                placeholder="Select customer"
+                options={customers.map(c => ({ value: c.id, label: c.name }))}
+                filterOption={(i, o) => o.label.toLowerCase().includes(i.toLowerCase())}
+                onChange={handleCustomerChange}
+                dropdownRender={(menu) => (
+                  <>
+                    {menu}
+                    <div
+                      style={{
+                        padding: '8px 12px',
+                        cursor: 'pointer',
+                        color: '#6366f1',
+                        fontWeight: 600,
+                        borderTop: '1px solid #f0f0f0',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6,
+                      }}
+                      onMouseDown={async (e) => {
+                        e.preventDefault()
+                        const name = prompt('Enter customer name:')
+                        if (!name?.trim()) return
+                        try {
+                          const res = await customerApi.create({
+                            name: name.trim(),
+                            customer_type: 'individual',
+                            payment_terms: 'immediate',
+                          })
+                          queryClient.invalidateQueries({ queryKey: ['customers-dd'] })
+                          form.setFieldValue('customer_id', res.data.id)
+                          message.success(`Customer "${name}" created!`)
+                        } catch {
+                          message.error('Failed to create customer')
+                        }
+                      }}
+                    >
+                      <PlusOutlined /> Create new customer
+                    </div>
+                  </>
+                )}
+              />
             </Form.Item>
           </Col>
           <Col span={4}><Form.Item name="quote_date" label="Quote Date"><DatePicker style={{ width: '100%' }} format="DD/MM/YYYY" /></Form.Item></Col>
@@ -2854,7 +2922,26 @@ const QuotationForm = () => {
         }
         open={compWizard !== null}
         onCancel={() => { setCompWizard(null); setWizardCostPrice(null) }}
-        footer={<Button onClick={() => { setCompWizard(null); setWizardCostPrice(null) }}>Close</Button>}
+        footer={
+          <Space>
+            <Button
+              type="primary"
+              style={{ background: '#6366f1', borderColor: '#6366f1' }}
+              onClick={() => {
+                if (wizardCostPrice !== null) {
+                  message.success('Cost price noted for reference.')
+                }
+                setCompWizard(null)
+                setWizardCostPrice(null)
+              }}
+            >
+              Apply & Close
+            </Button>
+            <Button onClick={() => { setCompWizard(null); setWizardCostPrice(null) }}>
+              Close
+            </Button>
+          </Space>
+        }
         width={800}
       >
         {compWizard && (
