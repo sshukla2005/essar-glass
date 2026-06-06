@@ -63,9 +63,9 @@ const getDropdownConfig = () => {
 }
 
 const CEILING_OPTIONS = [
-  { value: 3,          label: '3" (Tight)'    },
-  { value: 6,          label: '6" (Standard)' },
-  { value: 'plus30mm', label: '+30mm'          },
+  { value: 3, label: '3" (Tight)' },
+  { value: 6, label: '6" (Standard)' },
+  { value: 'plus30mm', label: '+30mm' },
 ]
 
 const parseGlassDescription = (name, dropdownConfig) => {
@@ -143,6 +143,7 @@ const emptySize = () => ({
   area_sqft_pc: 0, total_sqft: 0, running_ft: 0,
   charged_sqft: 0, charged_w_inch: 0, charged_h_inch: 0,
   cep_rft: 0, cep_charges: 0, tgh_sqmt: 0,
+  tgh_charge: 0,
   subtotal: 0, tax_amount: 0, line_total: 0,
   size_processes: [],
 })
@@ -162,6 +163,8 @@ const emptyGroup = () => ({
   glass_type: null,
   glass_category: null,
   ceiling_inches: 6,
+  ceiling_w_inches: 6,
+  ceiling_h_inches: 6,
   is_toughened: false,
   product_id: null,
   description: '',
@@ -320,6 +323,7 @@ const QuotationForm = () => {
   const [gstMode, setGstMode] = useState('cgst_sgst')
   const [hardwareItems, setHardwareItems] = useState([])
   const [laborItems, setLaborItems] = useState([])
+  const [wastageItems, setWastageItems] = useState([])
 
   const emptyHardware = () => ({
     hw_key: Date.now() + Math.random(),
@@ -337,6 +341,16 @@ const QuotationForm = () => {
     description: '',
     qty: 1,
     uom: '',
+    cost_rate: 0,
+    rate: 0,
+    cost_amount: 0,
+    amount: 0,
+  })
+
+  const emptyWastage = () => ({
+    wst_key: Date.now() + Math.random(),
+    description: '',
+    qty: 1,
     cost_rate: 0,
     rate: 0,
     cost_amount: 0,
@@ -410,6 +424,8 @@ const QuotationForm = () => {
           glass_type: line.glass_type || null,
           glass_category: line.glass_category || null,
           ceiling_inches: line.ceiling_inches || 6,
+          ceiling_w_inches: line.ceiling_w_inches || line.ceiling_inches || 6,
+          ceiling_h_inches: line.ceiling_h_inches || line.ceiling_inches || 6,
           is_toughened: line.is_toughened || false,
           product_id: line.product_id,
           description: line.description || '',
@@ -446,6 +462,8 @@ const QuotationForm = () => {
         cep_rft: line.cep_rft || 0,
         cep_charges: line.cep_charges || 0,
         tgh_sqmt: line.tgh_sqmt || 0,
+        tgh_charge: line.tgh_charge || 0,
+        _tgh_charge_manual: line.tgh_charge > 0,
         subtotal: line.subtotal || 0,
         tax_amount: line.tax_amount || 0,
         line_total: line.line_total || 0,
@@ -471,6 +489,7 @@ const QuotationForm = () => {
       setGstMode(record.gst_mode || (record.is_inter_state ? 'igst' : 'cgst_sgst'))
       if (record.hardware_items) setHardwareItems(record.hardware_items)
       if (record.labor_items) setLaborItems(record.labor_items)
+      if (record.wastage_items) setWastageItems(record.wastage_items)
     }
   }, [record, form])
 
@@ -488,19 +507,28 @@ const QuotationForm = () => {
     const w_inch = size.width_inch || 0
     const h_inch = size.height_inch || 0
     const qty = size.quantity || 1
-    const ceilN = typeof group.ceiling_inches === 'number' ? group.ceiling_inches : 6
-    const ceilFn = (x) => {
-      if (group.ceiling_inches === 'plus30mm') {
-        return x + (30 / 25.4)
-      }
-      return Math.ceil(x / ceilN) * ceilN
+
+    // Separate ceiling for W and H
+    const ceilW = group.ceiling_w_inches ?? group.ceiling_inches ?? 6
+    const ceilH = group.ceiling_h_inches ?? group.ceiling_inches ?? 6
+
+    const ceilFnW = (x) => {
+      if (ceilW === 'plus30mm') return x + (30 / 25.4)
+      return Math.ceil(x / ceilW) * ceilW
     }
+    const ceilFnH = (x) => {
+      if (ceilH === 'plus30mm') return x + (30 / 25.4)
+      return Math.ceil(x / ceilH) * ceilH
+    }
+    // Keep ceilFn for backward compat (uses W ceiling)
+    const ceilFn = ceilFnW
+    const ceilN = typeof ceilW === 'number' ? ceilW : 6
     const ceil3 = (x) => Math.ceil(x / 3) * 3
-    const area_sqft_pc = (ceilFn(w_inch) * ceilFn(h_inch)) / 144
+    const area_sqft_pc = (ceilFnW(w_inch) * ceilFnH(h_inch)) / 144
     const total_sqft = area_sqft_pc * qty
     const running_ft = (w_inch + h_inch) * 2 * qty / 12
-    const charged_w_inch = parseFloat(ceilFn(w_inch).toFixed(4))
-    const charged_h_inch = parseFloat(ceilFn(h_inch).toFixed(4))
+    const charged_w_inch = parseFloat(ceilFnW(w_inch).toFixed(4))
+    const charged_h_inch = parseFloat(ceilFnH(h_inch).toFixed(4))
     const charged_sqft = (charged_w_inch * charged_h_inch * qty) / 144
     const getCepMultiplier = () => {
       if (group.cep_rft_multiplier) return group.cep_rft_multiplier
@@ -526,30 +554,30 @@ const QuotationForm = () => {
     else effective_qty = qty
 
     const sqft_amt = effective_qty * (group.rate || 0)
-    const rft_amt  = running_ft * (group.rate_rft || 0)
-    let subtotal   = (sqft_amt + rft_amt) * (1 - (group.discount_pct||0) / 100)
-    subtotal       = parseFloat((subtotal + cep_charges).toFixed(2))
+    const rft_amt = running_ft * (group.rate_rft || 0)
+    let subtotal = (sqft_amt + rft_amt) * (1 - (group.discount_pct || 0) / 100)
+    subtotal = parseFloat((subtotal + cep_charges).toFixed(2))
 
-    // Auto-add toughening cost when glass_type = Toughened
-    // Toughening rate comes from process masters (toughening type)
-    // Formula: tgh_sqmt × toughening_rate
-    if (group.glass_type === 'Toughened') {
-      try {
-        const pm = JSON.parse(
-          localStorage.getItem('process_masters') || '[]'
-        )
-        const toughProc = pm.find(p =>
-          p.process_type === 'toughening' &&
-          p.is_active !== false
-        )
-        if (toughProc && toughProc.rate > 0) {
-          // tgh_sqmt already calculated above
-          const tgh_cost = parseFloat(
-            (tgh_sqmt * toughProc.rate).toFixed(2)
+    // Toughening charge — auto-fill from process masters but user-editable
+    let tgh_charge = size.tgh_charge ?? 0
+
+    if (group.glass_type === 'Toughened' || group.is_toughened) {
+      // Only auto-calculate if user hasn't manually set it
+      if (!size._tgh_charge_manual) {
+        try {
+          const pm = JSON.parse(
+            localStorage.getItem('process_masters') || '[]'
           )
-          subtotal = parseFloat((subtotal + tgh_cost).toFixed(2))
-        }
-      } catch {}
+          const toughProc = pm.find(p =>
+            p.process_type === 'toughening' &&
+            p.is_active !== false
+          )
+          if (toughProc && toughProc.rate > 0) {
+            tgh_charge = parseFloat((tgh_sqmt * toughProc.rate).toFixed(2))
+          }
+        } catch { }
+      }
+      subtotal = parseFloat((subtotal + tgh_charge).toFixed(2))
     }
     const tax_amt = parseFloat((subtotal * (group.tax_rate || 18) / 100).toFixed(2))
     const line_total = parseFloat((subtotal + tax_amt).toFixed(2))
@@ -565,6 +593,7 @@ const QuotationForm = () => {
       cep_rft: parseFloat(cep_rft.toFixed(4)),
       cep_charges,
       tgh_sqmt: parseFloat(tgh_sqmt.toFixed(6)),
+      tgh_charge: parseFloat(tgh_charge.toFixed(2)),
       effective_qty: parseFloat(effective_qty.toFixed(4)),
       subtotal, tax_amount: tax_amt, line_total
     }
@@ -596,6 +625,9 @@ const QuotationForm = () => {
       }
 
       if (field === 'ceiling_inches') {
+        updated.sizes = g.sizes.map(s => calcGroupSize(updated, s))
+      }
+      if (field === 'ceiling_w_inches' || field === 'ceiling_h_inches') {
         updated.sizes = g.sizes.map(s => calcGroupSize(updated, s))
       }
 
@@ -799,15 +831,15 @@ const QuotationForm = () => {
                   .find(x => x.id === value)
                 if (pm) {
                   updated.charge_type = pm.charge_type
-                  updated.rate        = pm.rate
-                  updated.qty_area    = 0
-                  updated.amount      = 0
+                  updated.rate = pm.rate
+                  updated.qty_area = 0
+                  updated.amount = 0
                 }
               }
               if (field === 'qty_area' || field === 'rate') {
                 updated.amount = parseFloat(
                   ((updated.qty_area || 0) * (updated.rate || 0))
-                  .toFixed(2)
+                    .toFixed(2)
                 )
               }
               return updated
@@ -863,13 +895,14 @@ const QuotationForm = () => {
   }
 
   const dcCharges = Form.useWatch('dc_charges', form) || 0
+  const dcCost = Form.useWatch('dc_cost', form) || 0
   const discountAmt = Form.useWatch('discount_amount', form) || 0
   const advanceRec = Form.useWatch('advance_received', form) || 0
 
   const totals = useMemo(() => {
     const allSizes = groups.flatMap(g => g.sizes)
     const allGroupProcesses = groups.flatMap(g => g.processes || [])
-    const allSizeProcesses  = groups.flatMap(g =>
+    const allSizeProcesses = groups.flatMap(g =>
       g.sizes.flatMap(s => s.size_processes || [])
     )
     const allProcesses = [...allGroupProcesses, ...allSizeProcesses]
@@ -878,14 +911,18 @@ const QuotationForm = () => {
     const procTotal = allProcesses.reduce((s, p) => s + (p.amount || 0), 0)
     const hwTotal = hardwareItems.reduce((s, h) => s + (h.amount || 0), 0)
     const lbTotal = laborItems.reduce((s, l) => s + (l.amount || 0), 0)
+    const wstTotal = wastageItems.reduce((s, w) => s + (w.amount || 0), 0)
     const hwCostTotal = hardwareItems.reduce(
       (s, h) => s + (h.cost_amount || (h.qty || 0) * (h.cost_rate || 0)), 0
     )
     const lbCostTotal = laborItems.reduce(
       (s, l) => s + (l.cost_amount || (l.qty || 0) * (l.cost_rate || 0)), 0
     )
+    const wstCostTotal = wastageItems.reduce(
+      (s, w) => s + (w.cost_amount || (w.qty || 0) * (w.cost_rate || 0)), 0
+    )
 
-    const subII = subI + procTotal + hwTotal + lbTotal + (dcCharges || 0)
+    const subII = subI + procTotal + hwTotal + lbTotal + wstTotal + (dcCharges || 0)
     const subIII = Math.max(0, subII - (discountAmt || 0))
 
     let cgst = 0, sgst = 0, igst = 0
@@ -909,31 +946,31 @@ const QuotationForm = () => {
           const matrix = JSON.parse(localStorage.getItem('glass_rate_matrix') || '{}')
           const costRate = matrix?.cost_rates?.[g.glass_category]
           if (costRate) costPerSqft = parseFloat((parseFloat(g.glass_thickness) * costRate / 10.764).toFixed(2))
-        } catch {}
+        } catch { }
       }
       if (!costPerSqft && g.rate > 0) costPerSqft = parseFloat((g.rate * 0.70).toFixed(2))
       g.sizes.forEach(s => {
         glassCost += (s.total_sqft || 0) * costPerSqft
       })
-      ;(g.processes || []).forEach(p => {
-        glassCost += (p.amount || 0) * 0.7
-      })
+        ; (g.processes || []).forEach(p => {
+          glassCost += (p.amount || 0) * 0.7
+        })
     })
 
-    const totalCost = glassCost + hwCostTotal + lbCostTotal
+    const totalCost = glassCost + hwCostTotal + lbCostTotal + wstCostTotal + dcCost
     // True selling = grandTotal (includes GST)
     const trueSelling = grandTotal
     const marginAmt = trueSelling - totalCost
     const marginPct = totalCost > 0 ? (marginAmt / totalCost) * 100 : 100
 
     return {
-      subI, procTotal, hwTotal, lbTotal, dcCharges, subII,
+      subI, procTotal, hwTotal, lbTotal, wstTotal, dcCharges, dcCost, subII,
       discountAmt, subIII, cgst, sgst, igst,
       grandTotal, advanceRec, balance,
       totalCost, glassCost, marginAmt, marginPct,
-      hwCostTotal, lbCostTotal
+      hwCostTotal, lbCostTotal, wstCostTotal
     }
-  }, [groups, hardwareItems, laborItems, dcCharges, discountAmt, advanceRec, gstMode, products])
+  }, [groups, hardwareItems, laborItems, wastageItems, dcCharges, dcCost, discountAmt, advanceRec, gstMode, products])
 
   const saveMutation = useMutation({
     mutationFn: (data) => isEdit ? quotationApi.update(id, data) : quotationApi.create(data),
@@ -953,6 +990,8 @@ const QuotationForm = () => {
         glass_type: g.glass_type,
         glass_category: g.glass_category,
         ceiling_inches: g.ceiling_inches,
+        ceiling_w_inches: g.ceiling_w_inches ?? g.ceiling_inches ?? 6,
+        ceiling_h_inches: g.ceiling_h_inches ?? g.ceiling_inches ?? 6,
         is_toughened: g.is_toughened,
         product_id: g.product_id,
         description: g.description,
@@ -981,6 +1020,7 @@ const QuotationForm = () => {
         cep_rft: s.cep_rft,
         cep_charges: s.cep_charges,
         tgh_sqmt: s.tgh_sqmt,
+        tgh_charge: s.tgh_charge || 0,
         subtotal: s.subtotal,
         tax_amount: s.tax_amount,
         line_total: s.line_total,
@@ -1030,6 +1070,8 @@ const QuotationForm = () => {
         processes: [],
         hardware_items: hardwareItems,
         labor_items: laborItems,
+        wastage_items: wastageItems,
+        dc_cost: form.getFieldValue('dc_cost') || 0,
         totals: totals,
         quotation_id: parseInt(id),
         subtotal: totals.subIII,
@@ -1077,6 +1119,8 @@ const QuotationForm = () => {
       values.is_inter_state = gstMode === 'igst'
       values.hardware_items = hardwareItems
       values.labor_items = laborItems
+      values.wastage_items = wastageItems
+      values.dc_cost = form.getFieldValue('dc_cost') || 0
       values.subtotal = totals.subIII
       values.tax_amount = totals.cgst + totals.sgst + totals.igst
       values.total_amount = totals.grandTotal
@@ -1183,9 +1227,24 @@ const QuotationForm = () => {
       }
     })
 
-    const totalSelling = rows.reduce((s, r) => s + r.selling_amount, 0)
+    const glassSellingTotal = rows.reduce((s, r) => s + r.selling_amount, 0)
     const totalCost = rows.reduce((s, r) => s + r.cost_amount, 0)
     const totalCepCost = rows.reduce((s, r) => s + r.cep_cost, 0)
+
+    // Add hardware, labor, wastage selling
+    const hwSell = hardwareItems.reduce((s, h) => s + (h.amount || 0), 0)
+    const lbSell = laborItems.reduce((s, l) => s + (l.amount || 0), 0)
+    const wstSell = wastageItems.reduce((s, w) => s + (w.amount || 0), 0)
+    const dcSell = parseFloat(dcCharges || 0)
+
+    // subIII = glass + hw + lb + wst + dc - discount
+    const subBeforeGst = glassSellingTotal + hwSell + lbSell + wstSell + dcSell
+    // GST
+    let gstAmt = 0
+    if (gstMode === 'igst') gstAmt = subBeforeGst * 0.18
+    else if (gstMode === 'cgst_sgst') gstAmt = subBeforeGst * 0.18
+    const totalSelling = parseFloat((subBeforeGst + gstAmt).toFixed(2))
+
     const totalMargin = parseFloat((totalSelling - totalCost).toFixed(2))
     const totalMarginPct = totalCost > 0
       ? parseFloat(((totalMargin / totalCost) * 100).toFixed(2)) : 100
@@ -1197,7 +1256,10 @@ const QuotationForm = () => {
       cep_on: group.cep,
       cep_cost_rate: CEP_COST_RATE,
       rows,
+      glassSellingTotal,
       totalSelling, totalCost, totalCepCost, totalMargin, totalMarginPct,
+      hwSell, lbSell, wstSell, dcSell, gstAmt,
+      group_key: group.group_key,
     })
   }
 
@@ -1220,40 +1282,40 @@ const QuotationForm = () => {
           if (costRate) costPerSqft = parseFloat(
             (parseFloat(group.glass_thickness) * costRate / 10.764).toFixed(2)
           )
-        } catch {}
+        } catch { }
       }
       if (!costPerSqft && group.rate > 0)
         costPerSqft = parseFloat((group.rate * 0.70).toFixed(2))
 
       group.sizes?.forEach((s, si) => {
-        const w   = s.width_inch  || 0
-        const h   = s.height_inch || 0
-        const qty = s.quantity    || 1
+        const w = s.width_inch || 0
+        const h = s.height_inch || 0
+        const qty = s.quantity || 1
         const ceil3 = x => Math.ceil(x / 3) * 3
-        const charged_sqft   = (ceil3(w) * ceil3(h) * qty) / 144
-        const glass_cost     = parseFloat((charged_sqft * costPerSqft).toFixed(2))
-        const actual_rft     = parseFloat(((w+h)*2/12*qty).toFixed(4))
-        const cep_cost       = group.cep
+        const charged_sqft = (ceil3(w) * ceil3(h) * qty) / 144
+        const glass_cost = parseFloat((charged_sqft * costPerSqft).toFixed(2))
+        const actual_rft = parseFloat(((w + h) * 2 / 12 * qty).toFixed(4))
+        const cep_cost = group.cep
           ? parseFloat((actual_rft * CEP_COST_RATE).toFixed(2)) : 0
-        const cost_amount    = parseFloat((glass_cost + cep_cost).toFixed(2))
+        const cost_amount = parseFloat((glass_cost + cep_cost).toFixed(2))
         const selling_amount = s.subtotal || 0
-        const margin_amount  = parseFloat((selling_amount - cost_amount).toFixed(2))
-        const margin_pct     = cost_amount > 0
-          ? parseFloat(((margin_amount/cost_amount)*100).toFixed(2)) : 100
+        const margin_amount = parseFloat((selling_amount - cost_amount).toFixed(2))
+        const margin_pct = cost_amount > 0
+          ? parseFloat(((margin_amount / cost_amount) * 100).toFixed(2)) : 100
 
         allRows.push({
-          key:            rowIndex++,
+          key: rowIndex++,
           is_first_in_group: si === 0,
-          group_no:       gi + 1,
-          group_name:     group.description || `Group ${gi+1}`,
-          size_label:     String.fromCharCode(97 + si),
-          width_display:  unit === 'inch' ? `${toFraction(w)}"` : `${(w * 25.4).toFixed(1)}mm`,
+          group_no: gi + 1,
+          group_name: group.description || `Group ${gi + 1}`,
+          size_label: String.fromCharCode(97 + si),
+          width_display: unit === 'inch' ? `${toFraction(w)}"` : `${(w * 25.4).toFixed(1)}mm`,
           height_display: unit === 'inch' ? `${toFraction(h)}"` : `${(h * 25.4).toFixed(1)}mm`,
-          quantity:       qty,
-          selling_rate:   group.rate,
-          cost_per_sqft:  costPerSqft,
-          selling_sqft:   (s.total_sqft || 0).toFixed(3),
-          charged_sqft:   charged_sqft.toFixed(3),
+          quantity: qty,
+          selling_rate: group.rate,
+          cost_per_sqft: costPerSqft,
+          selling_sqft: (s.total_sqft || 0).toFixed(3),
+          charged_sqft: charged_sqft.toFixed(3),
           glass_cost,
           cep_cost,
           selling_amount,
@@ -1265,27 +1327,30 @@ const QuotationForm = () => {
       })
     })
 
-    const glassSellingTotal = allRows.reduce((s,r) => s + r.selling_amount, 0)
-    const glassCostTotal    = allRows.reduce((s,r) => s + r.cost_amount,    0)
-    // Include hardware and labor
-    const hwSell = hardwareItems.reduce((s,h) => s + (h.amount||0), 0)
-    const hwCost = hardwareItems.reduce((s,h) => s + (h.cost_amount||(h.qty||0)*(h.cost_rate||0)), 0)
-    const lbSell = laborItems.reduce((s,l) => s + (l.amount||0), 0)
-    const lbCost = laborItems.reduce((s,l) => s + (l.cost_amount||(l.qty||0)*(l.cost_rate||0)), 0)
-    const subBeforeGst = glassSellingTotal + hwSell + lbSell
+    const glassSellingTotal = allRows.reduce((s, r) => s + r.selling_amount, 0)
+    const glassCostTotal = allRows.reduce((s, r) => s + r.cost_amount, 0)
+    // Include hardware, labor, wastage, and DC
+    const hwSell = hardwareItems.reduce((s, h) => s + (h.amount || 0), 0)
+    const hwCost = hardwareItems.reduce((s, h) => s + (h.cost_amount || (h.qty || 0) * (h.cost_rate || 0)), 0)
+    const lbSell = laborItems.reduce((s, l) => s + (l.amount || 0), 0)
+    const lbCost = laborItems.reduce((s, l) => s + (l.cost_amount || (l.qty || 0) * (l.cost_rate || 0)), 0)
+    const wstSell = wastageItems.reduce((s, w) => s + (w.amount || 0), 0)
+    const wstCost = wastageItems.reduce((s, w) => s + (w.cost_amount || (w.qty || 0) * (w.cost_rate || 0)), 0)
+    const dcSell = parseFloat(dcCharges || 0)
+    const subBeforeGst = glassSellingTotal + hwSell + lbSell + wstSell + dcSell
     // Add GST
     let gstAmt = 0
     if (gstMode === 'igst') gstAmt = subBeforeGst * 0.18
     else if (gstMode === 'cgst_sgst') gstAmt = subBeforeGst * 0.18
     const totalSelling = parseFloat((subBeforeGst + gstAmt).toFixed(2))
-    const totalCost = parseFloat((glassCostTotal + hwCost + lbCost).toFixed(2))
+    const totalCost = parseFloat((glassCostTotal + hwCost + lbCost + wstCost + dcCost).toFixed(2))
     const totalMargin = parseFloat((totalSelling - totalCost).toFixed(2))
     const totalMarginPct = totalCost > 0
-      ? parseFloat(((totalMargin/totalCost)*100).toFixed(2)) : 100
+      ? parseFloat(((totalMargin / totalCost) * 100).toFixed(2)) : 100
 
     setGlobalComparison({
       allRows, totalSelling, totalCost, totalMargin, totalMarginPct,
-      glassSellingTotal, glassCostTotal, hwSell, hwCost, lbSell, lbCost, gstAmt
+      glassSellingTotal, glassCostTotal, hwSell, hwCost, lbSell, lbCost, wstSell, wstCost, dcSell, dcCost, gstAmt
     })
   }
 
@@ -1646,7 +1711,7 @@ const QuotationForm = () => {
                           localStorage.setItem('glass_dropdown_config', JSON.stringify({ ...cfg, thicknesses: updated }))
                           message.success(`${num}mm added!`)
                         }
-                      } catch {}
+                      } catch { }
                       updateGroup(group.group_key, 'glass_thickness', num)
                       setCustomSearchVal(prev => ({ ...prev, [`${group.group_key}_thickness`]: '' }))
                       return
@@ -1669,15 +1734,15 @@ const QuotationForm = () => {
                         const cfg = JSON.parse(
                           localStorage.getItem('glass_dropdown_config') || '{}'
                         )
-                        const existing = cfg.thicknesses || [3.5,4,5,6,8,10,12]
+                        const existing = cfg.thicknesses || [3.5, 4, 5, 6, 8, 10, 12]
                         if (!existing.includes(num)) {
-                          const updated = [...existing, num].sort((a,b)=>a-b)
+                          const updated = [...existing, num].sort((a, b) => a - b)
                           localStorage.setItem('glass_dropdown_config',
                             JSON.stringify({ ...cfg, thicknesses: updated })
                           )
                           message.success(`${num}mm added!`)
                         }
-                      } catch {}
+                      } catch { }
                       updateGroup(group.group_key, 'glass_thickness', num)
                     }
                   }}
@@ -1716,7 +1781,7 @@ const QuotationForm = () => {
                           localStorage.setItem('glass_dropdown_config', JSON.stringify({ ...cfg, glass_types: [...existing, raw] }))
                           message.success(`"${raw}" added to types!`)
                         }
-                      } catch {}
+                      } catch { }
                       updateGroup(group.group_key, 'glass_type', raw)
                       setCustomSearchVal(prev => ({ ...prev, [`${group.group_key}_type`]: '' }))
                       return
@@ -1734,7 +1799,7 @@ const QuotationForm = () => {
                           localStorage.setItem('glass_dropdown_config', JSON.stringify({ ...cfg, glass_types: [...existing, val] }))
                           message.success(`"${val}" added to types!`)
                         }
-                      } catch {}
+                      } catch { }
                       updateGroup(group.group_key, 'glass_type', val)
                     }
                   }}
@@ -1773,7 +1838,7 @@ const QuotationForm = () => {
                           localStorage.setItem('glass_dropdown_config', JSON.stringify({ ...cfg, categories: [...existing, raw] }))
                           message.success(`"${raw}" added to categories!`)
                         }
-                      } catch {}
+                      } catch { }
                       updateGroup(group.group_key, 'glass_category', raw)
                       setCustomSearchVal(prev => ({ ...prev, [`${group.group_key}_category`]: '' }))
                       return
@@ -1791,7 +1856,7 @@ const QuotationForm = () => {
                           localStorage.setItem('glass_dropdown_config', JSON.stringify({ ...cfg, categories: [...existing, val] }))
                           message.success(`"${val}" added to categories!`)
                         }
-                      } catch {}
+                      } catch { }
                       updateGroup(group.group_key, 'glass_category', val)
                     }
                   }}
@@ -1799,10 +1864,12 @@ const QuotationForm = () => {
               </Col>
               <Col flex="auto">
                 <Text style={{ fontSize: 10, color: '#94a3b8', display: 'block', marginBottom: 2 }}>PRODUCT NAME</Text>
-                <div style={{ padding: '3px 8px', background: '#f0fdf4',
+                <div style={{
+                  padding: '3px 8px', background: '#f0fdf4',
                   border: '1px solid #86efac', borderRadius: 6,
                   fontSize: 12, fontWeight: 600, color: '#16a34a',
-                  minHeight: 26, display: 'flex', alignItems: 'center', gap: 4 }}>
+                  minHeight: 26, display: 'flex', alignItems: 'center', gap: 4
+                }}>
                   {group.description ||
                     <Text type="secondary" style={{ fontSize: 11 }}>
                       Auto-generated
@@ -1846,11 +1913,25 @@ const QuotationForm = () => {
                   )}
                 </div>
               </Col>
-              <Col flex="130px">
-                <Text style={{ fontSize: 10, color: '#94a3b8', display: 'block', marginBottom: 2 }}>CEILING</Text>
-                <Select size="small" value={group.ceiling_inches || 6} style={{ width: '100%' }}
+              <Col flex="120px">
+                <Text style={{ fontSize: 10, color: '#94a3b8', display: 'block', marginBottom: 2 }}>W CEILING</Text>
+                <Select
+                  size="small"
+                  value={group.ceiling_w_inches ?? 6}
+                  style={{ width: '100%' }}
                   options={CEILING_OPTIONS}
-                  onChange={val => updateGroup(group.group_key, 'ceiling_inches', val)} />
+                  onChange={val => updateGroup(group.group_key, 'ceiling_w_inches', val)}
+                />
+              </Col>
+              <Col flex="120px">
+                <Text style={{ fontSize: 10, color: '#94a3b8', display: 'block', marginBottom: 2 }}>H CEILING</Text>
+                <Select
+                  size="small"
+                  value={group.ceiling_h_inches ?? 6}
+                  style={{ width: '100%' }}
+                  options={CEILING_OPTIONS}
+                  onChange={val => updateGroup(group.group_key, 'ceiling_h_inches', val)}
+                />
               </Col>
             </Row>
 
@@ -1902,7 +1983,7 @@ const QuotationForm = () => {
                       value={group.cep_polish_rate || 15}
                       style={{ width: 100 }}
                       options={[
-                        { value: 7,  label: '₹7/rft'  },
+                        { value: 7, label: '₹7/rft' },
                         { value: 10, label: '₹10/rft' },
                         { value: 15, label: '₹15/rft' },
                         { value: 'custom', label: 'Custom' },
@@ -2012,7 +2093,7 @@ const QuotationForm = () => {
                             options={processMasters
                               .filter(p =>
                                 ['hole', 'cutout', 'forma', 'farma']
-                                .includes(p.process_type)
+                                  .includes(p.process_type)
                               )
                               .map(p => ({ value: p.id, label: p.name }))
                             }
@@ -2037,10 +2118,10 @@ const QuotationForm = () => {
                             }
                           />
                           <Text type="secondary" style={{ fontSize: 11 }}>
-                            {proc.charge_type === 'per_piece' ? 'pcs'  :
-                             proc.charge_type === 'per_sqft'  ? 'sqft' :
-                             proc.charge_type === 'per_rft'   ? 'rft'  :
-                             proc.charge_type === 'fixed'      ? 'fixed': 'pcs'}
+                            {proc.charge_type === 'per_piece' ? 'pcs' :
+                              proc.charge_type === 'per_sqft' ? 'sqft' :
+                                proc.charge_type === 'per_rft' ? 'rft' :
+                                  proc.charge_type === 'fixed' ? 'fixed' : 'pcs'}
                           </Text>
                           <InputNumber
                             size="small"
@@ -2137,7 +2218,7 @@ const QuotationForm = () => {
               columns={[
                 {
                   title: '#', width: 30,
-                  render: (_,__,i) => (
+                  render: (_, __, i) => (
                     <Text type="secondary" style={{ fontSize: 11 }}>
                       {String.fromCharCode(97 + i)}
                     </Text>
@@ -2250,8 +2331,8 @@ const QuotationForm = () => {
                             if (s.size_key !== row.size_key) return s
                             const sub = parseFloat(
                               ((val || 0) * (g.rate || 0) *
-                               (1 - (g.discount_pct || 0) / 100) +
-                               (s.cep_charges || 0)).toFixed(2)
+                                (1 - (g.discount_pct || 0) / 100) +
+                                (s.cep_charges || 0)).toFixed(2)
                             )
                             return { ...s, total_sqft: val, subtotal: sub }
                           })
@@ -2277,10 +2358,45 @@ const QuotationForm = () => {
                             if (s.size_key !== row.size_key) return s
                             const sub = parseFloat(
                               ((s.total_sqft || 0) * (g.rate || 0) *
-                               (1 - (g.discount_pct || 0) / 100) +
-                               (val || 0)).toFixed(2)
+                                (1 - (g.discount_pct || 0) / 100) +
+                                (val || 0)).toFixed(2)
                             )
                             return { ...s, cep_charges: val, subtotal: sub }
+                          })
+                        }
+                      }))}
+                    />
+                  )
+                }] : []),
+                ...(group.is_toughened || group.glass_type === 'Toughened' ? [{
+                  title: <span>Tgh <Tag color="orange" style={{ fontSize: 9 }}>Charge</Tag></span>,
+                  width: 100, dataIndex: 'tgh_charge',
+                  render: (v, row) => (
+                    <InputNumber
+                      size="small"
+                      value={v ? parseFloat(v.toFixed(2)) : 0}
+                      min={0}
+                      prefix="₹"
+                      style={{ width: '100%', borderColor: '#f97316' }}
+                      onChange={val => setGroups(prev => prev.map(g => {
+                        if (g.group_key !== group.group_key) return g
+                        return {
+                          ...g,
+                          sizes: g.sizes.map(s => {
+                            if (s.size_key !== row.size_key) return s
+                            const updated = {
+                              ...s,
+                              tgh_charge: val || 0,
+                              _tgh_charge_manual: true,
+                            }
+                            // Recalculate subtotal
+                            const baseSub = parseFloat(
+                              ((s.effective_qty || s.total_sqft || 0) * (g.rate || 0) *
+                               (1 - (g.discount_pct || 0) / 100) +
+                               (s.cep_charges || 0)).toFixed(2)
+                            )
+                            updated.subtotal = parseFloat((baseSub + (val || 0)).toFixed(2))
+                            return updated
                           })
                         }
                       }))}
@@ -2476,304 +2592,427 @@ const QuotationForm = () => {
               + Add Labor
             </Button>
           </Col>
+          <Col>
+            <Button
+              type="dashed"
+              icon={<PlusOutlined />}
+              style={{ borderColor: '#ef4444', color: '#ef4444' }}
+              onClick={() => setWastageItems(prev => [
+                ...prev, emptyWastage()
+              ])}
+            >
+              + Add Wastage
+            </Button>
+          </Col>
         </Row>
 
         {hardwareItems.length > 0 && (
           <Card
             title={
-            <Space>
-              <span>🔩 Hardware Items</span>
-              <Text type="secondary" style={{fontSize:11}}>
-                Total: ₹{hardwareItems.reduce((s,h)=>s+(h.amount||0),0).toLocaleString('en-IN',{minimumFractionDigits:2})}
-              </Text>
-            </Space>
-          }
-          size="small"
-          style={{ marginTop: 16, border: '1px solid #e2e8f0' }}
-        >
-          <Table
-            dataSource={hardwareItems}
-            rowKey="hw_key"
+              <Space>
+                <span>🔩 Hardware Items</span>
+                <Text type="secondary" style={{ fontSize: 11 }}>
+                  Total: ₹{hardwareItems.reduce((s, h) => s + (h.amount || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </Text>
+              </Space>
+            }
             size="small"
-            pagination={false}
-            columns={[
-              {
-                title: 'Description', dataIndex: 'description', width: 300,
-                render: (v, row) => (
-                  <Input
-                    size="small"
-                    value={v}
-                    placeholder="Enter hardware description"
-                    onChange={e => setHardwareItems(prev =>
-                      prev.map(h => h.hw_key !== row.hw_key ? h : {
-                        ...h, description: e.target.value
-                      })
-                    )}
-                  />
-                )
-              },
-              {
-                title: 'Qty', dataIndex: 'qty', width: 80,
-                render: (v, row) => (
-                  <InputNumber
-                    size="small" value={v} min={0} style={{width:'100%'}}
-                    onChange={val => setHardwareItems(prev =>
-                      prev.map(h => h.hw_key !== row.hw_key ? h : {
-                        ...h,
-                        qty: val,
-                        amount: parseFloat(((val||0)*(h.rate||0)).toFixed(2)),
-                        cost_amount: parseFloat(((val||0)*(h.cost_rate||0)).toFixed(2)),
-                      })
-                    )}
-                  />
-                )
-              },
-              {
-                title: 'UOM', dataIndex: 'uom', width: 100,
-                render: (v, row) => (
-                  <Select
-                    size="small"
-                    value={v || undefined}
-                    placeholder="UOM"
-                    style={{ width: '100%' }}
-                    allowClear
-                    options={[
-                      { value: 'PCS',  label: 'PCS'  },
-                      { value: 'RFT',  label: 'RFT'  },
-                      { value: 'SQFT', label: 'SQFT' },
-                      { value: 'HRS',  label: 'HRS'  },
-                      { value: 'SQMT', label: 'SQMT' },
-                    ].concat(
-                      (() => {
-                        try {
-                          return JSON.parse(localStorage.getItem('uom_rate_master') || '[]')
-                            .filter(u => !['PCS','RFT','SQFT','HRS','SQMT'].includes(u.uom))
-                            .map(u => ({ value: u.uom, label: u.uom }))
-                        } catch { return [] }
-                      })()
-                    )}
-                    onChange={val => {
-                      const rates = getUomRates(val)
-                      setHardwareItems(prev => prev.map(h =>
-                        h.hw_key !== row.hw_key ? h : {
+            style={{ marginTop: 16, border: '1px solid #e2e8f0' }}
+          >
+            <Table
+              dataSource={hardwareItems}
+              rowKey="hw_key"
+              size="small"
+              pagination={false}
+              columns={[
+                {
+                  title: 'Description', dataIndex: 'description', width: 300,
+                  render: (v, row) => (
+                    <Input
+                      size="small"
+                      value={v}
+                      placeholder="Enter hardware description"
+                      onChange={e => setHardwareItems(prev =>
+                        prev.map(h => h.hw_key !== row.hw_key ? h : {
+                          ...h, description: e.target.value
+                        })
+                      )}
+                    />
+                  )
+                },
+                {
+                  title: 'Qty', dataIndex: 'qty', width: 80,
+                  render: (v, row) => (
+                    <InputNumber
+                      size="small" value={v} min={0} style={{ width: '100%' }}
+                      onChange={val => setHardwareItems(prev =>
+                        prev.map(h => h.hw_key !== row.hw_key ? h : {
                           ...h,
-                          uom: val,
-                          cost_rate: rates.cost_rate,
-                          rate: rates.selling_rate,
-                          cost_amount: parseFloat(((h.qty || 0) * rates.cost_rate).toFixed(2)),
-                          amount: parseFloat(((h.qty || 0) * rates.selling_rate).toFixed(2)),
-                        }
-                      ))
-                    }}
-                  />
-                )
-              },
-              {
-                title: 'Cost Rate',
-                dataIndex: 'cost_rate',
-                width: 120,
-                render: (v, row) => (
-                  <InputNumber
-                    size="small" value={v} min={0} prefix="₹"
-                    style={{ width: '100%', borderColor: '#f59e0b' }}
-                    onChange={val => setHardwareItems(prev =>
-                      prev.map(h => h.hw_key !== row.hw_key ? h : {
-                        ...h,
-                        cost_rate: val,
-                        cost_amount: parseFloat(((h.qty || 0) * (val || 0)).toFixed(2))
-                      })
-                    )}
-                  />
-                )
-              },
-              {
-                title: 'Rate', dataIndex: 'rate', width: 120,
-                render: (v, row) => (
-                  <InputNumber
-                    size="small" value={v} min={0} prefix="₹"
-                    style={{width:'100%'}}
-                    onChange={val => setHardwareItems(prev =>
-                      prev.map(h => h.hw_key !== row.hw_key ? h : {
-                        ...h,
-                        rate: val,
-                        amount: parseFloat(((h.qty||0)*(val||0)).toFixed(2))
-                      })
-                    )}
-                  />
-                )
-              },
-              {
-                title: 'Amount', dataIndex: 'amount', width: 120, align: 'right',
-                render: v => (
-                  <Text strong style={{color:'#059669'}}>
-                    ₹{Number(v||0).toLocaleString('en-IN',{minimumFractionDigits:2})}
-                  </Text>
-                )
-              },
-              {
-                title: '', width: 40,
-                render: (_, row) => (
-                  <Button
-                    size="small" type="text" danger
-                    icon={<DeleteOutlined />}
-                    onClick={() => setHardwareItems(prev =>
-                      prev.filter(h => h.hw_key !== row.hw_key)
-                    )}
-                  />
-                )
-              }
-            ]}
-          />
-        </Card>
+                          qty: val,
+                          amount: parseFloat(((val || 0) * (h.rate || 0)).toFixed(2)),
+                          cost_amount: parseFloat(((val || 0) * (h.cost_rate || 0)).toFixed(2)),
+                        })
+                      )}
+                    />
+                  )
+                },
+                {
+                  title: 'UOM', dataIndex: 'uom', width: 100,
+                  render: (v, row) => (
+                    <Select
+                      size="small"
+                      value={v || undefined}
+                      placeholder="UOM"
+                      style={{ width: '100%' }}
+                      allowClear
+                      options={[
+                        { value: 'PCS', label: 'PCS' },
+                        { value: 'RFT', label: 'RFT' },
+                        { value: 'SQFT', label: 'SQFT' },
+                        { value: 'HRS', label: 'HRS' },
+                        { value: 'SQMT', label: 'SQMT' },
+                      ].concat(
+                        (() => {
+                          try {
+                            return JSON.parse(localStorage.getItem('uom_rate_master') || '[]')
+                              .filter(u => !['PCS', 'RFT', 'SQFT', 'HRS', 'SQMT'].includes(u.uom))
+                              .map(u => ({ value: u.uom, label: u.uom }))
+                          } catch { return [] }
+                        })()
+                      )}
+                      onChange={val => {
+                        const rates = getUomRates(val)
+                        setHardwareItems(prev => prev.map(h =>
+                          h.hw_key !== row.hw_key ? h : {
+                            ...h,
+                            uom: val,
+                            cost_rate: rates.cost_rate,
+                            rate: rates.selling_rate,
+                            cost_amount: parseFloat(((h.qty || 0) * rates.cost_rate).toFixed(2)),
+                            amount: parseFloat(((h.qty || 0) * rates.selling_rate).toFixed(2)),
+                          }
+                        ))
+                      }}
+                    />
+                  )
+                },
+                {
+                  title: 'Cost Rate',
+                  dataIndex: 'cost_rate',
+                  width: 120,
+                  render: (v, row) => (
+                    <InputNumber
+                      size="small" value={v} min={0} prefix="₹"
+                      style={{ width: '100%', borderColor: '#f59e0b' }}
+                      onChange={val => setHardwareItems(prev =>
+                        prev.map(h => h.hw_key !== row.hw_key ? h : {
+                          ...h,
+                          cost_rate: val,
+                          cost_amount: parseFloat(((h.qty || 0) * (val || 0)).toFixed(2))
+                        })
+                      )}
+                    />
+                  )
+                },
+                {
+                  title: 'Rate', dataIndex: 'rate', width: 120,
+                  render: (v, row) => (
+                    <InputNumber
+                      size="small" value={v} min={0} prefix="₹"
+                      style={{ width: '100%' }}
+                      onChange={val => setHardwareItems(prev =>
+                        prev.map(h => h.hw_key !== row.hw_key ? h : {
+                          ...h,
+                          rate: val,
+                          amount: parseFloat(((h.qty || 0) * (val || 0)).toFixed(2))
+                        })
+                      )}
+                    />
+                  )
+                },
+                {
+                  title: 'Amount', dataIndex: 'amount', width: 120, align: 'right',
+                  render: v => (
+                    <Text strong style={{ color: '#059669' }}>
+                      ₹{Number(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </Text>
+                  )
+                },
+                {
+                  title: '', width: 40,
+                  render: (_, row) => (
+                    <Button
+                      size="small" type="text" danger
+                      icon={<DeleteOutlined />}
+                      onClick={() => setHardwareItems(prev =>
+                        prev.filter(h => h.hw_key !== row.hw_key)
+                      )}
+                    />
+                  )
+                }
+              ]}
+            />
+          </Card>
         )}
 
         {laborItems.length > 0 && (
           <Card
             title={
-            <Space>
-              <span>👷 Labor Charges</span>
-              <Text type="secondary" style={{fontSize:11}}>
-                Total: ₹{laborItems.reduce((s,l)=>s+(l.amount||0),0).toLocaleString('en-IN',{minimumFractionDigits:2})}
-              </Text>
-            </Space>
-          }
-          size="small"
-          style={{ marginTop: 16, border: '1px solid #e2e8f0' }}
-        >
-          <Table
-            dataSource={laborItems}
-            rowKey="lb_key"
+              <Space>
+                <span>👷 Labor Charges</span>
+                <Text type="secondary" style={{ fontSize: 11 }}>
+                  Total: ₹{laborItems.reduce((s, l) => s + (l.amount || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </Text>
+              </Space>
+            }
             size="small"
-            pagination={false}
-            columns={[
-              {
-                title: 'Description', dataIndex: 'description', width: 300,
-                render: (v, row) => (
-                  <Input
-                    size="small"
-                    value={v}
-                    placeholder="Enter labor description"
-                    onChange={e => setLaborItems(prev =>
-                      prev.map(l => l.lb_key !== row.lb_key ? l : {
-                        ...l, description: e.target.value
-                      })
-                    )}
-                  />
-                )
-              },
-              {
-                title: 'Qty', dataIndex: 'qty', width: 80,
-                render: (v, row) => (
-                  <InputNumber
-                    size="small" value={v} min={0} style={{width:'100%'}}
-                    onChange={val => setLaborItems(prev =>
-                      prev.map(l => l.lb_key !== row.lb_key ? l : {
-                        ...l,
-                        qty: val,
-                        amount: parseFloat(((val||0)*(l.rate||0)).toFixed(2)),
-                        cost_amount: parseFloat(((val||0)*(l.cost_rate||0)).toFixed(2)),
-                      })
-                    )}
-                  />
-                )
-              },
-              {
-                title: 'UOM', dataIndex: 'uom', width: 100,
-                render: (v, row) => (
-                  <Select
-                    size="small"
-                    value={v || undefined}
-                    placeholder="UOM"
-                    style={{ width: '100%' }}
-                    allowClear
-                    options={[
-                      { value: 'PCS',  label: 'PCS'  },
-                      { value: 'RFT',  label: 'RFT'  },
-                      { value: 'SQFT', label: 'SQFT' },
-                      { value: 'HRS',  label: 'HRS'  },
-                      { value: 'SQMT', label: 'SQMT' },
-                    ].concat(
-                      (() => {
-                        try {
-                          return JSON.parse(localStorage.getItem('uom_rate_master') || '[]')
-                            .filter(u => !['PCS','RFT','SQFT','HRS','SQMT'].includes(u.uom))
-                            .map(u => ({ value: u.uom, label: u.uom }))
-                        } catch { return [] }
-                      })()
-                    )}
-                    onChange={val => {
-                      const rates = getUomRates(val)
-                      setLaborItems(prev => prev.map(l =>
-                        l.lb_key !== row.lb_key ? l : {
+            style={{ marginTop: 16, border: '1px solid #e2e8f0' }}
+          >
+            <Table
+              dataSource={laborItems}
+              rowKey="lb_key"
+              size="small"
+              pagination={false}
+              columns={[
+                {
+                  title: 'Description', dataIndex: 'description', width: 300,
+                  render: (v, row) => (
+                    <Input
+                      size="small"
+                      value={v}
+                      placeholder="Enter labor description"
+                      onChange={e => setLaborItems(prev =>
+                        prev.map(l => l.lb_key !== row.lb_key ? l : {
+                          ...l, description: e.target.value
+                        })
+                      )}
+                    />
+                  )
+                },
+                {
+                  title: 'Qty', dataIndex: 'qty', width: 80,
+                  render: (v, row) => (
+                    <InputNumber
+                      size="small" value={v} min={0} style={{ width: '100%' }}
+                      onChange={val => setLaborItems(prev =>
+                        prev.map(l => l.lb_key !== row.lb_key ? l : {
                           ...l,
-                          uom: val,
-                          cost_rate: rates.cost_rate,
-                          rate: rates.selling_rate,
-                          cost_amount: parseFloat(((l.qty || 0) * rates.cost_rate).toFixed(2)),
-                          amount: parseFloat(((l.qty || 0) * rates.selling_rate).toFixed(2)),
-                        }
-                      ))
-                    }}
-                  />
-                )
-              },
-              {
-                title: 'Cost Rate',
-                dataIndex: 'cost_rate',
-                width: 120,
-                render: (v, row) => (
-                  <InputNumber
-                    size="small" value={v} min={0} prefix="₹"
-                    style={{ width: '100%', borderColor: '#f59e0b' }}
-                    onChange={val => setLaborItems(prev =>
-                      prev.map(l => l.lb_key !== row.lb_key ? l : {
-                        ...l,
-                        cost_rate: val,
-                        cost_amount: parseFloat(((l.qty || 0) * (val || 0)).toFixed(2))
-                      })
-                    )}
-                  />
-                )
-              },
-              {
-                title: 'Rate', dataIndex: 'rate', width: 120,
-                render: (v, row) => (
-                  <InputNumber
-                    size="small" value={v} min={0} prefix="₹"
-                    style={{width:'100%'}}
-                    onChange={val => setLaborItems(prev =>
-                      prev.map(l => l.lb_key !== row.lb_key ? l : {
-                        ...l,
-                        rate: val,
-                        amount: parseFloat(((l.qty||0)*(val||0)).toFixed(2))
-                      })
-                    )}
-                  />
-                )
-              },
-              {
-                title: 'Amount', dataIndex: 'amount', width: 120, align: 'right',
-                render: v => (
-                  <Text strong style={{color:'#059669'}}>
-                    ₹{Number(v||0).toLocaleString('en-IN',{minimumFractionDigits:2})}
-                  </Text>
-                )
-              },
-              {
-                title: '', width: 40,
-                render: (_, row) => (
-                  <Button
-                    size="small" type="text" danger
-                    icon={<DeleteOutlined />}
-                    onClick={() => setLaborItems(prev =>
-                      prev.filter(l => l.lb_key !== row.lb_key)
-                    )}
-                  />
-                )
-              }
-            ]}
-          />
-        </Card>
+                          qty: val,
+                          amount: parseFloat(((val || 0) * (l.rate || 0)).toFixed(2)),
+                          cost_amount: parseFloat(((val || 0) * (l.cost_rate || 0)).toFixed(2)),
+                        })
+                      )}
+                    />
+                  )
+                },
+                {
+                  title: 'UOM', dataIndex: 'uom', width: 100,
+                  render: (v, row) => (
+                    <Select
+                      size="small"
+                      value={v || undefined}
+                      placeholder="UOM"
+                      style={{ width: '100%' }}
+                      allowClear
+                      options={[
+                        { value: 'PCS', label: 'PCS' },
+                        { value: 'RFT', label: 'RFT' },
+                        { value: 'SQFT', label: 'SQFT' },
+                        { value: 'HRS', label: 'HRS' },
+                        { value: 'SQMT', label: 'SQMT' },
+                      ].concat(
+                        (() => {
+                          try {
+                            return JSON.parse(localStorage.getItem('uom_rate_master') || '[]')
+                              .filter(u => !['PCS', 'RFT', 'SQFT', 'HRS', 'SQMT'].includes(u.uom))
+                              .map(u => ({ value: u.uom, label: u.uom }))
+                          } catch { return [] }
+                        })()
+                      )}
+                      onChange={val => {
+                        const rates = getUomRates(val)
+                        setLaborItems(prev => prev.map(l =>
+                          l.lb_key !== row.lb_key ? l : {
+                            ...l,
+                            uom: val,
+                            cost_rate: rates.cost_rate,
+                            rate: rates.selling_rate,
+                            cost_amount: parseFloat(((l.qty || 0) * rates.cost_rate).toFixed(2)),
+                            amount: parseFloat(((l.qty || 0) * rates.selling_rate).toFixed(2)),
+                          }
+                        ))
+                      }}
+                    />
+                  )
+                },
+                {
+                  title: 'Cost Rate',
+                  dataIndex: 'cost_rate',
+                  width: 120,
+                  render: (v, row) => (
+                    <InputNumber
+                      size="small" value={v} min={0} prefix="₹"
+                      style={{ width: '100%', borderColor: '#f59e0b' }}
+                      onChange={val => setLaborItems(prev =>
+                        prev.map(l => l.lb_key !== row.lb_key ? l : {
+                          ...l,
+                          cost_rate: val,
+                          cost_amount: parseFloat(((l.qty || 0) * (val || 0)).toFixed(2))
+                        })
+                      )}
+                    />
+                  )
+                },
+                {
+                  title: 'Rate', dataIndex: 'rate', width: 120,
+                  render: (v, row) => (
+                    <InputNumber
+                      size="small" value={v} min={0} prefix="₹"
+                      style={{ width: '100%' }}
+                      onChange={val => setLaborItems(prev =>
+                        prev.map(l => l.lb_key !== row.lb_key ? l : {
+                          ...l,
+                          rate: val,
+                          amount: parseFloat(((l.qty || 0) * (val || 0)).toFixed(2))
+                        })
+                      )}
+                    />
+                  )
+                },
+                {
+                  title: 'Amount', dataIndex: 'amount', width: 120, align: 'right',
+                  render: v => (
+                    <Text strong style={{ color: '#059669' }}>
+                      ₹{Number(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </Text>
+                  )
+                },
+                {
+                  title: '', width: 40,
+                  render: (_, row) => (
+                    <Button
+                      size="small" type="text" danger
+                      icon={<DeleteOutlined />}
+                      onClick={() => setLaborItems(prev =>
+                        prev.filter(l => l.lb_key !== row.lb_key)
+                      )}
+                    />
+                  )
+                }
+              ]}
+            />
+          </Card>
+        )}
+
+        {wastageItems.length > 0 && (
+          <Card
+            title={
+              <Space>
+                <span>🗑️ Wastage</span>
+                <Text type="secondary" style={{ fontSize: 11 }}>
+                  Total: ₹{wastageItems.reduce((s, w) => s + (w.amount || 0), 0)
+                    .toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </Text>
+              </Space>
+            }
+            size="small"
+            style={{ marginTop: 16, border: '1px solid #fecaca' }}
+          >
+            <Table
+              dataSource={wastageItems}
+              rowKey="wst_key"
+              size="small"
+              pagination={false}
+              columns={[
+                {
+                  title: 'Description', dataIndex: 'description', width: 300,
+                  render: (v, row) => (
+                    <Input
+                      size="small"
+                      value={v}
+                      placeholder="Enter wastage description"
+                      onChange={e => setWastageItems(prev =>
+                        prev.map(w => w.wst_key !== row.wst_key ? w : {
+                          ...w, description: e.target.value
+                        })
+                      )}
+                    />
+                  )
+                },
+                {
+                  title: 'Qty (Sqft)', dataIndex: 'qty', width: 120,
+                  render: (v, row) => (
+                    <InputNumber
+                      size="small" value={v} min={0} addonAfter="sqft"
+                      style={{ width: '100%' }}
+                      onChange={val => setWastageItems(prev =>
+                        prev.map(w => w.wst_key !== row.wst_key ? w : {
+                          ...w,
+                          qty: val,
+                          amount: parseFloat(((val || 0) * (w.rate || 0)).toFixed(2)),
+                          cost_amount: parseFloat(((val || 0) * (w.cost_rate || 0)).toFixed(2)),
+                        })
+                      )}
+                    />
+                  )
+                },
+                {
+                  title: 'Cost Rate', dataIndex: 'cost_rate', width: 130,
+                  render: (v, row) => (
+                    <InputNumber
+                      size="small" value={v} min={0} prefix="₹"
+                      addonAfter="/sqft"
+                      style={{ width: '100%', borderColor: '#f59e0b' }}
+                      onChange={val => setWastageItems(prev =>
+                        prev.map(w => w.wst_key !== row.wst_key ? w : {
+                          ...w,
+                          cost_rate: val,
+                          cost_amount: parseFloat(((w.qty || 0) * (val || 0)).toFixed(2))
+                        })
+                      )}
+                    />
+                  )
+                },
+                {
+                  title: 'Selling Rate', dataIndex: 'rate', width: 130,
+                  render: (v, row) => (
+                    <InputNumber
+                      size="small" value={v} min={0} prefix="₹"
+                      addonAfter="/sqft"
+                      style={{ width: '100%' }}
+                      onChange={val => setWastageItems(prev =>
+                        prev.map(w => w.wst_key !== row.wst_key ? w : {
+                          ...w,
+                          rate: val,
+                          amount: parseFloat(((w.qty || 0) * (val || 0)).toFixed(2))
+                        })
+                      )}
+                    />
+                  )
+                },
+                {
+                  title: 'Amount', dataIndex: 'amount', width: 120, align: 'right',
+                  render: v => (
+                    <Text strong style={{ color: '#dc2626' }}>
+                      ₹{Number(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </Text>
+                  )
+                },
+                {
+                  title: '', width: 40,
+                  render: (_, row) => (
+                    <Button
+                      size="small" type="text" danger
+                      icon={<DeleteOutlined />}
+                      onClick={() => setWastageItems(prev =>
+                        prev.filter(w => w.wst_key !== row.wst_key)
+                      )}
+                    />
+                  )
+                }
+              ]}
+            />
+          </Card>
         )}
 
         <Row gutter={24} style={{ marginTop: 24 }}>
@@ -2785,24 +3024,24 @@ const QuotationForm = () => {
 
             <Collapse style={{ marginTop: 16 }}>
               {groups.map((group, gi) => {
-                const groupSubtotal = group.sizes.reduce((s,x)=>s+(x.subtotal||0),0)
+                const groupSubtotal = group.sizes.reduce((s, x) => s + (x.subtotal || 0), 0)
                 const prod = products.find(p => p.id === group.product_id)
                 let costPerSqft = 0
                 if (prod?.cost_price) {
                   costPerSqft = prod.cost_price
                 } else if (group.glass_category && group.glass_thickness) {
                   try {
-                    const matrix = JSON.parse(localStorage.getItem('glass_rate_matrix')||'{}')
+                    const matrix = JSON.parse(localStorage.getItem('glass_rate_matrix') || '{}')
                     const costRate = matrix?.cost_rates?.[group.glass_category]
                     if (costRate) costPerSqft = parseFloat(
                       (parseFloat(group.glass_thickness) * costRate / 10.764).toFixed(2)
                     )
-                  } catch {}
+                  } catch { }
                 }
                 if (!costPerSqft && group.rate > 0)
                   costPerSqft = parseFloat((group.rate * 0.70).toFixed(2))
-                const groupSqft  = group.sizes.reduce((s,x)=>s+(x.total_sqft||0),0)
-                const groupCost  = groupSqft * costPerSqft
+                const groupSqft = group.sizes.reduce((s, x) => s + (x.total_sqft || 0), 0)
+                const groupCost = groupSqft * costPerSqft
                 const groupMarginAmt = groupSubtotal - groupCost
                 const groupMarginPct = groupCost > 0
                   ? ((groupMarginAmt / groupCost) * 100).toFixed(2)
@@ -2814,10 +3053,10 @@ const QuotationForm = () => {
                     header={
                       <Space>
                         <LineChartOutlined />
-                        <span>{group.description || `Group ${gi+1}`} — Margin Analysis</span>
+                        <span>{group.description || `Group ${gi + 1}`} — Margin Analysis</span>
                         <Tag color={
                           parseFloat(groupMarginPct) > 20 ? 'green' :
-                          parseFloat(groupMarginPct) > 10 ? 'orange' : 'red'
+                            parseFloat(groupMarginPct) > 10 ? 'orange' : 'red'
                         }>
                           {groupMarginPct}%
                         </Tag>
@@ -2836,14 +3075,14 @@ const QuotationForm = () => {
                       <Col>Selling Price</Col>
                       <Col>{fmt(groupSubtotal)}</Col>
                     </Row>
-                    <Divider style={{margin:'8px 0'}} />
+                    <Divider style={{ margin: '8px 0' }} />
                     <Row justify="space-between">
                       <Col>Margin</Col>
                       <Col>
                         <span style={{
-                          fontWeight:'bold',
-                          color: parseFloat(groupMarginPct)>20?'#16a34a':
-                                 parseFloat(groupMarginPct)>10?'#f59e0b':'#dc2626'
+                          fontWeight: 'bold',
+                          color: parseFloat(groupMarginPct) > 20 ? '#16a34a' :
+                            parseFloat(groupMarginPct) > 10 ? '#f59e0b' : '#dc2626'
                         }}>
                           {fmt(groupMarginAmt)} ({groupMarginPct}%)
                         </span>
@@ -2865,9 +3104,24 @@ const QuotationForm = () => {
               {totals.lbTotal > 0 && (
                 <Row justify="space-between" style={{ marginBottom: 8 }}><Col>Labor</Col><Col>{fmt(totals.lbTotal)}</Col></Row>
               )}
-              <Form.Item name="dc_charges" label="D/C Charges" labelCol={{ span: 12 }} wrapperCol={{ span: 12 }} style={{ marginBottom: 8 }}>
-                <InputNumber style={{ width: '100%' }} prefix="₹" />
-              </Form.Item>
+              {totals.wstTotal > 0 && (
+                <Row justify="space-between" style={{ marginBottom: 8 }}>
+                  <Col><Text style={{ color: '#dc2626' }}>Wastage</Text></Col>
+                  <Col><Text style={{ color: '#dc2626' }}>{fmt(totals.wstTotal)}</Text></Col>
+                </Row>
+              )}
+              <Row justify="space-between" align="middle" style={{ marginBottom: 8 }}>
+                <Col span={12}>
+                  <Form.Item name="dc_charges" label="D/C Charges (Selling)" labelCol={{ span: 14 }} wrapperCol={{ span: 10 }} style={{ marginBottom: 0 }}>
+                    <InputNumber style={{ width: '100%' }} prefix="₹" />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item name="dc_cost" label="D/C Cost" labelCol={{ span: 10 }} wrapperCol={{ span: 14 }} style={{ marginBottom: 0 }}>
+                    <InputNumber style={{ width: '100%' }} prefix="₹" />
+                  </Form.Item>
+                </Col>
+              </Row>
               <Row justify="space-between" style={{ marginBottom: 8, fontWeight: 600 }}><Col>Sub-total II</Col><Col>{fmt(totals.subII)}</Col></Row>
               <Form.Item name="discount_amount" label="Discount" labelCol={{ span: 12 }} wrapperCol={{ span: 12 }} style={{ marginBottom: 8 }}>
                 <InputNumber style={{ width: '100%' }} prefix="₹" />
@@ -2924,19 +3178,29 @@ const QuotationForm = () => {
         onCancel={() => { setCompWizard(null); setWizardCostPrice(null) }}
         footer={
           <Space>
-            <Button
-              type="primary"
-              style={{ background: '#6366f1', borderColor: '#6366f1' }}
-              onClick={() => {
-                if (wizardCostPrice !== null) {
-                  message.success('Cost price noted for reference.')
-                }
-                setCompWizard(null)
-                setWizardCostPrice(null)
-              }}
-            >
-              Apply & Close
-            </Button>
+            {wizardCostPrice !== null && wizardCostPrice !== compWizard?.cost_price && (
+              <Button
+                type="primary"
+                style={{ background: '#6366f1', borderColor: '#6366f1' }}
+                onClick={() => {
+                  if (compWizard?.group_key && wizardCostPrice > 0) {
+                    const currentMarginPct = compWizard.totalMarginPct || 20
+                    const newRate = parseFloat(
+                      (wizardCostPrice / (1 - currentMarginPct / 100)).toFixed(2)
+                    )
+                    updateGroup(compWizard.group_key, 'custom_costing', true)
+                    updateGroup(compWizard.group_key, 'rate', newRate)
+                    message.success(
+                      `Rate updated to ₹${newRate}/sqft based on cost ₹${wizardCostPrice}/sqft`
+                    )
+                  }
+                  setCompWizard(null)
+                  setWizardCostPrice(null)
+                }}
+              >
+                💾 Apply New Rate
+              </Button>
+            )}
             <Button onClick={() => { setCompWizard(null); setWizardCostPrice(null) }}>
               Close
             </Button>
@@ -3078,9 +3342,40 @@ const QuotationForm = () => {
                     cost_amount: l.cost_amount || (l.qty || 0) * (l.cost_rate || 0),
                     selling_amount: l.amount || (l.qty || 0) * (l.rate || 0),
                   })),
+                  ...wastageItems.map(w => ({
+                    key: w.wst_key,
+                    type: 'Wastage',
+                    description: w.description || '(No description)',
+                    qty: w.qty || 0,
+                    uom: 'sqft',
+                    cost_rate: w.cost_rate || 0,
+                    selling_rate: w.rate || 0,
+                    cost_amount: w.cost_amount || (w.qty || 0) * (w.cost_rate || 0),
+                    selling_amount: w.amount || (w.qty || 0) * (w.rate || 0),
+                  })),
+                  ...(totals.dcCharges > 0 || totals.dcCost > 0 ? [{
+                    key: 'dc_charges',
+                    type: 'DC',
+                    description: 'Delivery / Transport Charges',
+                    qty: 1,
+                    uom: 'fixed',
+                    cost_rate: totals.dcCost || 0,
+                    selling_rate: totals.dcCharges || 0,
+                    cost_amount: totals.dcCost || 0,
+                    selling_amount: totals.dcCharges || 0,
+                  }] : []),
                 ]}
                 columns={[
-                  { title: 'Type', dataIndex: 'type', width: 100, render: t => <Tag color={t === 'Hardware' ? 'blue' : 'orange'}>{t}</Tag> },
+                  {
+                    title: 'Type', dataIndex: 'type', width: 100, render: t => (
+                      <Tag color={
+                        t === 'Hardware' ? 'blue' :
+                          t === 'Labor' ? 'orange' :
+                            t === 'Wastage' ? 'red' :
+                              t === 'DC' ? 'purple' : 'default'
+                      }>{t}</Tag>
+                    )
+                  },
                   { title: 'Description', dataIndex: 'description' },
                   { title: 'Qty', dataIndex: 'qty', width: 60, align: 'right' },
                   { title: 'UOM', dataIndex: 'uom', width: 80 },
@@ -3137,11 +3432,13 @@ const QuotationForm = () => {
                   ₹{(
                     compWizard.totalCost +
                     totals.hwCostTotal +
-                    totals.lbCostTotal
+                    totals.lbCostTotal +
+                    totals.wstCostTotal +
+                    totals.dcCost
                   ).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </div>
                 <Text type="secondary" style={{ fontSize: 10 }}>
-                  Glass Cost + Hardware Cost + Labor Cost
+                  Glass + HW + Labor + Wastage + DC
                 </Text>
               </Col>
               <Col span={6}>
@@ -3150,13 +3447,13 @@ const QuotationForm = () => {
                   fontSize: 15,
                   fontWeight: 700,
                   color: (
-                    (compWizard.totalSelling + totals.hwTotal + totals.lbTotal) -
-                    (compWizard.totalCost + totals.hwCostTotal + totals.lbCostTotal)
+                    (compWizard.totalSelling + totals.hwTotal + totals.lbTotal + totals.wstTotal) -
+                    (compWizard.totalCost + totals.hwCostTotal + totals.lbCostTotal + totals.wstCostTotal + totals.dcCost)
                   ) >= 0 ? '#16a34a' : '#dc2626'
                 }}>
                   ₹{(
-                    (compWizard.totalSelling + totals.hwTotal + totals.lbTotal) -
-                    (compWizard.totalCost + totals.hwCostTotal + totals.lbCostTotal)
+                    (compWizard.totalSelling + totals.hwTotal + totals.lbTotal + totals.wstTotal) -
+                    (compWizard.totalCost + totals.hwCostTotal + totals.lbCostTotal + totals.wstCostTotal + totals.dcCost)
                   ).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </div>
               </Col>
@@ -3166,13 +3463,13 @@ const QuotationForm = () => {
                   fontSize: 22,
                   fontWeight: 800,
                   color: (
-                    (compWizard.totalSelling + totals.hwTotal + totals.lbTotal) -
-                    (compWizard.totalCost + totals.hwCostTotal + totals.lbCostTotal)
+                    (compWizard.totalSelling + totals.hwTotal + totals.lbTotal + totals.wstTotal) -
+                    (compWizard.totalCost + totals.hwCostTotal + totals.lbCostTotal + totals.wstCostTotal + totals.dcCost)
                   ) >= 0 ? '#16a34a' : '#dc2626'
                 }}>
                   {(() => {
-                    const cost = compWizard.totalCost + totals.hwCostTotal + totals.lbCostTotal
-                    const margin = (compWizard.totalSelling + totals.hwTotal + totals.lbTotal) - cost
+                    const cost = compWizard.totalCost + totals.hwCostTotal + totals.lbCostTotal + totals.wstCostTotal + totals.dcCost
+                    const margin = (compWizard.totalSelling + totals.hwTotal + totals.lbTotal + totals.wstTotal) - cost
                     return cost > 0 ? ((margin / cost) * 100).toFixed(2) : '100'
                   })()}%
                 </div>
@@ -3298,334 +3595,392 @@ const QuotationForm = () => {
       </Modal>
 
       <Modal
-  title={
-    <Space>
-      <LineChartOutlined style={{ color: '#6366f1' }} />
-      <span>Cost vs Selling — {compWizard?.product_name}</span>
-    </Space>
-  }
-  open={compWizard !== null}
-  onCancel={() => {
-    setCompWizard(null)
-    setWizardCostPrice(null)
-  }}
-  footer={
-    <Button onClick={() => {
-      setCompWizard(null)
-      setWizardCostPrice(null)
-    }}>
-      Close
-    </Button>
-  }
-  width={820}
->
-  {compWizard && (
-    <>
-      <Row gutter={16} style={{ marginBottom: 16 }}>
-        <Col span={12}>
-          <Card
-            size="small"
-            style={{ background: '#f0fdf4', borderColor: '#86efac' }}
-          >
-            <Text type="secondary">Selling Rate</Text>
-            <div style={{ fontSize: 20, fontWeight: 700, color: '#16a34a' }}>
-              ₹{compWizard.selling_rate}/sqft
-            </div>
-          </Card>
-        </Col>
-        <Col span={12}>
-          <Card
-            size="small"
-            style={{ background: '#fff7ed', borderColor: '#fed7aa' }}
-          >
-            <Text type="secondary">Cost Price (editable)</Text>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
-              <InputNumber
-                value={wizardCostPrice ?? compWizard.cost_price}
-                min={0}
-                prefix="₹"
-                addonAfter="/sqft"
-                style={{ width: '100%' }}
-                onChange={val => {
-                  setWizardCostPrice(val)
-                  const newCost = val || 0
-                  const newRows = compWizard.rows.map(r => {
-                    const glass_cost    = parseFloat(
-                      (parseFloat(r.charged_sqft) * newCost).toFixed(2)
+        title={
+          <Space>
+            <LineChartOutlined style={{ color: '#6366f1' }} />
+            <span>Cost vs Selling — {compWizard?.product_name}</span>
+          </Space>
+        }
+        open={compWizard !== null}
+        onCancel={() => {
+          setCompWizard(null)
+          setWizardCostPrice(null)
+        }}
+        footer={
+          <Space>
+            {wizardCostPrice !== null && wizardCostPrice !== compWizard?.cost_price && (
+              <Button
+                type="primary"
+                style={{ background: '#6366f1', borderColor: '#6366f1' }}
+                onClick={() => {
+                  if (compWizard?.group_key && wizardCostPrice > 0) {
+                    const currentMarginPct = compWizard.totalMarginPct || 20
+                    const newRate = parseFloat(
+                      (wizardCostPrice / (1 - currentMarginPct / 100)).toFixed(2)
                     )
-                    const cost_amount   = parseFloat(
-                      (glass_cost + (r.cep_cost || 0)).toFixed(2)
+                    updateGroup(compWizard.group_key, 'custom_costing', true)
+                    updateGroup(compWizard.group_key, 'rate', newRate)
+                    message.success(
+                      `Rate updated to ₹${newRate}/sqft based on cost ₹${wizardCostPrice}/sqft`
                     )
-                    const margin_amount = parseFloat(
-                      (r.selling_amount - cost_amount).toFixed(2)
-                    )
-                    const margin_pct    = cost_amount > 0
-                      ? parseFloat(
-                          ((margin_amount / cost_amount) * 100).toFixed(2)
-                        )
-                      : 100
-                    return { ...r, glass_cost, cost_amount, margin_amount, margin_pct }
-                  })
-                  const totalCost     = newRows.reduce((s,r) => s + r.cost_amount, 0)
-                  const totalCepCost  = newRows.reduce((s,r) => s + (r.cep_cost||0), 0)
-                  const totalMargin   = compWizard.totalSelling - totalCost
-                  const totalMarginPct = totalCost > 0
-                    ? parseFloat(((totalMargin/totalCost)*100).toFixed(2))
-                    : 100
-                  setCompWizard(prev => ({
-                    ...prev,
-                    cost_price: newCost,
-                    rows: newRows,
-                    totalCost,
-                    totalCepCost,
-                    totalMargin,
-                    totalMarginPct,
-                  }))
+                  }
+                  setCompWizard(null)
+                  setWizardCostPrice(null)
                 }}
+              >
+                💾 Apply New Rate
+              </Button>
+            )}
+            <Button onClick={() => {
+              setCompWizard(null)
+              setWizardCostPrice(null)
+            }}>
+              Close
+            </Button>
+          </Space>
+        }
+        width={820}
+      >
+        {compWizard && (
+          <>
+            <Row gutter={16} style={{ marginBottom: 16 }}>
+              <Col span={12}>
+                <Card
+                  size="small"
+                  style={{ background: '#f0fdf4', borderColor: '#86efac' }}
+                >
+                  <Text type="secondary">Selling Rate</Text>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: '#16a34a' }}>
+                    ₹{compWizard.selling_rate}/sqft
+                  </div>
+                </Card>
+              </Col>
+              <Col span={12}>
+                <Card
+                  size="small"
+                  style={{ background: '#fff7ed', borderColor: '#fed7aa' }}
+                >
+                  <Text type="secondary">Cost Price (editable)</Text>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                    <InputNumber
+                      value={wizardCostPrice ?? compWizard.cost_price}
+                      min={0}
+                      prefix="₹"
+                      addonAfter="/sqft"
+                      style={{ width: '100%' }}
+                      onChange={val => {
+                        setWizardCostPrice(val)
+                        const newCost = val || 0
+                        const newRows = compWizard.rows.map(r => {
+                          const glass_cost = parseFloat(
+                            (parseFloat(r.charged_sqft) * newCost).toFixed(2)
+                          )
+                          const cost_amount = parseFloat(
+                            (glass_cost + (r.cep_cost || 0)).toFixed(2)
+                          )
+                          const margin_amount = parseFloat(
+                            (r.selling_amount - cost_amount).toFixed(2)
+                          )
+                          const margin_pct = cost_amount > 0
+                            ? parseFloat(
+                              ((margin_amount / cost_amount) * 100).toFixed(2)
+                            )
+                            : 100
+                          return { ...r, glass_cost, cost_amount, margin_amount, margin_pct }
+                        })
+                        const totalCost = newRows.reduce((s, r) => s + r.cost_amount, 0)
+                        const totalCepCost = newRows.reduce((s, r) => s + (r.cep_cost || 0), 0)
+                        const totalMargin = compWizard.totalSelling - totalCost
+                        const totalMarginPct = totalCost > 0
+                          ? parseFloat(((totalMargin / totalCost) * 100).toFixed(2))
+                          : 100
+                        setCompWizard(prev => ({
+                          ...prev,
+                          cost_price: newCost,
+                          rows: newRows,
+                          totalCost,
+                          totalCepCost,
+                          totalMargin,
+                          totalMarginPct,
+                        }))
+                      }}
+                    />
+                  </div>
+                  <Text type="secondary" style={{ fontSize: 11, display: 'block', marginTop: 4 }}>
+                    Edit to recalculate margin live
+                  </Text>
+                </Card>
+              </Col>
+            </Row>
+
+            {compWizard.cep_on && (
+              <div style={{
+                background: '#f5f3ff', border: '1px solid #ddd6fe',
+                borderRadius: 8, padding: '8px 14px', marginBottom: 12,
+                fontSize: 12, color: '#6d28d9',
+                display: 'flex', alignItems: 'center', gap: 6
+              }}>
+                🔵 <strong>CEP (Polish - 4 sides)</strong> cost included:
+                Actual running ft × ₹{compWizard.cep_cost_rate}/rft
+              </div>
+            )}
+
+            <Table
+              dataSource={compWizard.rows}
+              pagination={false}
+              size="small"
+              scroll={{ x: 'max-content' }}
+              columns={[
+                {
+                  title: 'Size', key: 'size', width: 130,
+                  render: (_, r) => (
+                    <Text strong style={{ fontSize: 12 }}>
+                      {r.label}. {r.width_display} × {r.height_display}
+                    </Text>
+                  )
+                },
+                { title: 'Qty', dataIndex: 'quantity', width: 45 },
+                {
+                  title: 'Charged Sqft', dataIndex: 'selling_sqft', width: 90,
+                  render: v => <Text>{v}</Text>
+                },
+                {
+                  title: 'Cost Sqft', dataIndex: 'charged_sqft', width: 90,
+                  render: v => <Text type="secondary">{v}</Text>
+                },
+                {
+                  title: 'Actual Rft', dataIndex: 'actual_rft', width: 80,
+                  render: v => <Text type="secondary">{v}</Text>
+                },
+                {
+                  title: 'Selling Amt', dataIndex: 'selling_amount', width: 100, align: 'right',
+                  render: v => (
+                    <Text strong style={{ color: '#16a34a' }}>
+                      ₹{Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </Text>
+                  )
+                },
+                {
+                  title: 'Glass Cost', dataIndex: 'glass_cost', width: 100, align: 'right',
+                  render: v => (
+                    <Text style={{ color: '#ea580c' }}>
+                      ₹{Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </Text>
+                  )
+                },
+                ...(compWizard.cep_on ? [{
+                  title: (
+                    <span>
+                      CEP Cost<br />
+                      <Text type="secondary" style={{ fontSize: 10, fontWeight: 400 }}>
+                        Rft × ₹{compWizard.cep_cost_rate}
+                      </Text>
+                    </span>
+                  ),
+                  dataIndex: 'cep_cost', width: 100, align: 'right',
+                  render: v => (
+                    <Text style={{ color: '#7c3aed' }}>
+                      ₹{Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </Text>
+                  )
+                }] : []),
+                {
+                  title: 'Total Cost', dataIndex: 'cost_amount', width: 100, align: 'right',
+                  render: v => (
+                    <Text strong style={{ color: '#dc2626' }}>
+                      ₹{Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </Text>
+                  )
+                },
+                {
+                  title: 'Margin', dataIndex: 'margin_amount', width: 120, align: 'right',
+                  render: (v, r) => (
+                    <Text strong style={{
+                      color: r.margin_pct >= 20 ? '#16a34a' :
+                        r.margin_pct >= 10 ? '#f59e0b' : '#dc2626'
+                    }}>
+                      ₹{Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      <br />
+                      <Text style={{ fontSize: 11, color: 'inherit' }}>
+                        ({r.margin_pct}%)
+                      </Text>
+                    </Text>
+                  )
+                },
+              ]}
+            />
+
+            {/* Hardware & Labor Costing Table */}
+            <div style={{ marginTop: 16 }}>
+              <Text strong style={{ fontSize: 13 }}>🛠️ Hardware & Labor Costing Breakdown</Text>
+              <Table
+                style={{ marginTop: 8 }}
+                size="small"
+                pagination={false}
+                dataSource={[
+                  ...hardwareItems.map(h => ({
+                    key: h.hw_key,
+                    type: 'Hardware',
+                    description: h.description || '(No description)',
+                    qty: h.qty || 0,
+                    uom: h.uom || '—',
+                    cost_rate: h.cost_rate || 0,
+                    selling_rate: h.rate || 0,
+                    cost_amount: h.cost_amount || (h.qty || 0) * (h.cost_rate || 0),
+                    selling_amount: h.amount || (h.qty || 0) * (h.rate || 0),
+                  })),
+                  ...laborItems.map(l => ({
+                    key: l.lb_key,
+                    type: 'Labor',
+                    description: l.description || '(No description)',
+                    qty: l.qty || 0,
+                    uom: l.uom || '—',
+                    cost_rate: l.cost_rate || 0,
+                    selling_rate: l.rate || 0,
+                    cost_amount: l.cost_amount || (l.qty || 0) * (l.cost_rate || 0),
+                    selling_amount: l.amount || (l.qty || 0) * (l.rate || 0),
+                  })),
+                  ...wastageItems.map(w => ({
+                    key: w.wst_key,
+                    type: 'Wastage',
+                    description: w.description || '(No description)',
+                    qty: w.qty || 0,
+                    uom: 'sqft',
+                    cost_rate: w.cost_rate || 0,
+                    selling_rate: w.rate || 0,
+                    cost_amount: w.cost_amount || (w.qty || 0) * (w.cost_rate || 0),
+                    selling_amount: w.amount || (w.qty || 0) * (w.rate || 0),
+                  })),
+                  ...(totals.dcCharges > 0 || totals.dcCost > 0 ? [{
+                    key: 'dc_charges',
+                    type: 'DC',
+                    description: 'Delivery / Transport Charges',
+                    qty: 1,
+                    uom: 'fixed',
+                    cost_rate: totals.dcCost || 0,
+                    selling_rate: totals.dcCharges || 0,
+                    cost_amount: totals.dcCost || 0,
+                    selling_amount: totals.dcCharges || 0,
+                  }] : []),
+                ]}
+                columns={[
+                  {
+                    title: 'Type', dataIndex: 'type', width: 100, render: t => (
+                      <Tag color={
+                        t === 'Hardware' ? 'blue' :
+                          t === 'Labor' ? 'orange' :
+                            t === 'Wastage' ? 'red' :
+                              t === 'DC' ? 'purple' : 'default'
+                      }>{t}</Tag>
+                    )
+                  },
+                  { title: 'Description', dataIndex: 'description' },
+                  { title: 'Qty', dataIndex: 'qty', width: 60, align: 'right' },
+                  { title: 'UOM', dataIndex: 'uom', width: 80 },
+                  { title: 'Cost Rate', dataIndex: 'cost_rate', width: 100, align: 'right', render: v => `₹${Number(v).toFixed(2)}` },
+                  { title: 'Selling Rate', dataIndex: 'selling_rate', width: 100, align: 'right', render: v => `₹${Number(v).toFixed(2)}` },
+                  { title: 'Cost Amt', dataIndex: 'cost_amount', width: 110, align: 'right', render: v => <Text type="danger">₹{Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Text> },
+                  { title: 'Selling Amt', dataIndex: 'selling_amount', width: 110, align: 'right', render: v => <Text type="success">₹{Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Text> },
+                  {
+                    title: 'Margin',
+                    width: 120,
+                    align: 'right',
+                    render: (_, r) => {
+                      const margin = r.selling_amount - r.cost_amount
+                      const pct = r.cost_amount > 0 ? ((margin / r.cost_amount) * 100).toFixed(1) : '100'
+                      return (
+                        <Text strong style={{ color: margin >= 0 ? '#16a34a' : '#dc2626' }}>
+                          ₹{margin.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          <br />
+                          <span style={{ fontSize: 10 }}>({pct}%)</span>
+                        </Text>
+                      )
+                    }
+                  }
+                ]}
               />
             </div>
-            <Text type="secondary" style={{ fontSize: 11, display: 'block', marginTop: 4 }}>
-              Edit to recalculate margin live
-            </Text>
-          </Card>
-        </Col>
-      </Row>
 
-      {compWizard.cep_on && (
-        <div style={{
-          background: '#f5f3ff', border: '1px solid #ddd6fe',
-          borderRadius: 8, padding: '8px 14px', marginBottom: 12,
-          fontSize: 12, color: '#6d28d9',
-          display: 'flex', alignItems: 'center', gap: 6
-        }}>
-          🔵 <strong>CEP (Polish - 4 sides)</strong> cost included:
-          Actual running ft × ₹{compWizard.cep_cost_rate}/rft
-        </div>
-      )}
+            <Divider style={{ margin: '12px 0' }} />
 
-      <Table
-        dataSource={compWizard.rows}
-        pagination={false}
-        size="small"
-        scroll={{ x: 'max-content' }}
-        columns={[
-          {
-            title: 'Size', key: 'size', width: 130,
-            render: (_, r) => (
-              <Text strong style={{ fontSize: 12 }}>
-                {r.label}. {r.width_display} × {r.height_display}
-              </Text>
-            )
-          },
-          { title: 'Qty',          dataIndex: 'quantity',      width: 45 },
-          {
-            title: 'Charged Sqft', dataIndex: 'selling_sqft',  width: 90,
-            render: v => <Text>{v}</Text>
-          },
-          {
-            title: 'Cost Sqft', dataIndex: 'charged_sqft',  width: 90,
-            render: v => <Text type="secondary">{v}</Text>
-          },
-          {
-            title: 'Actual Rft',   dataIndex: 'actual_rft',    width: 80,
-            render: v => <Text type="secondary">{v}</Text>
-          },
-          {
-            title: 'Selling Amt',  dataIndex: 'selling_amount', width: 100, align: 'right',
-            render: v => (
-              <Text strong style={{ color: '#16a34a' }}>
-                ₹{Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-              </Text>
-            )
-          },
-          {
-            title: 'Glass Cost',   dataIndex: 'glass_cost',    width: 100, align: 'right',
-            render: v => (
-              <Text style={{ color: '#ea580c' }}>
-                ₹{Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-              </Text>
-            )
-          },
-          ...(compWizard.cep_on ? [{
-            title: (
-              <span>
-                CEP Cost<br />
-                <Text type="secondary" style={{ fontSize: 10, fontWeight: 400 }}>
-                  Rft × ₹{compWizard.cep_cost_rate}
-                </Text>
-              </span>
-            ),
-            dataIndex: 'cep_cost', width: 100, align: 'right',
-            render: v => (
-              <Text style={{ color: '#7c3aed' }}>
-                ₹{Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-              </Text>
-            )
-          }] : []),
-          {
-            title: 'Total Cost',   dataIndex: 'cost_amount',   width: 100, align: 'right',
-            render: v => (
-              <Text strong style={{ color: '#dc2626' }}>
-                ₹{Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-              </Text>
-            )
-          },
-          {
-            title: 'Margin',       dataIndex: 'margin_amount', width: 120, align: 'right',
-            render: (v, r) => (
-              <Text strong style={{
-                color: r.margin_pct >= 20 ? '#16a34a' :
-                       r.margin_pct >= 10 ? '#f59e0b' : '#dc2626'
-              }}>
-                ₹{Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                <br />
-                <Text style={{ fontSize: 11, color: 'inherit' }}>
-                  ({r.margin_pct}%)
-                </Text>
-              </Text>
-            )
-          },
-        ]}
-      />
-
-      {/* Hardware & Labor Costing Table */}
-      <div style={{ marginTop: 16 }}>
-        <Text strong style={{ fontSize: 13 }}>🛠️ Hardware & Labor Costing Breakdown</Text>
-        <Table
-          style={{ marginTop: 8 }}
-          size="small"
-          pagination={false}
-          dataSource={[
-            ...hardwareItems.map(h => ({
-              key: h.hw_key,
-              type: 'Hardware',
-              description: h.description || '(No description)',
-              qty: h.qty || 0,
-              uom: h.uom || '—',
-              cost_rate: h.cost_rate || 0,
-              selling_rate: h.rate || 0,
-              cost_amount: h.cost_amount || (h.qty || 0) * (h.cost_rate || 0),
-              selling_amount: h.amount || (h.qty || 0) * (h.rate || 0),
-            })),
-            ...laborItems.map(l => ({
-              key: l.lb_key,
-              type: 'Labor',
-              description: l.description || '(No description)',
-              qty: l.qty || 0,
-              uom: l.uom || '—',
-              cost_rate: l.cost_rate || 0,
-              selling_rate: l.rate || 0,
-              cost_amount: l.cost_amount || (l.qty || 0) * (l.cost_rate || 0),
-              selling_amount: l.amount || (l.qty || 0) * (l.rate || 0),
-            })),
-          ]}
-          columns={[
-            { title: 'Type', dataIndex: 'type', width: 100, render: t => <Tag color={t === 'Hardware' ? 'blue' : 'orange'}>{t}</Tag> },
-            { title: 'Description', dataIndex: 'description' },
-            { title: 'Qty', dataIndex: 'qty', width: 60, align: 'right' },
-            { title: 'UOM', dataIndex: 'uom', width: 80 },
-            { title: 'Cost Rate', dataIndex: 'cost_rate', width: 100, align: 'right', render: v => `₹${Number(v).toFixed(2)}` },
-            { title: 'Selling Rate', dataIndex: 'selling_rate', width: 100, align: 'right', render: v => `₹${Number(v).toFixed(2)}` },
-            { title: 'Cost Amt', dataIndex: 'cost_amount', width: 110, align: 'right', render: v => <Text type="danger">₹{Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Text> },
-            { title: 'Selling Amt', dataIndex: 'selling_amount', width: 110, align: 'right', render: v => <Text type="success">₹{Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Text> },
-            {
-              title: 'Margin',
-              width: 120,
-              align: 'right',
-              render: (_, r) => {
-                const margin = r.selling_amount - r.cost_amount
-                const pct = r.cost_amount > 0 ? ((margin / r.cost_amount) * 100).toFixed(1) : '100'
-                return (
-                  <Text strong style={{ color: margin >= 0 ? '#16a34a' : '#dc2626' }}>
-                    ₹{margin.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    <br />
-                    <span style={{ fontSize: 10 }}>({pct}%)</span>
+            <Row gutter={[12, 8]}>
+              <Col span={6}>
+                <Text type="secondary">Total Selling</Text>
+                <div style={{ fontSize: 16, fontWeight: 700, color: '#16a34a' }}>
+                  ₹{compWizard.totalSelling.toLocaleString('en-IN',
+                    { minimumFractionDigits: 2 })}
+                </div>
+              </Col>
+              <Col span={6}>
+                <Text type="secondary">Glass Cost</Text>
+                <div style={{ fontSize: 15, fontWeight: 700, color: '#ea580c' }}>
+                  ₹{(compWizard.totalCost - (compWizard.totalCepCost || 0))
+                    .toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </div>
+              </Col>
+              {compWizard.cep_on && (
+                <Col span={6}>
+                  <Text type="secondary">
+                    CEP Cost (₹{compWizard.cep_cost_rate}/rft)
                   </Text>
-                )
-              }
-            }
-          ]}
-        />
-      </div>
-
-      <Divider style={{ margin: '12px 0' }} />
-
-      <Row gutter={[12, 8]}>
-        <Col span={6}>
-          <Text type="secondary">Total Selling</Text>
-          <div style={{ fontSize: 16, fontWeight: 700, color: '#16a34a' }}>
-            ₹{compWizard.totalSelling.toLocaleString('en-IN',
-              { minimumFractionDigits: 2 })}
-          </div>
-        </Col>
-        <Col span={6}>
-          <Text type="secondary">Glass Cost</Text>
-          <div style={{ fontSize: 15, fontWeight: 700, color: '#ea580c' }}>
-            ₹{(compWizard.totalCost - (compWizard.totalCepCost||0))
-              .toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-          </div>
-        </Col>
-        {compWizard.cep_on && (
-          <Col span={6}>
-            <Text type="secondary">
-              CEP Cost (₹{compWizard.cep_cost_rate}/rft)
-            </Text>
-            <div style={{ fontSize: 15, fontWeight: 700, color: '#7c3aed' }}>
-              ₹{(compWizard.totalCepCost||0).toLocaleString('en-IN',
-                { minimumFractionDigits: 2 })}
-            </div>
-          </Col>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: '#7c3aed' }}>
+                    ₹{(compWizard.totalCepCost || 0).toLocaleString('en-IN',
+                      { minimumFractionDigits: 2 })}
+                  </div>
+                </Col>
+              )}
+              <Col span={6}>
+                <Text type="secondary">True Combined Cost</Text>
+                <div style={{ fontSize: 15, fontWeight: 700, color: '#dc2626' }}>
+                  ₹{(
+                    compWizard.totalCost +
+                    totals.hwCostTotal +
+                    totals.lbCostTotal +
+                    totals.wstCostTotal +
+                    totals.dcCost
+                  ).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </div>
+                <Text type="secondary" style={{ fontSize: 10 }}>
+                  Glass + HW + Labor + Wastage + DC
+                </Text>
+              </Col>
+              <Col span={6}>
+                <Text type="secondary">True Combined Margin</Text>
+                <div style={{
+                  fontSize: 15,
+                  fontWeight: 700,
+                  color: (
+                    (compWizard.totalSelling + totals.hwTotal + totals.lbTotal + totals.wstTotal) -
+                    (compWizard.totalCost + totals.hwCostTotal + totals.lbCostTotal + totals.wstCostTotal + totals.dcCost)
+                  ) >= 0 ? '#16a34a' : '#dc2626'
+                }}>
+                  ₹{(
+                    (compWizard.totalSelling + totals.hwTotal + totals.lbTotal + totals.wstTotal) -
+                    (compWizard.totalCost + totals.hwCostTotal + totals.lbCostTotal + totals.wstCostTotal + totals.dcCost)
+                  ).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </div>
+              </Col>
+              <Col span={6}>
+                <Text type="secondary">True Margin %</Text>
+                <div style={{
+                  fontSize: 22,
+                  fontWeight: 800,
+                  color: (
+                    (compWizard.totalSelling + totals.hwTotal + totals.lbTotal + totals.wstTotal) -
+                    (compWizard.totalCost + totals.hwCostTotal + totals.lbCostTotal + totals.wstCostTotal + totals.dcCost)
+                  ) >= 0 ? '#16a34a' : '#dc2626'
+                }}>
+                  {(() => {
+                    const cost = compWizard.totalCost + totals.hwCostTotal + totals.lbCostTotal + totals.wstCostTotal + totals.dcCost
+                    const margin = (compWizard.totalSelling + totals.hwTotal + totals.lbTotal + totals.wstTotal) - cost
+                    return cost > 0 ? ((margin / cost) * 100).toFixed(2) : '100'
+                  })()}%
+                </div>
+              </Col>
+            </Row>
+          </>
         )}
-        <Col span={6}>
-          <Text type="secondary">True Combined Cost</Text>
-          <div style={{ fontSize: 15, fontWeight: 700, color: '#dc2626' }}>
-            ₹{(
-              compWizard.totalCost +
-              totals.hwCostTotal +
-              totals.lbCostTotal
-            ).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-          </div>
-          <Text type="secondary" style={{ fontSize: 10 }}>
-            Glass Cost + Hardware Cost + Labor Cost
-          </Text>
-        </Col>
-        <Col span={6}>
-          <Text type="secondary">True Combined Margin</Text>
-          <div style={{
-            fontSize: 15,
-            fontWeight: 700,
-            color: (
-              (compWizard.totalSelling + totals.hwTotal + totals.lbTotal) -
-              (compWizard.totalCost + totals.hwCostTotal + totals.lbCostTotal)
-            ) >= 0 ? '#16a34a' : '#dc2626'
-          }}>
-            ₹{(
-              (compWizard.totalSelling + totals.hwTotal + totals.lbTotal) -
-              (compWizard.totalCost + totals.hwCostTotal + totals.lbCostTotal)
-            ).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-          </div>
-        </Col>
-        <Col span={6}>
-          <Text type="secondary">True Margin %</Text>
-          <div style={{
-            fontSize: 22,
-            fontWeight: 800,
-            color: (
-              (compWizard.totalSelling + totals.hwTotal + totals.lbTotal) -
-              (compWizard.totalCost + totals.hwCostTotal + totals.lbCostTotal)
-            ) >= 0 ? '#16a34a' : '#dc2626'
-          }}>
-            {(() => {
-              const cost = compWizard.totalCost + totals.hwCostTotal + totals.lbCostTotal
-              const margin = (compWizard.totalSelling + totals.hwTotal + totals.lbTotal) - cost
-              return cost > 0 ? ((margin / cost) * 100).toFixed(2) : '100'
-            })()}%
-          </div>
-        </Col>
-      </Row>
-    </>
-  )}
-</Modal>
+      </Modal>
 
       <Modal
         title={
@@ -3674,7 +4029,7 @@ const QuotationForm = () => {
                           const matrix = JSON.parse(localStorage.getItem('glass_rate_matrix') || '{}')
                           const costRate = matrix?.cost_rates?.[g.glass_category]
                           if (costRate) costPerSqft = parseFloat((parseFloat(g.glass_thickness) * costRate / 10.764).toFixed(2))
-                        } catch {}
+                        } catch { }
                       }
                       if (!costPerSqft && g.rate > 0) costPerSqft = parseFloat((g.rate * 0.70).toFixed(2))
                       const newRate = costPerSqft > 0
@@ -3822,8 +4177,8 @@ const QuotationForm = () => {
                         color: globalComparison.totalMarginPct >= 20
                           ? '#16a34a'
                           : globalComparison.totalMarginPct >= 10
-                          ? '#f59e0b'
-                          : '#dc2626'
+                            ? '#f59e0b'
+                            : '#dc2626'
                       }}>
                         ₹{globalComparison.totalMargin.toLocaleString(
                           'en-IN', { minimumFractionDigits: 2 })}
@@ -3872,11 +4227,40 @@ const QuotationForm = () => {
                       cost_amount: l.cost_amount || (l.qty || 0) * (l.cost_rate || 0),
                       selling_amount: l.amount || (l.qty || 0) * (l.rate || 0),
                     })),
+                    ...wastageItems.map(w => ({
+                      key: w.wst_key,
+                      type: 'Wastage',
+                      description: w.description || '(No description)',
+                      qty: w.qty || 0,
+                      uom: 'sqft',
+                      cost_rate: w.cost_rate || 0,
+                      selling_rate: w.rate || 0,
+                      cost_amount: w.cost_amount || (w.qty || 0) * (w.cost_rate || 0),
+                      selling_amount: w.amount || (w.qty || 0) * (w.rate || 0),
+                    })),
+                    ...(totals.dcCharges > 0 || totals.dcCost > 0 ? [{
+                      key: 'dc_charges',
+                      type: 'DC',
+                      description: 'Delivery / Transport Charges',
+                      qty: 1,
+                      uom: 'fixed',
+                      cost_rate: totals.dcCost || 0,
+                      selling_rate: totals.dcCharges || 0,
+                      cost_amount: totals.dcCost || 0,
+                      selling_amount: totals.dcCharges || 0,
+                    }] : []),
                   ]}
                   columns={[
                     {
                       title: 'Type', dataIndex: 'type', width: 100,
-                      render: t => <Tag color={t === 'Hardware' ? 'blue' : 'orange'}>{t}</Tag>
+                      render: t => (
+                        <Tag color={
+                          t === 'Hardware' ? 'blue' :
+                            t === 'Labor' ? 'orange' :
+                              t === 'Wastage' ? 'red' :
+                                t === 'DC' ? 'purple' : 'default'
+                        }>{t}</Tag>
+                      )
                     },
                     { title: 'Description', dataIndex: 'description' },
                     { title: 'Qty', dataIndex: 'qty', width: 60, align: 'right' },
@@ -3924,11 +4308,13 @@ const QuotationForm = () => {
                   ]}
                   summary={() => {
                     const hwSell = hardwareItems.reduce((s, h) => s + (h.amount || 0), 0)
-                    const hwCost = hardwareItems.reduce((s, h) => s + (h.cost_amount || (h.qty||0)*(h.cost_rate||0)), 0)
+                    const hwCost = hardwareItems.reduce((s, h) => s + (h.cost_amount || (h.qty || 0) * (h.cost_rate || 0)), 0)
                     const lbSell = laborItems.reduce((s, l) => s + (l.amount || 0), 0)
-                    const lbCost = laborItems.reduce((s, l) => s + (l.cost_amount || (l.qty||0)*(l.cost_rate||0)), 0)
-                    const totalHwLbSell = hwSell + lbSell
-                    const totalHwLbCost = hwCost + lbCost
+                    const lbCost = laborItems.reduce((s, l) => s + (l.cost_amount || (l.qty || 0) * (l.cost_rate || 0)), 0)
+                    const wstSell = wastageItems.reduce((s, w) => s + (w.amount || 0), 0)
+                    const wstCost = wastageItems.reduce((s, w) => s + (w.cost_amount || (w.qty || 0) * (w.cost_rate || 0)), 0)
+                    const totalHwLbSell = hwSell + lbSell + wstSell
+                    const totalHwLbCost = hwCost + lbCost + wstCost
                     const totalHwLbMargin = totalHwLbSell - totalHwLbCost
                     const totalHwLbPct = totalHwLbCost > 0
                       ? ((totalHwLbMargin / totalHwLbCost) * 100).toFixed(1)
@@ -3936,7 +4322,7 @@ const QuotationForm = () => {
                     return (
                       <Table.Summary.Row style={{ background: '#f8fafc', fontWeight: 600 }}>
                         <Table.Summary.Cell colSpan={6}>
-                          <Text strong>HW + Labor Subtotal</Text>
+                          <Text strong>HW + Labor + Wastage Subtotal</Text>
                         </Table.Summary.Cell>
                         <Table.Summary.Cell align="right">
                           <Text strong style={{ color: '#dc2626' }}>
@@ -3974,11 +4360,13 @@ const QuotationForm = () => {
                 }}>
                   {(() => {
                     const hwSell = hardwareItems.reduce((s, h) => s + (h.amount || 0), 0)
-                    const hwCost = hardwareItems.reduce((s, h) => s + (h.cost_amount || (h.qty||0)*(h.cost_rate||0)), 0)
+                    const hwCost = hardwareItems.reduce((s, h) => s + (h.cost_amount || (h.qty || 0) * (h.cost_rate || 0)), 0)
                     const lbSell = laborItems.reduce((s, l) => s + (l.amount || 0), 0)
-                    const lbCost = laborItems.reduce((s, l) => s + (l.cost_amount || (l.qty||0)*(l.cost_rate||0)), 0)
-                    const trueSell = globalComparison.totalSelling + hwSell + lbSell
-                    const trueCost = globalComparison.totalCost + hwCost + lbCost
+                    const lbCost = laborItems.reduce((s, l) => s + (l.cost_amount || (l.qty || 0) * (l.cost_rate || 0)), 0)
+                    const wstSell = wastageItems.reduce((s, w) => s + (w.amount || 0), 0)
+                    const wstCost = wastageItems.reduce((s, w) => s + (w.cost_amount || (w.qty || 0) * (w.cost_rate || 0)), 0)
+                    const trueSell = globalComparison.totalSelling + hwSell + lbSell + wstSell
+                    const trueCost = globalComparison.totalCost + hwCost + lbCost + wstCost
                     const trueMargin = trueSell - trueCost
                     const truePct = trueCost > 0
                       ? ((trueMargin / trueCost) * 100).toFixed(2)
@@ -3992,7 +4380,7 @@ const QuotationForm = () => {
                           <div style={{ color: '#4ade80', fontSize: 16, fontWeight: 700 }}>
                             ₹{trueSell.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                           </div>
-                          <div style={{ color: '#64748b', fontSize: 10 }}>Glass + HW + Labor</div>
+                          <div style={{ color: '#64748b', fontSize: 10 }}>Glass + HW + Labor + Wastage</div>
                         </div>
                         <div>
                           <div style={{ color: '#94a3b8', fontSize: 11 }}>True Total Cost</div>

@@ -62,11 +62,19 @@ async def upload_company_logo(
     mime_type = file.content_type or "image/png"
     b64 = base64.b64encode(contents).decode("utf-8")
     logo_data = f"data:{mime_type};base64,{b64}"
+    
     company_id = getattr(user, 'company_id', None)
     from app.models.company import Company
-    company = db.query(Company).filter(Company.id == company_id).first()
+    
+    # If superadmin (no company_id), get first company
+    if company_id:
+        company = db.query(Company).filter(Company.id == company_id).first()
+    else:
+        company = db.query(Company).first()
+    
     if not company:
         raise HTTPException(status_code=404, detail="Company not found")
+    
     company.logo = logo_data
     db.commit()
     return {"logo": logo_data, "message": "Logo uploaded successfully"}

@@ -1,11 +1,13 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
+from sqlalchemy.orm import Session
 # pyrefly: ignore [missing-import]
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import os
 
 from app.config   import settings
-from app.database import Base, engine
+from app.database import Base, engine, get_db
+from app.deps import get_current_user
 
 # Import all models so Alembic sees them
 from app.models import *  # noqa
@@ -119,3 +121,28 @@ def root():
 @app.get("/api/v1/health")
 def health():
     return {"status": "healthy", "database": "connected"}
+
+@app.get("/api/v1/workshop/by-so/{so_id}")
+def get_wo_by_so(
+    so_id: int,
+    db: Session = Depends(get_db),
+    user = Depends(get_current_user),
+):
+    """Get all Workshop Orders linked to a Sales Order"""
+    wos = db.query(WorkshopOrder).filter(
+        WorkshopOrder.so_id == so_id,
+    ).all()
+    return {
+        "items": [
+            {
+                "id": wo.id,
+                "wo_number": wo.wo_number,
+                "status": wo.status,
+                "order_date": wo.order_date,
+                "customer_name": wo.customer_name,
+                "lines_count": len(wo.lines or []),
+            }
+            for wo in wos
+        ],
+        "total": len(wos)
+    }

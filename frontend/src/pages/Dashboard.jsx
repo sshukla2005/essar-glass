@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   quotationApi, salesOrderApi, invoiceApi,
-  customerApi, deliveryChallanApi
+  customerApi, deliveryChallanApi, workshopOrderApi
 } from '../api'
 import { Row, Col, Card, Typography, Space, Radio, Table, Tag, Button } from 'antd'
 import {
@@ -17,6 +17,21 @@ import {
 import { useNavigate } from 'react-router-dom'
 
 const { Title, Text } = Typography
+
+const parseThicknessFromDesc = (desc) => {
+  if (!desc) return null
+  // Match patterns: "3.5Golden", "12clr", "5mirror", "8grey", "6 clr Lamina"
+  const match = String(desc).match(/^(\d+(?:\.\d+)?)/)
+  if (match) return parseFloat(match[1])
+  return null
+}
+
+const classifyGlass = (thickness) => {
+  if (!thickness) return null
+  if (thickness >= 3 && thickness <= 6) return 'thin'
+  if (thickness >= 8) return 'thick'
+  return null
+}
 
 
 
@@ -79,6 +94,11 @@ const Dashboard = () => {
   const { data: deliveriesData } = useQuery({
     queryKey: ['dashboard-deliveries'],
     queryFn: () => deliveryChallanApi.list({ page: 1, page_size: 500 }).then(r => r.data),
+    staleTime: 30000,
+  })
+  const { data: workshopData } = useQuery({
+    queryKey: ['dashboard-workshop'],
+    queryFn: () => workshopOrderApi.list({ page: 1, page_size: 200 }).then(r => r.data),
     staleTime: 30000,
   })
 
@@ -148,6 +168,47 @@ const Dashboard = () => {
         }
       })
 
+    // ── Cutting Register ──────────────────────────────────
+    const workshopOrders = workshopData?.items || []
+
+    const cuttingRows = workshopOrders.map(wo => {
+      let thinSqft = 0
+      let thickSqft = 0
+
+      ;(wo.lines || []).forEach(line => {
+        const thickness = parseThicknessFromDesc(line.description)
+        const sqft = (line.act_w_in || 0) * (line.act_h_in || 0) * (line.qty || 1) / 144
+        const type = classifyGlass(thickness)
+        if (type === 'thin') thinSqft += sqft
+        else if (type === 'thick') thickSqft += sqft
+      })
+
+      const statusMap = {
+        'draft':       'UNDR CTNG',
+        'in_progress': 'UNDR CTNG',
+        'completed':   'RDY',
+        'cancelled':   'CANCELLED',
+      }
+
+      return {
+        key: wo.id,
+        id: wo.id,
+        date: wo.order_date || wo.created_at?.split('T')[0] || '—',
+        wo_number: wo.wo_number || `WO-${wo.id}`,
+        customer_name: wo.customer_name || '—',
+        description: (wo.lines || []).map(l => l.description).filter(Boolean).join(', ') || '—',
+        thin_sqft: thinSqft > 0 ? parseFloat(thinSqft.toFixed(2)) : null,
+        thick_sqft: thickSqft > 0 ? parseFloat(thickSqft.toFixed(2)) : null,
+        total_sqft: parseFloat((thinSqft + thickSqft).toFixed(2)),
+        status: wo.status || 'draft',
+        status_label: statusMap[wo.status] || 'UNDR CTNG',
+      }
+    }).filter(r => r.total_sqft > 0)
+
+    const totalThinSqft  = cuttingRows.reduce((s, r) => s + (r.thin_sqft  || 0), 0)
+    const totalThickSqft = cuttingRows.reduce((s, r) => s + (r.thick_sqft || 0), 0)
+    const totalAllSqft   = totalThinSqft + totalThickSqft
+
     return {
       totalQuotes, pendingQuotes,
       activeSOs, readySOs,
@@ -158,8 +219,9 @@ const Dashboard = () => {
       recentInvoices,
       totalCustomers: customersData?.total || customers.length,
       lowStockCount: 0,
+      cuttingRows, totalThinSqft, totalThickSqft, totalAllSqft,
     }
-  }, [quotationsData, salesOrdersData, invoicesData, customersData, deliveriesData])
+  }, [quotationsData, salesOrdersData, invoicesData, customersData, deliveriesData, workshopData])
 
   const getChartData = () => {
     if (timeRange === '7days')  return stats.chartData.slice(-3)
@@ -346,6 +408,147 @@ const Dashboard = () => {
           style={{ width: '100%' }}
           locale={{ emptyText: 'No sales orders yet — create your first sales order!' }}
           rowClassName={() => 'operational-tracking-row'}
+        />
+      </Card>
+
+      {/* ── Cutting Register ─────────────────────────────────── */}
+      <Card
+        bordered={false}
+        style={{ borderRadius: 16, boxShadow: '0 4px 20px rgba(0,0,0,0.04)', overflow: 'hidden', marginTop: 24 }}
+        bodyStyle={{ padding: 0 }}
+      >
+        {/* Header */}
+        <div style={{
+          padding: '16px 24px',
+          borderBottom: '1px solid #f0f0f0',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          background: '#fff',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{
+              background: '#fef3c7', padding: 8, borderRadius: 8,
+              display: 'flex', alignItems: 'center', justifyContent: 'center'
+            }}>
+              <span style={{ fontSize: 20 }}>🔪</span>
+            </div>
+            <div>
+              <Title level={4} style={{ margin: 0, fontWeight: 700 }}>Cutting Register</Title>
+              <Text type="secondary" style={{ fontSize: 13 }}>Workshop orders — glass cutting status</Text>
+            </div>
+          </div>
+          <Button size="small" onClick={() => navigate('/workshop/orders')}>View All WOs</Button>
+        </div>
+
+        {/* Totals Bar */}
+        <div style={{
+          display: 'flex',
+          background: '#1a1a2e',
+          padding: '12px 24px',
+          gap: 0,
+        }}>
+          <div style={{ flex: 1, textAlign: 'center', borderRight: '1px solid #2d2d4e', paddingRight: 24 }}>
+            <Text style={{ fontSize: 11, color: '#94a3b8', display: 'block', marginBottom: 2 }}>THN CTNG Sq Ft</Text>
+            <Text style={{ fontSize: 20, fontWeight: 800, color: '#4ade80' }}>
+              {parseFloat(stats.totalThinSqft || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+            </Text>
+          </div>
+          <div style={{ flex: 1, textAlign: 'center', borderRight: '1px solid #2d2d4e', padding: '0 24px' }}>
+            <Text style={{ fontSize: 11, color: '#94a3b8', display: 'block', marginBottom: 2 }}>THCK CTNG Sq Ft</Text>
+            <Text style={{ fontSize: 20, fontWeight: 800, color: '#60a5fa' }}>
+              {parseFloat(stats.totalThickSqft || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+            </Text>
+          </div>
+          <div style={{ flex: 1, textAlign: 'center', paddingLeft: 24 }}>
+            <Text style={{ fontSize: 11, color: '#94a3b8', display: 'block', marginBottom: 2 }}>TOTAL Sq Ft</Text>
+            <Text style={{ fontSize: 20, fontWeight: 800, color: '#fbbf24' }}>
+              {parseFloat(stats.totalAllSqft || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+            </Text>
+          </div>
+        </div>
+
+        {/* Table */}
+        <Table
+          dataSource={stats.cuttingRows || []}
+          pagination={{ pageSize: 15, size: 'small' }}
+          size="small"
+          locale={{ emptyText: 'No workshop orders yet' }}
+          onRow={(record) => ({
+            style: { cursor: 'pointer' },
+            onClick: () => navigate(`/workshop/orders/${record.id}/edit`)
+          })}
+          columns={[
+            {
+              title: 'Date', dataIndex: 'date', width: 90,
+              render: v => {
+                if (!v || v === '—') return '—'
+                try {
+                  const d = new Date(v)
+                  return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
+                } catch { return v }
+              }
+            },
+            {
+              title: 'Order No', dataIndex: 'wo_number', width: 100,
+              render: v => <Text strong style={{ color: '#6366f1' }}>{v}</Text>
+            },
+            {
+              title: 'Customer Name', dataIndex: 'customer_name', width: 180,
+              render: v => <Text strong>{v}</Text>
+            },
+            {
+              title: 'THICKNESS', dataIndex: 'description', width: 200,
+              render: v => (
+                <Text style={{ fontSize: 12, color: '#475569' }}>
+                  {v?.length > 40 ? v.substring(0, 40) + '...' : v}
+                </Text>
+              )
+            },
+            {
+              title: 'THIN', dataIndex: 'thin_sqft', width: 80, align: 'right',
+              render: v => v ? (
+                <Text strong style={{ color: '#16a34a' }}>
+                  {Number(v).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                </Text>
+              ) : null
+            },
+            {
+              title: 'THICK', dataIndex: 'thick_sqft', width: 80, align: 'right',
+              render: v => v ? (
+                <Text strong style={{ color: '#1d4ed8' }}>
+                  {Number(v).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                </Text>
+              ) : null
+            },
+            {
+              title: 'STATUS', dataIndex: 'status_label', width: 120,
+              render: (v) => {
+                const colorMap = {
+                  'UNDR CTNG': { bg: '#fecaca', color: '#dc2626', border: '#fca5a5' },
+                  'UNDR TOUGH': { bg: '#fecaca', color: '#dc2626', border: '#fca5a5' },
+                  'RDY': { bg: '#bbf7d0', color: '#15803d', border: '#86efac' },
+                  'RDY RPDA': { bg: '#bbf7d0', color: '#15803d', border: '#86efac' },
+                  'CANCELLED': { bg: '#e2e8f0', color: '#64748b', border: '#cbd5e1' },
+                }
+                const style = colorMap[v] || colorMap['UNDR CTNG']
+                return (
+                  <span style={{
+                    background: style.bg,
+                    color: style.color,
+                    border: `1px solid ${style.border}`,
+                    borderRadius: 4,
+                    padding: '2px 8px',
+                    fontSize: 11,
+                    fontWeight: 700,
+                    letterSpacing: 0.5,
+                  }}>
+                    {v}
+                  </span>
+                )
+              }
+            },
+          ]}
         />
       </Card>
 

@@ -88,6 +88,7 @@ const emptySize = () => ({
   area_sqft_pc: 0, total_sqft: 0, running_ft: 0,
   charged_sqft: 0, charged_w_inch: 0, charged_h_inch: 0,
   cep_rft: 0, cep_charges: 0, tgh_sqmt: 0,
+  tgh_charge: 0,
   subtotal: 0, tax_amount: 0, line_total: 0,
   size_processes: [],
 })
@@ -107,6 +108,8 @@ const emptyGroup = () => ({
   glass_type: null,
   glass_category: null,
   ceiling_inches: 6,
+  ceiling_w_inches: 6,
+  ceiling_h_inches: 6,
   is_toughened: false,
   product_id: null,
   description: '',
@@ -260,8 +263,10 @@ const SalesOrderForm = () => {
   const [soUnit, setSoUnit] = useState('inch')
   const [groups, setGroups] = useState([emptyGroup()])
   const [dropdownConfig] = useState(getDropdownConfig())
+  const [customSearchVal, setCustomSearchVal] = useState({})
   const [hardwareItems, setHardwareItems] = useState([])
   const [laborItems, setLaborItems] = useState([])
+  const [wastageItems, setWastageItems] = useState([])
   const [gstMode, setGstMode] = useState('cgst_sgst')
   const [compWizard, setCompWizard] = useState(null)
   const [wizardCostPrice, setWizardCostPrice] = useState(null)
@@ -282,6 +287,16 @@ const SalesOrderForm = () => {
     description: '',
     qty: 1,
     uom: '',
+    cost_rate: 0,
+    rate: 0,
+    cost_amount: 0,
+    amount: 0,
+  })
+
+  const emptyWastage = () => ({
+    wst_key: Date.now() + Math.random(),
+    description: '',
+    qty: 1,
     cost_rate: 0,
     rate: 0,
     cost_amount: 0,
@@ -318,6 +333,8 @@ const SalesOrderForm = () => {
           glass_type: line.glass_type || null,
           glass_category: line.glass_category || null,
           ceiling_inches: line.ceiling_inches || 6,
+          ceiling_w_inches: line.ceiling_w_inches || line.ceiling_inches || 6,
+          ceiling_h_inches: line.ceiling_h_inches || line.ceiling_inches || 6,
           is_toughened: line.is_toughened || false,
           product_id: line.product_id,
           description: line.description || '',
@@ -353,6 +370,8 @@ const SalesOrderForm = () => {
         cep_rft: line.cep_rft || 0,
         cep_charges: line.cep_charges || 0,
         tgh_sqmt: line.tgh_sqmt || 0,
+        tgh_charge: line.tgh_charge || 0,
+        _tgh_charge_manual: line.tgh_charge > 0,
         subtotal: line.subtotal || 0,
         tax_amount: line.tax_amount || 0,
         line_total: line.line_total || 0,
@@ -379,19 +398,27 @@ const SalesOrderForm = () => {
     const w_inch = size.width_inch || 0
     const h_inch = size.height_inch || 0
     const qty = size.quantity || 1
-    const ceilN = typeof group.ceiling_inches === 'number' ? group.ceiling_inches : 6
-    const ceilFn = (x) => {
-      if (group.ceiling_inches === 'plus30mm') {
-        return x + (30 / 25.4)
-      }
-      return Math.ceil(x / ceilN) * ceilN
+
+    // Separate ceiling for W and H
+    const ceilW = group.ceiling_w_inches ?? group.ceiling_inches ?? 6
+    const ceilH = group.ceiling_h_inches ?? group.ceiling_inches ?? 6
+
+    const ceilFnW = (x) => {
+      if (ceilW === 'plus30mm') return x + (30 / 25.4)
+      return Math.ceil(x / ceilW) * ceilW
     }
+    const ceilFnH = (x) => {
+      if (ceilH === 'plus30mm') return x + (30 / 25.4)
+      return Math.ceil(x / ceilH) * ceilH
+    }
+    const ceilFn = ceilFnW
+    const ceilN = typeof ceilW === 'number' ? ceilW : 6
     const ceil3 = (x) => Math.ceil(x / 3) * 3
-    const area_sqft_pc = (ceilFn(w_inch) * ceilFn(h_inch)) / 144
+    const area_sqft_pc = (ceilFnW(w_inch) * ceilFnH(h_inch)) / 144
     const total_sqft = area_sqft_pc * qty
     const running_ft = (w_inch + h_inch) * 2 * qty / 12
-    const charged_w_inch = parseFloat(ceil3(w_inch).toFixed(4))
-    const charged_h_inch = parseFloat(ceil3(h_inch).toFixed(4))
+    const charged_w_inch = parseFloat(ceilFnW(w_inch).toFixed(4))
+    const charged_h_inch = parseFloat(ceilFnH(h_inch).toFixed(4))
     const charged_sqft = (charged_w_inch * charged_h_inch * qty) / 144
     const getCepMultiplier = () => {
       if (group.cep_rft_multiplier) return group.cep_rft_multiplier
@@ -414,30 +441,30 @@ const SalesOrderForm = () => {
     else effective_qty = qty
 
     const sqft_amt = effective_qty * (group.rate || 0)
-    const rft_amt  = running_ft * (group.rate_rft || 0)
-    let subtotal   = (sqft_amt + rft_amt) * (1 - (group.discount_pct||0) / 100)
-    subtotal       = parseFloat((subtotal + cep_charges).toFixed(2))
+    const rft_amt = running_ft * (group.rate_rft || 0)
+    let subtotal = (sqft_amt + rft_amt) * (1 - (group.discount_pct || 0) / 100)
+    subtotal = parseFloat((subtotal + cep_charges).toFixed(2))
 
-    // Auto-add toughening cost when glass_type = Toughened
-    // Toughening rate comes from process masters (toughening type)
-    // Formula: tgh_sqmt × toughening_rate
-    if (group.glass_type === 'Toughened') {
-      try {
-        const pm = JSON.parse(
-          localStorage.getItem('process_masters') || '[]'
-        )
-        const toughProc = pm.find(p =>
-          p.process_type === 'toughening' &&
-          p.is_active !== false
-        )
-        if (toughProc && toughProc.rate > 0) {
-          // tgh_sqmt already calculated above
-          const tgh_cost = parseFloat(
-            (tgh_sqmt * toughProc.rate).toFixed(2)
+    // Toughening charge — auto-fill from process masters but user-editable
+    let tgh_charge = size.tgh_charge ?? 0
+
+    if (group.glass_type === 'Toughened' || group.is_toughened) {
+      // Only auto-calculate if user hasn't manually set it
+      if (!size._tgh_charge_manual) {
+        try {
+          const pm = JSON.parse(
+            localStorage.getItem('process_masters') || '[]'
           )
-          subtotal = parseFloat((subtotal + tgh_cost).toFixed(2))
-        }
-      } catch {}
+          const toughProc = pm.find(p =>
+            p.process_type === 'toughening' &&
+            p.is_active !== false
+          )
+          if (toughProc && toughProc.rate > 0) {
+            tgh_charge = parseFloat((tgh_sqmt * toughProc.rate).toFixed(2))
+          }
+        } catch { }
+      }
+      subtotal = parseFloat((subtotal + tgh_charge).toFixed(2))
     }
     const tax_amt = parseFloat((subtotal * (group.tax_rate || 18) / 100).toFixed(2))
     const line_total = parseFloat((subtotal + tax_amt).toFixed(2))
@@ -453,6 +480,7 @@ const SalesOrderForm = () => {
       cep_rft: parseFloat(cep_rft.toFixed(4)),
       cep_charges,
       tgh_sqmt: parseFloat(tgh_sqmt.toFixed(6)),
+      tgh_charge: parseFloat(tgh_charge.toFixed(2)),
       effective_qty: parseFloat(effective_qty.toFixed(4)),
       subtotal, tax_amount: tax_amt, line_total
     }
@@ -486,6 +514,10 @@ const SalesOrderForm = () => {
       }
 
       if (field === 'ceiling_inches') {
+        updated.sizes = g.sizes.map(s => calcGroupSize(updated, s))
+      }
+
+      if (field === 'ceiling_w_inches' || field === 'ceiling_h_inches') {
         updated.sizes = g.sizes.map(s => calcGroupSize(updated, s))
       }
 
@@ -781,6 +813,9 @@ const SalesOrderForm = () => {
         cep_rft: s.cep_rft,
         cep_charges: s.cep_charges,
         tgh_sqmt: s.tgh_sqmt,
+        tgh_charge: s.tgh_charge || 0,
+        ceiling_w_inches: g.ceiling_w_inches ?? g.ceiling_inches ?? 6,
+        ceiling_h_inches: g.ceiling_h_inches ?? g.ceiling_inches ?? 6,
         subtotal: s.subtotal,
         tax_amount: s.tax_amount,
         line_total: s.line_total,
@@ -851,11 +886,23 @@ const SalesOrderForm = () => {
           amount: l.amount || (l.qty || 0) * (l.rate || 0),
         })))
       }
+      if (record.wastage_items?.length) {
+        setWastageItems(record.wastage_items.map((w, i) => ({
+          wst_key: w.wst_key || Date.now() + Math.random() + i,
+          description: w.description || '',
+          qty: w.qty || 1,
+          cost_rate: w.cost_rate || 0,
+          rate: w.rate || 0,
+          cost_amount: w.cost_amount || (w.qty || 0) * (w.cost_rate || 0),
+          amount: w.amount || (w.qty || 0) * (w.rate || 0),
+        })))
+      }
       setGstMode(record.gst_mode || (record.is_inter_state ? 'igst' : 'cgst_sgst'))
     }
   }, [record, form])
 
   const dcCharges = Form.useWatch('dc_charges', form) || 0
+  const dcCost = Form.useWatch('dc_cost', form) || 0
   const discountAmt = Form.useWatch('discount_amount', form) || 0
   const advanceRec = Form.useWatch('advance_received', form) || 0
   const handlingCharges = Form.useWatch('handling_charges', form) || 0
@@ -873,14 +920,18 @@ const SalesOrderForm = () => {
     const procTotal = allProcesses.reduce((s, p) => s + (p.amount || 0), 0)
     const hwTotal = hardwareItems.reduce((s, h) => s + (h.amount || 0), 0)
     const lbTotal = laborItems.reduce((s, l) => s + (l.amount || 0), 0)
+    const wstTotal = wastageItems.reduce((s, w) => s + (w.amount || 0), 0)
     const hwCostTotal = hardwareItems.reduce(
       (s, h) => s + (h.cost_amount || (h.qty || 0) * (h.cost_rate || 0)), 0
     )
     const lbCostTotal = laborItems.reduce(
       (s, l) => s + (l.cost_amount || (l.qty || 0) * (l.cost_rate || 0)), 0
     )
+    const wstCostTotal = wastageItems.reduce(
+      (s, w) => s + (w.cost_amount || (w.qty || 0) * (w.cost_rate || 0)), 0
+    )
 
-    const subII = subI + procTotal + hwTotal + lbTotal + (dcCharges || 0)
+    const subII = subI + procTotal + hwTotal + lbTotal + wstTotal + (dcCharges || 0)
     const subIII = Math.max(0, subII - (discountAmt || 0))
 
     let cgst = 0, sgst = 0, igst = 0
@@ -909,13 +960,13 @@ const SalesOrderForm = () => {
     const marginPct = totalCost > 0 ? (marginAmt / totalCost) * 100 : 100
 
     return {
-      subI, procTotal, hwTotal, lbTotal, dcCharges, subII,
+      subI, procTotal, hwTotal, lbTotal, wstTotal, dcCharges, dcCost, subII,
       discountAmt, subIII, cgst, sgst, igst,
       grandTotal, advanceRec, balance,
       totalCost, marginAmt, marginPct,
-      hwCostTotal, lbCostTotal
+      hwCostTotal, lbCostTotal, wstCostTotal
     }
-  }, [groups, hardwareItems, laborItems, dcCharges, discountAmt, advanceRec, gstMode, products])
+  }, [groups, hardwareItems, laborItems, wastageItems, dcCharges, dcCost, discountAmt, advanceRec, gstMode, products])
 
   const openComparisonWizard = (group) => {
     // Try to get cost price from:
@@ -1010,6 +1061,7 @@ const SalesOrderForm = () => {
       ? parseFloat(((totalMargin / totalCost) * 100).toFixed(2)) : 100
 
     setCompWizard({
+      group_key: group.group_key,
       product_name: group.description || 'Product',
       cost_price: costPerSqft,
       selling_rate: group.rate,
@@ -1100,6 +1152,9 @@ const SalesOrderForm = () => {
       values.groups = groups
       values.hardware_items = hardwareItems
       values.labor_items = laborItems
+      values.wastage_items = wastageItems
+      values.dc_cost = dcCost || 0
+      values.totals = totals
       values.subtotal = totals.subIII
       values.tax_amount = totals.cgst + totals.sgst + totals.igst
       values.total_amount = totals.grandTotal
@@ -1285,6 +1340,48 @@ const SalesOrderForm = () => {
           </Space>
         </Col>
       </Row>
+
+      {isEdit && woData?.items?.length > 0 && (
+        <div style={{
+          background: '#f0fdf4',
+          border: '1px solid #86efac',
+          borderRadius: 8,
+          padding: '10px 16px',
+          marginBottom: 16,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+          flexWrap: 'wrap',
+        }}>
+          <span style={{ fontWeight: 600, color: '#15803d' }}>
+            🔧 Linked Workshop Orders:
+          </span>
+          {woData.items.map(wo => (
+            <Button
+              key={wo.id}
+              size="small"
+              style={{
+                background: wo.status === 'completed' ? '#dcfce7' : '#fef3c7',
+                borderColor: wo.status === 'completed' ? '#86efac' : '#fcd34d',
+                color: wo.status === 'completed' ? '#15803d' : '#92400e',
+                fontWeight: 600,
+              }}
+              onClick={() => navigate(`/workshop/orders/${wo.id}/edit`)}
+            >
+              {wo.wo_number} — {wo.status?.toUpperCase()}
+            </Button>
+          ))}
+          <Button
+            size="small"
+            type="primary"
+            icon={<PlusOutlined />}
+            style={{ background: '#6366f1', borderColor: '#6366f1' }}
+            onClick={() => navigate(`/workshop/orders/new?so_id=${id}`)}
+          >
+            + New WO
+          </Button>
+        </div>
+      )}
 
       <Form form={form} layout="vertical" initialValues={{ status: 'draft' }}>
         <CompanySelector form={form} />
@@ -1533,10 +1630,16 @@ const SalesOrderForm = () => {
                 </div>
               </Col>
               <Col span={2}>
-                <div style={{ marginBottom: 2 }}><Text style={{ fontSize: 10, color: '#94a3b8' }}>CEILING</Text></div>
-                <Select size="small" value={group.ceiling_inches || 6} style={{ width: '100%' }}
+                <div style={{ marginBottom: 2 }}><Text style={{ fontSize: 10, color: '#94a3b8' }}>W CEILING</Text></div>
+                <Select size="small" value={group.ceiling_w_inches ?? 6} style={{ width: '100%' }}
                   options={CEILING_OPTIONS}
-                  onChange={val => updateGroup(group.group_key, 'ceiling_inches', val)} />
+                  onChange={val => updateGroup(group.group_key, 'ceiling_w_inches', val)} />
+              </Col>
+              <Col span={2}>
+                <div style={{ marginBottom: 2 }}><Text style={{ fontSize: 10, color: '#94a3b8' }}>H CEILING</Text></div>
+                <Select size="small" value={group.ceiling_h_inches ?? 6} style={{ width: '100%' }}
+                  options={CEILING_OPTIONS}
+                  onChange={val => updateGroup(group.group_key, 'ceiling_h_inches', val)} />
               </Col>
               <Col span={3}>
                 <div style={{
@@ -1876,6 +1979,40 @@ const SalesOrderForm = () => {
                       }
                     }))} />
                 }] : []),
+                ...(group.is_toughened || group.glass_type === 'Toughened' ? [{
+                  title: <span>Tgh <Tag color="orange" style={{ fontSize: 9 }}>Charge</Tag></span>,
+                  width: 100, dataIndex: 'tgh_charge',
+                  render: (v, row) => (
+                    <InputNumber
+                      size="small"
+                      value={v ? parseFloat(v.toFixed(2)) : 0}
+                      min={0}
+                      prefix="₹"
+                      style={{ width: '100%', borderColor: '#f97316' }}
+                      onChange={val => setGroups(prev => prev.map(g => {
+                        if (g.group_key !== group.group_key) return g
+                        return {
+                          ...g,
+                          sizes: g.sizes.map(s => {
+                            if (s.size_key !== row.size_key) return s
+                            const updated = {
+                              ...s,
+                              tgh_charge: val || 0,
+                              _tgh_charge_manual: true,
+                            }
+                            const baseSub = parseFloat(
+                              ((s.effective_qty || s.total_sqft || 0) * (g.rate || 0) *
+                               (1 - (g.discount_pct || 0) / 100) +
+                               (s.cep_charges || 0)).toFixed(2)
+                            )
+                            updated.subtotal = parseFloat((baseSub + (val || 0)).toFixed(2))
+                            return updated
+                          })
+                        }
+                      }))}
+                    />
+                  )
+                }] : []),
                 {
                   title: 'Amount', width: 110, dataIndex: 'subtotal', align: 'right',
                   render: (v, row) => <InputNumber size="small" value={v ? parseFloat(v.toFixed(2)) : 0} min={0} prefix="₹"
@@ -2047,6 +2184,18 @@ const SalesOrderForm = () => {
               ])}
             >
               + Add Labor
+            </Button>
+          </Col>
+          <Col>
+            <Button
+              type="dashed"
+              icon={<PlusOutlined />}
+              style={{ borderColor: '#ef4444', color: '#ef4444' }}
+              onClick={() => setWastageItems(prev => [
+                ...prev, emptyWastage()
+              ])}
+            >
+              + Add Wastage
             </Button>
           </Col>
         </Row>
@@ -2349,6 +2498,114 @@ const SalesOrderForm = () => {
         </Card>
         )}
 
+        {wastageItems.length > 0 && (
+          <Card
+            title={
+            <Space>
+              <span>🗑️ Wastage / Scrap</span>
+              <Text type="secondary" style={{fontSize:11}}>
+                Total: ₹{wastageItems.reduce((s,w)=>s+(w.amount||0),0).toLocaleString('en-IN',{minimumFractionDigits:2})}
+              </Text>
+            </Space>
+          }
+          size="small"
+          style={{ marginTop: 16, border: '1px solid #fca5a5' }}
+        >
+          <Table
+            dataSource={wastageItems}
+            rowKey="wst_key"
+            size="small"
+            pagination={false}
+            columns={[
+              {
+                title: 'Description', dataIndex: 'description', width: 300,
+                render: (v, row) => (
+                  <Input
+                    size="small"
+                    value={v}
+                    placeholder="Enter wastage description"
+                    onChange={e => setWastageItems(prev =>
+                      prev.map(w => w.wst_key !== row.wst_key ? w : {
+                        ...w, description: e.target.value
+                      })
+                    )}
+                  />
+                )
+              },
+              {
+                title: 'Qty', dataIndex: 'qty', width: 80,
+                render: (v, row) => (
+                  <InputNumber
+                    size="small" value={v} min={0}
+                    style={{width:'100%'}}
+                    onChange={val => setWastageItems(prev =>
+                      prev.map(w => w.wst_key !== row.wst_key ? w : {
+                        ...w,
+                        qty: val,
+                        cost_amount: parseFloat(((val||0)*(w.cost_rate||0)).toFixed(2)),
+                        amount: parseFloat(((val||0)*(w.rate||0)).toFixed(2)),
+                      })
+                    )}
+                  />
+                )
+              },
+              {
+                title: 'Cost Rate', dataIndex: 'cost_rate', width: 120,
+                render: (v, row) => (
+                  <InputNumber
+                    size="small" value={v} min={0} prefix="₹"
+                    style={{width:'100%'}}
+                    onChange={val => setWastageItems(prev =>
+                      prev.map(w => w.wst_key !== row.wst_key ? w : {
+                        ...w,
+                        cost_rate: val,
+                        cost_amount: parseFloat(((w.qty||0)*(val||0)).toFixed(2))
+                      })
+                    )}
+                  />
+                )
+              },
+              {
+                title: 'Rate', dataIndex: 'rate', width: 120,
+                render: (v, row) => (
+                  <InputNumber
+                    size="small" value={v} min={0} prefix="₹"
+                    style={{width:'100%'}}
+                    onChange={val => setWastageItems(prev =>
+                      prev.map(w => w.wst_key !== row.wst_key ? w : {
+                        ...w,
+                        rate: val,
+                        amount: parseFloat(((w.qty||0)*(val||0)).toFixed(2))
+                      })
+                    )}
+                  />
+                )
+              },
+              {
+                title: 'Amount', dataIndex: 'amount', width: 120, align: 'right',
+                render: v => (
+                  <Text strong style={{color:'#dc2626'}}>
+                    ₹{Number(v||0).toLocaleString('en-IN',{minimumFractionDigits:2})}
+                  </Text>
+                )
+              },
+              {
+                title: '', width: 40,
+                render: (_, row) => (
+                  <Button
+                    size="small" type="text" danger
+                    icon={<DeleteOutlined />}
+                    onClick={() => setWastageItems(prev =>
+                      prev.filter(w => w.wst_key !== row.wst_key)
+                    )}
+                  />
+                )
+              }
+            ]}
+          />
+        </Card>
+        )}
+
         <Row gutter={24} style={{ marginTop: 24 }}>
           <Col span={12}>
             <Tabs size="small" items={[
@@ -2366,9 +2623,24 @@ const SalesOrderForm = () => {
               {totals.lbTotal > 0 && (
                 <Row justify="space-between" style={{ marginBottom: 8 }}><Col>Labor</Col><Col>{fmt(totals.lbTotal)}</Col></Row>
               )}
-              <Form.Item name="dc_charges" label="D/C Charges" labelCol={{ span: 12 }} wrapperCol={{ span: 12 }} style={{ marginBottom: 8 }}>
-                <InputNumber style={{ width: '100%' }} prefix="₹" />
-              </Form.Item>
+              {totals.wstTotal > 0 && (
+                <Row justify="space-between" style={{ marginBottom: 8 }}>
+                  <Col><Text style={{ color: '#dc2626' }}>Wastage</Text></Col>
+                  <Col><Text style={{ color: '#dc2626' }}>{fmt(totals.wstTotal)}</Text></Col>
+                </Row>
+              )}
+              <Row justify="space-between" align="middle" style={{ marginBottom: 8 }}>
+                <Col span={12}>
+                  <Form.Item name="dc_charges" label="D/C Charges (Selling)" labelCol={{ span: 14 }} wrapperCol={{ span: 10 }} style={{ marginBottom: 0 }}>
+                    <InputNumber style={{ width: '100%' }} prefix="₹" />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item name="dc_cost" label="D/C Cost" labelCol={{ span: 10 }} wrapperCol={{ span: 14 }} style={{ marginBottom: 0 }}>
+                    <InputNumber style={{ width: '100%' }} prefix="₹" />
+                  </Form.Item>
+                </Col>
+              </Row>
               <Row justify="space-between" style={{ marginBottom: 8, fontWeight: 600 }}><Col>Sub-total II</Col><Col>{fmt(totals.subII)}</Col></Row>
               <Form.Item name="discount_amount" label="Discount" labelCol={{ span: 12 }} wrapperCol={{ span: 12 }} style={{ marginBottom: 8 }}>
                 <InputNumber style={{ width: '100%' }} prefix="₹" />
@@ -2422,7 +2694,34 @@ const SalesOrderForm = () => {
         }
         open={compWizard !== null}
         onCancel={() => { setCompWizard(null); setWizardCostPrice(null) }}
-        footer={<Button onClick={() => { setCompWizard(null); setWizardCostPrice(null) }}>Close</Button>}
+        footer={
+          <Space>
+            {wizardCostPrice !== null && wizardCostPrice !== compWizard?.cost_price && (
+              <Button
+                type="primary"
+                style={{ background: '#6366f1', borderColor: '#6366f1' }}
+                onClick={() => {
+                  if (compWizard?.group_key && wizardCostPrice > 0) {
+                    const currentMarginPct = compWizard.totalMarginPct || 20
+                    const newRate = parseFloat(
+                      (wizardCostPrice / (1 - currentMarginPct / 100)).toFixed(2)
+                    )
+                    updateGroup(compWizard.group_key, 'custom_costing', true)
+                    updateGroup(compWizard.group_key, 'rate', newRate)
+                    message.success(`Rate updated to ₹${newRate}/sqft`)
+                  }
+                  setCompWizard(null)
+                  setWizardCostPrice(null)
+                }}
+              >
+                💾 Apply New Rate
+              </Button>
+            )}
+            <Button onClick={() => { setCompWizard(null); setWizardCostPrice(null) }}>
+              Close
+            </Button>
+          </Space>
+        }
         width={800}
       >
         {compWizard && (

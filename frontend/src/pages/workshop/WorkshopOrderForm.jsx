@@ -32,7 +32,7 @@ const saveArtworkMaster = async (artworks) => {
   // Also save to backend
   try {
     await settingsApi.save(settingsApi.KEYS.ARTWORK_MASTER, artworks)
-  } catch {}
+  } catch { }
 }
 
 const WorkshopOrderForm = () => {
@@ -63,7 +63,7 @@ const WorkshopOrderForm = () => {
         setArtworkMaster(data)
         localStorage.setItem('artwork_master', JSON.stringify(data))
       }
-    }).catch(() => {})
+    }).catch(() => { })
   }, [])
 
   const inchToMm = (val) => val ? Math.round(val * 25.4) : null
@@ -383,333 +383,333 @@ const WorkshopOrderForm = () => {
 
   const generateWOPdf = async () => {
     try {
-    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-    const pageW = doc.internal.pageSize.getWidth()
-    const margin = 14
+      const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
+      const pageW = doc.internal.pageSize.getWidth()
+      const margin = 14
 
-    // ── HEADER ──────────────────────────────────────
-    doc.setFillColor(15, 23, 42)
-    doc.rect(0, 0, pageW, 28, 'F')
+      // ── HEADER ──────────────────────────────────────
+      doc.setFillColor(15, 23, 42)
+      doc.rect(0, 0, pageW, 28, 'F')
 
-    doc.setTextColor(255, 255, 255)
-    doc.setFontSize(18)
-    doc.setFont('helvetica', 'bold')
-    doc.text('ESSAR GLASS', margin, 11)
-
-    doc.setFontSize(9)
-    doc.setFont('helvetica', 'normal')
-    doc.text('Manufacturing & Processing', margin, 17)
-    doc.text('CENTER EG', margin, 22)
-
-    doc.setFontSize(14)
-    doc.setFont('helvetica', 'bold')
-    doc.text(record?.wo_number || 'WO-DRAFT', pageW - margin, 12, { align: 'right' })
-    doc.setFontSize(9)
-    doc.setFont('helvetica', 'normal')
-    doc.text('WORKSHOP ORDER', pageW - margin, 18, { align: 'right' })
-
-    // ── META INFO ────────────────────────────────────
-    doc.setTextColor(15, 23, 42)
-    doc.setFontSize(9)
-    const metaY = 36
-
-    const metaLeft = [
-      ['Customer', customerList.find(c => c.id === record?.customer_id)?.name || '—'],
-      ['Sales Order', record?.so_number || '—'],
-      ['Priority', (record?.priority || 'Normal').toUpperCase()],
-    ]
-    const metaRight = [
-      ['Order Date', record?.order_date || dayjs().format('YYYY-MM-DD')],
-      ['Required By', record?.required_by || '—'],
-      ['WO Status', (record?.status || 'draft').toUpperCase()],
-    ]
-
-    metaLeft.forEach(([label, value], i) => {
+      doc.setTextColor(255, 255, 255)
+      doc.setFontSize(18)
       doc.setFont('helvetica', 'bold')
-      doc.text(`${label}:`, margin, metaY + i * 6)
+      doc.text('ESSAR GLASS', margin, 11)
+
+      doc.setFontSize(9)
       doc.setFont('helvetica', 'normal')
-      doc.text(value, margin + 28, metaY + i * 6)
-    })
-    metaRight.forEach(([label, value], i) => {
+      doc.text('Manufacturing & Processing', margin, 17)
+      doc.text('CENTER EG', margin, 22)
+
+      doc.setFontSize(14)
       doc.setFont('helvetica', 'bold')
-      doc.text(`${label}:`, pageW / 2 + 10, metaY + i * 6)
+      doc.text(record?.wo_number || 'WO-DRAFT', pageW - margin, 12, { align: 'right' })
+      doc.setFontSize(9)
       doc.setFont('helvetica', 'normal')
-      doc.text(value, pageW / 2 + 38, metaY + i * 6)
-    })
+      doc.text('WORKSHOP ORDER', pageW - margin, 18, { align: 'right' })
 
-    if (record?.instructions) {
-      doc.setFont('helvetica', 'italic')
-      doc.setFontSize(8)
-      doc.setTextColor(100, 100, 100)
-      doc.text(`Instructions: ${record.instructions}`, margin, metaY + 20)
-    }
+      // ── META INFO ────────────────────────────────────
+      doc.setTextColor(15, 23, 42)
+      doc.setFontSize(9)
+      const metaY = 36
 
-    // ── DIVIDER ──────────────────────────────────────
-    doc.setDrawColor(200, 200, 200)
-    doc.line(margin, metaY + 24, pageW - margin, metaY + 24)
+      const metaLeft = [
+        ['Customer', customerList.find(c => c.id === record?.customer_id)?.name || '—'],
+        ['Sales Order', record?.so_number || '—'],
+        ['Priority', (record?.priority || 'Normal').toUpperCase()],
+      ]
+      const metaRight = [
+        ['Order Date', record?.order_date || dayjs().format('YYYY-MM-DD')],
+        ['Required By', record?.required_by || '—'],
+        ['WO Status', (record?.status || 'draft').toUpperCase()],
+      ]
 
-    // ── JOB CARDS TABLE ─────────────────────────────
-    const tableRows = lines.map((line, i) => [
-      i + 1,
-      line.description || '—',
-      line.act_w_in ? `${line.act_w_in}"` : '—',
-      line.act_h_in ? `${line.act_h_in}"` : '—',
-      line.act_w_mm ? `${line.act_w_mm}mm` : '—',
-      line.act_h_mm ? `${line.act_h_mm}mm` : '—',
-      line.qty || 1,
-      line.cep ? '✓' : '—',
-      line.process_label || '—',
-      line.is_toughened ? '✓' : '—',
-      line.remark || '—',
-    ])
+      metaLeft.forEach(([label, value], i) => {
+        doc.setFont('helvetica', 'bold')
+        doc.text(`${label}:`, margin, metaY + i * 6)
+        doc.setFont('helvetica', 'normal')
+        doc.text(value, margin + 28, metaY + i * 6)
+      })
+      metaRight.forEach(([label, value], i) => {
+        doc.setFont('helvetica', 'bold')
+        doc.text(`${label}:`, pageW / 2 + 20, metaY + i * 6)
+        doc.setFont('helvetica', 'normal')
+        doc.text(value, pageW / 2 + 50, metaY + i * 6)
+      })
 
-    autoTable(doc, {
-      startY: metaY + 28,
-      head: [['#', 'Description', 'W (in)', 'H (in)', 'W (mm)', 'H (mm)', 'Qty', 'CEP', 'Process', 'Tgh', 'Remark']],
-      body: tableRows,
-      styles: { fontSize: 7.5, cellPadding: 2.5 },
-      headStyles: {
-        fillColor: [99, 102, 241],
-        textColor: 255,
-        fontStyle: 'bold',
-        fontSize: 8,
-      },
-      alternateRowStyles: { fillColor: [248, 250, 252] },
-      columnStyles: {
-        0: { cellWidth: 8, halign: 'center' },
-        1: { cellWidth: 38 },
-        2: { cellWidth: 14, halign: 'center' },
-        3: { cellWidth: 14, halign: 'center' },
-        4: { cellWidth: 14, halign: 'center' },
-        5: { cellWidth: 14, halign: 'center' },
-        6: { cellWidth: 8, halign: 'center' },
-        7: { cellWidth: 8, halign: 'center' },
-        8: { cellWidth: 28 },
-        9: { cellWidth: 8, halign: 'center' },
-        10: { cellWidth: 'auto' },
-      },
-      margin: { left: margin, right: margin },
-    })
-
-    // ── PANEL MAPPING SECTION ─────────────────────────
-    if (artworkPanels && artworkPanels.length > 0 && artworkImage) {
-      let pmY = (doc.lastAutoTable?.finalY || 80) + 10
-
-      if (pmY + 20 > doc.internal.pageSize.getHeight() - 20) {
-        doc.addPage()
-        pmY = 20
+      if (record?.instructions) {
+        doc.setFont('helvetica', 'italic')
+        doc.setFontSize(8)
+        doc.setTextColor(100, 100, 100)
+        doc.text(`Instructions: ${record.instructions}`, margin, metaY + 20)
       }
 
-      // Section heading
-      doc.setFontSize(11)
-      doc.setFont('helvetica', 'bold')
-      doc.setTextColor(15, 23, 42)
-      doc.text('Master Artwork — Panel Mapping', margin, pmY)
-      pmY += 5
+      // ── DIVIDER ──────────────────────────────────────
+      doc.setDrawColor(200, 200, 200)
+      doc.line(margin, metaY + 24, pageW - margin, metaY + 24)
 
-      doc.setDrawColor(124, 58, 237)
-      doc.setLineWidth(0.5)
-      doc.line(margin, pmY, pageW - margin, pmY)
-      pmY += 6
+      // ── JOB CARDS TABLE ─────────────────────────────
+      const tableRows = lines.map((line, i) => [
+        i + 1,
+        line.description || '—',
+        line.act_w_in ? `${line.act_w_in}"` : '—',
+        line.act_h_in ? `${line.act_h_in}"` : '—',
+        line.act_w_mm ? `${line.act_w_mm}mm` : '—',
+        line.act_h_mm ? `${line.act_h_mm}mm` : '—',
+        line.qty || 1,
+        line.cep ? '✓' : '—',
+        line.process_label || '—',
+        line.is_toughened ? '✓' : '—',
+        line.remark || '—',
+      ])
 
-      // Draw annotated image on offscreen canvas
-      try {
-        const oCanvas = document.createElement('canvas')
-        const oImg = new Image()
-        await new Promise((resolve, reject) => {
-          oImg.onload = resolve
-          oImg.onerror = reject
-          oImg.src = artworkImage
-        })
+      autoTable(doc, {
+        startY: metaY + 28,
+        head: [['#', 'Description', 'W (in)', 'H (in)', 'W (mm)', 'H (mm)', 'Qty', 'CEP', 'Process', 'Tgh', 'Remark']],
+        body: tableRows,
+        styles: { fontSize: 7.5, cellPadding: 2.5 },
+        headStyles: {
+          fillColor: [99, 102, 241],
+          textColor: 255,
+          fontStyle: 'bold',
+          fontSize: 8,
+        },
+        alternateRowStyles: { fillColor: [248, 250, 252] },
+        columnStyles: {
+          0: { cellWidth: 10, halign: 'center' },
+          1: { cellWidth: 60 },
+          2: { cellWidth: 18, halign: 'center' },
+          3: { cellWidth: 18, halign: 'center' },
+          4: { cellWidth: 18, halign: 'center' },
+          5: { cellWidth: 18, halign: 'center' },
+          6: { cellWidth: 12, halign: 'center' },
+          7: { cellWidth: 12, halign: 'center' },
+          8: { cellWidth: 45 },
+          9: { cellWidth: 12, halign: 'center' },
+          10: { cellWidth: 'auto' },
+        },
+        margin: { left: margin, right: margin },
+      })
 
-        const maxImgW = 90
-        const maxImgH = 70
-        const scale = Math.min(maxImgW / oImg.width, maxImgH / oImg.height, 1)
-        oCanvas.width = Math.round(oImg.width * scale)
-        oCanvas.height = Math.round(oImg.height * scale)
-        const oCtx = oCanvas.getContext('2d')
-        oCtx.drawImage(oImg, 0, 0, oCanvas.width, oCanvas.height)
+      // ── PANEL MAPPING SECTION ─────────────────────────
+      if (artworkPanels && artworkPanels.length > 0 && artworkImage) {
+        let pmY = (doc.lastAutoTable?.finalY || 80) + 10
 
-        const PANEL_COLORS = [
-          '#6366f1','#10b981','#f59e0b','#ef4444',
-          '#8b5cf6','#06b6d4','#ec4899','#f97316'
-        ]
-
-        artworkPanels.forEach((p, i) => {
-          const color = PANEL_COLORS[i % PANEL_COLORS.length]
-          oCtx.strokeStyle = color
-          oCtx.lineWidth = 2
-          oCtx.strokeRect(p.x * scale, p.y * scale, p.w * scale, p.h * scale)
-          oCtx.fillStyle = color + '40'
-          oCtx.fillRect(p.x * scale, p.y * scale, p.w * scale, p.h * scale)
-          // number badge
-          oCtx.fillStyle = color
-          oCtx.fillRect(p.x * scale + 2, p.y * scale + 2, 18, 18)
-          oCtx.fillStyle = '#ffffff'
-          oCtx.font = 'bold 12px sans-serif'
-          oCtx.fillText(String(i + 1), p.x * scale + 5, p.y * scale + 14)
-        })
-
-        const pdfImgW = oCanvas.width * (0.264583) // px to mm at 96dpi
-        const pdfImgH = oCanvas.height * (0.264583)
-        const finalImgW = Math.min(pdfImgW, 90)
-        const finalImgH = pdfImgH * (finalImgW / pdfImgW)
-
-        if (pmY + finalImgH + 10 > doc.internal.pageSize.getHeight() - 20) {
+        if (pmY + 20 > doc.internal.pageSize.getHeight() - 20) {
           doc.addPage()
           pmY = 20
         }
 
-        const imgData = oCanvas.toDataURL('image/jpeg', 0.85)
-        doc.addImage(imgData, 'JPEG', margin, pmY, finalImgW, finalImgH)
-        pmY += finalImgH + 8
-      } catch (imgErr) {
-        doc.setFontSize(8)
-        doc.setTextColor(200, 80, 80)
-        doc.text('[Annotated panel image could not be rendered]', margin, pmY)
+        // Section heading
+        doc.setFontSize(11)
+        doc.setFont('helvetica', 'bold')
+        doc.setTextColor(15, 23, 42)
+        doc.text('Master Artwork — Panel Mapping', margin, pmY)
+        pmY += 5
+
+        doc.setDrawColor(124, 58, 237)
+        doc.setLineWidth(0.5)
+        doc.line(margin, pmY, pageW - margin, pmY)
         pmY += 6
-      }
 
-      // Panel mapping table
-      if (pmY + 10 > doc.internal.pageSize.getHeight() - 20) {
-        doc.addPage()
-        pmY = 20
-      }
+        // Draw annotated image on offscreen canvas
+        try {
+          const oCanvas = document.createElement('canvas')
+          const oImg = new Image()
+          await new Promise((resolve, reject) => {
+            oImg.onload = resolve
+            oImg.onerror = reject
+            oImg.src = artworkImage
+          })
 
-      const pmTableRows = artworkPanels.map((p, i) => {
-        const line = (p.lineIndex != null) ? lines[p.lineIndex] : null
-        return [
-          String(i + 1),
-          line ? (line.description || `Line ${p.lineIndex + 1}`) : 'Not assigned',
-          line
-            ? `${line.act_w_in || '?'}" × ${line.act_h_in || '?'}" (Qty: ${line.qty || 1})`
-            : '—',
-          p.note || '—',
-        ]
-      })
+          const maxImgW = 90
+          const maxImgH = 70
+          const scale = Math.min(maxImgW / oImg.width, maxImgH / oImg.height, 1)
+          oCanvas.width = Math.round(oImg.width * scale)
+          oCanvas.height = Math.round(oImg.height * scale)
+          const oCtx = oCanvas.getContext('2d')
+          oCtx.drawImage(oImg, 0, 0, oCanvas.width, oCanvas.height)
 
-      autoTable(doc, {
-        startY: pmY,
-        head: [['Panel', 'Line Description', 'Dimensions', 'Note']],
-        body: pmTableRows,
-        styles: { fontSize: 8, cellPadding: 2.5 },
-        headStyles: {
-          fillColor: [124, 58, 237],
-          textColor: 255,
-          fontStyle: 'bold',
-          fontSize: 8.5,
-        },
-        alternateRowStyles: { fillColor: [245, 243, 255] },
-        columnStyles: {
-          0: { cellWidth: 14, halign: 'center' },
-          1: { cellWidth: 65 },
-          2: { cellWidth: 45 },
-          3: { cellWidth: 'auto' },
-        },
-        margin: { left: margin, right: margin },
-      })
-    }
+          const PANEL_COLORS = [
+            '#6366f1', '#10b981', '#f59e0b', '#ef4444',
+            '#8b5cf6', '#06b6d4', '#ec4899', '#f97316'
+          ]
 
-    // ── ARTWORK SECTION ──────────────────────────────
-    let artY = (doc.lastAutoTable?.finalY || 80) + 10
+          artworkPanels.forEach((p, i) => {
+            const color = PANEL_COLORS[i % PANEL_COLORS.length]
+            oCtx.strokeStyle = color
+            oCtx.lineWidth = 2
+            oCtx.strokeRect(p.x * scale, p.y * scale, p.w * scale, p.h * scale)
+            oCtx.fillStyle = color + '40'
+            oCtx.fillRect(p.x * scale, p.y * scale, p.w * scale, p.h * scale)
+            // number badge
+            oCtx.fillStyle = color
+            oCtx.fillRect(p.x * scale + 2, p.y * scale + 2, 18, 18)
+            oCtx.fillStyle = '#ffffff'
+            oCtx.font = 'bold 12px sans-serif'
+            oCtx.fillText(String(i + 1), p.x * scale + 5, p.y * scale + 14)
+          })
 
-    const processLines = lines.filter(l => l.has_process && l.artwork_file_data)
+          const pdfImgW = oCanvas.width * (0.264583) // px to mm at 96dpi
+          const pdfImgH = oCanvas.height * (0.264583)
+          const finalImgW = Math.min(pdfImgW, 90)
+          const finalImgH = pdfImgH * (finalImgW / pdfImgW)
 
-    const artworkMap = new Map()
-    processLines.forEach(l => {
-      const key = l.artwork_master_id || l.key
-      if (!artworkMap.has(key)) {
-        artworkMap.set(key, {
-          name: l.artwork_name || l.artwork_file_name || 'Artwork',
-          data: l.artwork_file_data,
-          sizes: []
+          if (pmY + finalImgH + 10 > doc.internal.pageSize.getHeight() - 20) {
+            doc.addPage()
+            pmY = 20
+          }
+
+          const imgData = oCanvas.toDataURL('image/jpeg', 0.85)
+          doc.addImage(imgData, 'JPEG', margin, pmY, finalImgW, finalImgH)
+          pmY += finalImgH + 8
+        } catch (imgErr) {
+          doc.setFontSize(8)
+          doc.setTextColor(200, 80, 80)
+          doc.text('[Annotated panel image could not be rendered]', margin, pmY)
+          pmY += 6
+        }
+
+        // Panel mapping table
+        if (pmY + 10 > doc.internal.pageSize.getHeight() - 20) {
+          doc.addPage()
+          pmY = 20
+        }
+
+        const pmTableRows = artworkPanels.map((p, i) => {
+          const line = (p.lineIndex != null) ? lines[p.lineIndex] : null
+          return [
+            String(i + 1),
+            line ? (line.description || `Line ${p.lineIndex + 1}`) : 'Not assigned',
+            line
+              ? `${line.act_w_in || '?'}" × ${line.act_h_in || '?'}" (Qty: ${line.qty || 1})`
+              : '—',
+            p.note || '—',
+          ]
+        })
+
+        autoTable(doc, {
+          startY: pmY,
+          head: [['Panel', 'Line Description', 'Dimensions', 'Note']],
+          body: pmTableRows,
+          styles: { fontSize: 8, cellPadding: 2.5 },
+          headStyles: {
+            fillColor: [124, 58, 237],
+            textColor: 255,
+            fontStyle: 'bold',
+            fontSize: 8.5,
+          },
+          alternateRowStyles: { fillColor: [245, 243, 255] },
+          columnStyles: {
+            0: { cellWidth: 14, halign: 'center' },
+            1: { cellWidth: 65 },
+            2: { cellWidth: 45 },
+            3: { cellWidth: 'auto' },
+          },
+          margin: { left: margin, right: margin },
         })
       }
-      artworkMap.get(key).sizes.push(
-        `${l.description} — ${l.act_w_in || '?'}" × ${l.act_h_in || '?'}" (Qty: ${l.qty || 1})`
-      )
-    })
 
-    if (artworkMap.size > 0) {
-      if (artY + 10 > doc.internal.pageSize.getHeight() - 20) {
-        doc.addPage()
-        artY = 20
-      }
+      // ── ARTWORK SECTION ──────────────────────────────
+      let artY = (doc.lastAutoTable?.finalY || 80) + 10
 
-      doc.setFontSize(11)
-      doc.setFont('helvetica', 'bold')
-      doc.setTextColor(15, 23, 42)
-      doc.text('Artwork References', margin, artY)
-      artY += 6
+      const processLines = lines.filter(l => l.has_process && l.artwork_file_data)
 
-      doc.setDrawColor(99, 102, 241)
-      doc.line(margin, artY, pageW - margin, artY)
-      artY += 6
+      const artworkMap = new Map()
+      processLines.forEach(l => {
+        const key = l.artwork_master_id || l.key
+        if (!artworkMap.has(key)) {
+          artworkMap.set(key, {
+            name: l.artwork_name || l.artwork_file_name || 'Artwork',
+            data: l.artwork_file_data,
+            sizes: []
+          })
+        }
+        artworkMap.get(key).sizes.push(
+          `${l.description} — ${l.act_w_in || '?'}" × ${l.act_h_in || '?'}" (Qty: ${l.qty || 1})`
+        )
+      })
 
-      for (const [, art] of artworkMap) {
-        if (artY + 60 > doc.internal.pageSize.getHeight() - 20) {
+      if (artworkMap.size > 0) {
+        if (artY + 10 > doc.internal.pageSize.getHeight() - 20) {
           doc.addPage()
           artY = 20
         }
 
-        doc.setFontSize(9)
+        doc.setFontSize(11)
         doc.setFont('helvetica', 'bold')
-        doc.setTextColor(99, 102, 241)
-        doc.text(`${art.name}`, margin, artY)
-        artY += 5
+        doc.setTextColor(15, 23, 42)
+        doc.text('Artwork References', margin, artY)
+        artY += 6
 
-        doc.setFont('helvetica', 'normal')
-        doc.setFontSize(8)
-        doc.setTextColor(80, 80, 80)
-        art.sizes.forEach(s => {
-          doc.text(`  • ${s}`, margin + 3, artY)
-          artY += 4.5
-        })
+        doc.setDrawColor(99, 102, 241)
+        doc.line(margin, artY, pageW - margin, artY)
+        artY += 6
 
-        if (art.data && art.data.startsWith('data:image/')) {
-          try {
-            const imgFormat = art.data.includes('data:image/png') ? 'PNG' : 'JPEG'
-            const imgW = 60
-            const imgH = 45
-            if (artY + imgH + 6 > doc.internal.pageSize.getHeight() - 20) {
-              doc.addPage()
-              artY = 20
-            }
-            doc.addImage(art.data, imgFormat, margin, artY, imgW, imgH)
-            artY += imgH + 6
-          } catch (e) {
-            doc.setFontSize(8)
-            doc.setTextColor(200, 80, 80)
-            doc.text('  [Image could not be rendered]', margin, artY)
-            artY += 5
+        for (const [, art] of artworkMap) {
+          if (artY + 60 > doc.internal.pageSize.getHeight() - 20) {
+            doc.addPage()
+            artY = 20
           }
-        } else if (art.data && art.data.startsWith('data:application/pdf')) {
+
+          doc.setFontSize(9)
+          doc.setFont('helvetica', 'bold')
+          doc.setTextColor(99, 102, 241)
+          doc.text(`${art.name}`, margin, artY)
+          artY += 5
+
+          doc.setFont('helvetica', 'normal')
           doc.setFontSize(8)
           doc.setTextColor(80, 80, 80)
-          doc.text(`  [PDF artwork: ${art.name} — open separately]`, margin, artY)
-          artY += 5
+          art.sizes.forEach(s => {
+            doc.text(`  • ${s}`, margin + 3, artY)
+            artY += 4.5
+          })
+
+          if (art.data && art.data.startsWith('data:image/')) {
+            try {
+              const imgFormat = art.data.includes('data:image/png') ? 'PNG' : 'JPEG'
+              const imgW = 60
+              const imgH = 45
+              if (artY + imgH + 6 > doc.internal.pageSize.getHeight() - 20) {
+                doc.addPage()
+                artY = 20
+              }
+              doc.addImage(art.data, imgFormat, margin, artY, imgW, imgH)
+              artY += imgH + 6
+            } catch (e) {
+              doc.setFontSize(8)
+              doc.setTextColor(200, 80, 80)
+              doc.text('  [Image could not be rendered]', margin, artY)
+              artY += 5
+            }
+          } else if (art.data && art.data.startsWith('data:application/pdf')) {
+            doc.setFontSize(8)
+            doc.setTextColor(80, 80, 80)
+            doc.text(`  [PDF artwork: ${art.name} — open separately]`, margin, artY)
+            artY += 5
+          }
+
+          artY += 4
         }
-
-        artY += 4
       }
-    }
 
-    // ── FOOTER ───────────────────────────────────────
-    const pageCount = doc.internal.getNumberOfPages()
-    for (let p = 1; p <= pageCount; p++) {
-      doc.setPage(p)
-      const footerY = doc.internal.pageSize.getHeight() - 8
-      doc.setFontSize(7)
-      doc.setFont('helvetica', 'normal')
-      doc.setTextColor(150, 150, 150)
-      doc.text(
-        `Generated: ${dayjs().format('DD/MM/YYYY HH:mm')} | For Internal Use Only`,
-        margin, footerY
-      )
-      doc.text(`Page ${p} of ${pageCount}`, pageW - margin, footerY, { align: 'right' })
-    }
+      // ── FOOTER ───────────────────────────────────────
+      const pageCount = doc.internal.getNumberOfPages()
+      for (let p = 1; p <= pageCount; p++) {
+        doc.setPage(p)
+        const footerY = doc.internal.pageSize.getHeight() - 8
+        doc.setFontSize(7)
+        doc.setFont('helvetica', 'normal')
+        doc.setTextColor(150, 150, 150)
+        doc.text(
+          `Generated: ${dayjs().format('DD/MM/YYYY HH:mm')} | For Internal Use Only`,
+          margin, footerY
+        )
+        doc.text(`Page ${p} of ${pageCount}`, pageW - margin, footerY, { align: 'right' })
+      }
 
-    doc.save(`${record?.wo_number || 'WorkshopOrder'}_${dayjs().format('YYYYMMDD')}.pdf`)
+      doc.save(`${record?.wo_number || 'WorkshopOrder'}_${dayjs().format('YYYYMMDD')}.pdf`)
     } catch (err) {
       console.error('PDF generation error:', err)
       message.error('PDF generation failed: ' + (err?.message || 'Unknown error'))
@@ -814,18 +814,18 @@ const WorkshopOrderForm = () => {
 
       // ── COLUMN WIDTHS ────────────────────────────────
       ws.columns = [
-        { key: 'num',   width: 5  },
-        { key: 'desc',  width: 35 },
-        { key: 'win',   width: 12 },
-        { key: 'hin',   width: 12 },
-        { key: 'wmm',   width: 10 },
-        { key: 'hmm',   width: 10 },
-        { key: 'qty',   width: 6  },
-        { key: 'cep',   width: 6  },
-        { key: 'proc',  width: 25 },
+        { key: 'num', width: 5 },
+        { key: 'desc', width: 35 },
+        { key: 'win', width: 12 },
+        { key: 'hin', width: 12 },
+        { key: 'wmm', width: 10 },
+        { key: 'hmm', width: 10 },
+        { key: 'qty', width: 6 },
+        { key: 'cep', width: 6 },
+        { key: 'proc', width: 25 },
         { key: 'tough', width: 10 },
-        { key: 'art',   width: 30 },
-        { key: 'rem',   width: 30 },
+        { key: 'art', width: 30 },
+        { key: 'rem', width: 30 },
       ]
 
       // ── ARTWORK SHEET ────────────────────────────────

@@ -8,10 +8,10 @@ const { Text } = Typography
 const STORAGE_KEY = 'uom_rate_master'
 
 const DEFAULT_UOMS = [
-  { uom: 'PCS',  cost_rate: 0, selling_rate: 0 },
-  { uom: 'RFT',  cost_rate: 0, selling_rate: 0 },
+  { uom: 'PCS', cost_rate: 0, selling_rate: 0 },
+  { uom: 'RFT', cost_rate: 0, selling_rate: 0 },
   { uom: 'SQFT', cost_rate: 0, selling_rate: 0 },
-  { uom: 'HRS',  cost_rate: 0, selling_rate: 0 },
+  { uom: 'HRS', cost_rate: 0, selling_rate: 0 },
   { uom: 'SQMT', cost_rate: 0, selling_rate: 0 },
 ]
 

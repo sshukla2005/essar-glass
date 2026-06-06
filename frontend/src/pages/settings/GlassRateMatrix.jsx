@@ -30,7 +30,7 @@ const GlassRateMatrix = () => {
         setMatrix(data)
         localStorage.setItem('glass_rate_matrix', JSON.stringify(data))
       }
-    }).catch(() => {})
+    }).catch(() => { })
   }, [])
   const [preview, setPreview] = useState(null)
   const [prevCat, setPrevCat] = useState('Clear')
@@ -53,7 +53,7 @@ const GlassRateMatrix = () => {
   const updateThicknessRate = (thickness, value) => {
     setMatrix(prev => ({
       ...prev,
-      thickness_rft_rates: { ...(prev.thickness_rft_rates||{}), [thickness]: value }
+      thickness_rft_rates: { ...(prev.thickness_rft_rates || {}), [thickness]: value }
     }))
   }
 
@@ -71,9 +71,9 @@ const GlassRateMatrix = () => {
   const calcRate = (category, thickness) => {
     const baseRate = matrix?.base_rates?.[category] || 0
     const costRate = matrix?.cost_rates?.[category] || 0
-    const thick    = parseFloat(thickness) || 0
-    const perSqmt  = thick * baseRate
-    const perSqft  = perSqmt / SQMT_TO_SQFT
+    const thick = parseFloat(thickness) || 0
+    const perSqmt = thick * baseRate
+    const perSqft = perSqmt / SQMT_TO_SQFT
     const costSqmt = thick * costRate
     const costSqft = costSqmt / SQMT_TO_SQFT
     return {
@@ -107,7 +107,8 @@ const GlassRateMatrix = () => {
   })
 
   const tableColumns = [
-    { title: 'Thickness', dataIndex: 'thickness', width: 90,
+    {
+      title: 'Thickness', dataIndex: 'thickness', width: 90,
       render: v => <Text strong>{v}</Text>
     },
     ...CATEGORIES.map(cat => ({
@@ -164,7 +165,7 @@ const GlassRateMatrix = () => {
               <Text style={{ fontSize: 11, fontWeight: 700, color: '#16a34a' }}>
                 SELL Rate
               </Text>
-              <br/>
+              <br />
               <Text type="secondary" style={{ fontSize: 10 }}>
                 Customer pays
               </Text>
@@ -198,7 +199,7 @@ const GlassRateMatrix = () => {
               <Text style={{ fontSize: 11, fontWeight: 700, color: '#ea580c' }}>
                 COST Rate
               </Text>
-              <br/>
+              <br />
               <Text type="secondary" style={{ fontSize: 10 }}>
                 Essar pays vendor
               </Text>
@@ -271,7 +272,7 @@ const GlassRateMatrix = () => {
             <Select
               mode="multiple"
               value={matrix?.cep_rft_options || [5, 7]}
-              options={[1,2,3,4,5,6,7,8,9,10].map(n => ({ value: n, label: `×${n}` }))}
+              options={[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => ({ value: n, label: `×${n}` }))}
               style={{ width: '100%', marginTop: 4 }}
               onChange={val => updateCepOptions('cep_rft_options', val)}
             />
@@ -281,7 +282,7 @@ const GlassRateMatrix = () => {
             <br />
             <Select
               value={matrix?.cep_rft_default || 5}
-              options={(matrix?.cep_rft_options || [5,7]).map(n => ({ value: n, label: `×${n} (per rft)` }))}
+              options={(matrix?.cep_rft_options || [5, 7]).map(n => ({ value: n, label: `×${n} (per rft)` }))}
               style={{ width: '100%', marginTop: 4 }}
               onChange={val => updateCepOptions('cep_rft_default', val)}
             />
@@ -350,12 +351,12 @@ const GlassRateMatrix = () => {
                     fontSize: 18,
                     color: parseFloat(preview.costSqft) > 0
                       ? ((parseFloat(preview.perSqft) - parseFloat(preview.costSqft)) /
-                         parseFloat(preview.costSqft) * 100) >= 20 ? '#16a34a' : '#f59e0b'
+                        parseFloat(preview.costSqft) * 100) >= 20 ? '#16a34a' : '#f59e0b'
                       : '#94a3b8'
                   }}>
                     {parseFloat(preview.costSqft) > 0
                       ? (((parseFloat(preview.perSqft) - parseFloat(preview.costSqft)) /
-                          parseFloat(preview.costSqft)) * 100).toFixed(1) + '%'
+                        parseFloat(preview.costSqft)) * 100).toFixed(1) + '%'
                       : '—'}
                   </Text>
                 </div>

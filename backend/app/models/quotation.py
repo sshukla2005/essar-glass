@@ -40,6 +40,9 @@ class Quotation(Base, TimestampMixin, SoftDeleteMixin):
     internal_notes   = Column(Text,        nullable=True)
     hardware_items   = Column(JSON, nullable=True, default=list)
     labor_items      = Column(JSON, nullable=True, default=list)
+    wastage_items    = Column(JSON, nullable=True, default=list)
+    dc_cost          = Column(Float, default=0)
+    totals           = Column(JSON, nullable=True)
     gst_mode         = Column(String(20), default='cgst_sgst')
     company_id       = Column(Integer, ForeignKey("companies.id"),
                               nullable=True, index=True)
