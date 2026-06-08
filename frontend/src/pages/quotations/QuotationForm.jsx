@@ -166,6 +166,7 @@ const emptyGroup = () => ({
   ceiling_w_inches: 6,
   ceiling_h_inches: 6,
   is_toughened: false,
+  base_glass_rate: 0,
   product_id: null,
   description: '',
   rate: 0,
@@ -427,6 +428,7 @@ const QuotationForm = () => {
           ceiling_w_inches: line.ceiling_w_inches || line.ceiling_inches || 6,
           ceiling_h_inches: line.ceiling_h_inches || line.ceiling_inches || 6,
           is_toughened: line.is_toughened || false,
+          base_glass_rate: line.base_glass_rate || 0,
           product_id: line.product_id,
           description: line.description || '',
           rate: line.rate || line.unit_price || 0,
@@ -558,26 +560,29 @@ const QuotationForm = () => {
     let subtotal = (sqft_amt + rft_amt) * (1 - (group.discount_pct || 0) / 100)
     subtotal = parseFloat((subtotal + cep_charges).toFixed(2))
 
-    // Toughening charge — auto-fill from process masters but user-editable
-    let tgh_charge = size.tgh_charge ?? 0
+    // Toughening — compute per-sqft addon (NOT added to subtotal here)
+    // It will be incorporated into group.rate directly
+    let tgh_charge = 0
+    let tgh_rate_addon = 0
 
     if (group.glass_type === 'Toughened' || group.is_toughened) {
-      // Only auto-calculate if user hasn't manually set it
-      if (!size._tgh_charge_manual) {
-        try {
-          const pm = JSON.parse(
-            localStorage.getItem('process_masters') || '[]'
-          )
-          const toughProc = pm.find(p =>
-            p.process_type === 'toughening' &&
-            p.is_active !== false
-          )
-          if (toughProc && toughProc.rate > 0) {
-            tgh_charge = parseFloat((tgh_sqmt * toughProc.rate).toFixed(2))
-          }
-        } catch { }
-      }
-      subtotal = parseFloat((subtotal + tgh_charge).toFixed(2))
+      try {
+        const pm = JSON.parse(
+          localStorage.getItem('process_masters') || '[]'
+        )
+        const toughProc = pm.find(p =>
+          p.process_type === 'toughening' &&
+          p.is_active !== false
+        )
+        if (toughProc && toughProc.rate > 0) {
+          tgh_charge = parseFloat((tgh_sqmt * toughProc.rate).toFixed(2))
+          const base_sqft = effective_qty || total_sqft || 0.001
+          tgh_rate_addon = base_sqft > 0
+            ? parseFloat((tgh_charge / base_sqft).toFixed(4))
+            : 0
+          // DO NOT add to subtotal — tgh is included in group.rate already
+        }
+      } catch { }
     }
     const tax_amt = parseFloat((subtotal * (group.tax_rate || 18) / 100).toFixed(2))
     const line_total = parseFloat((subtotal + tax_amt).toFixed(2))
@@ -594,6 +599,7 @@ const QuotationForm = () => {
       cep_charges,
       tgh_sqmt: parseFloat(tgh_sqmt.toFixed(6)),
       tgh_charge: parseFloat(tgh_charge.toFixed(2)),
+      tgh_rate_addon: parseFloat(tgh_rate_addon.toFixed(4)),
       effective_qty: parseFloat(effective_qty.toFixed(4)),
       subtotal, tax_amount: tax_amt, line_total
     }
@@ -617,8 +623,24 @@ const QuotationForm = () => {
         }
         const cat = updated.glass_category
         const thick = updated.glass_thickness
-        if (cat && thick) updated.rate = calcRateFromMatrix(cat, thick)
+        if (cat && thick) {
+          const baseRate = calcRateFromMatrix(cat, thick)
+          updated.base_glass_rate = baseRate
+          updated.rate = baseRate
+        }
+        // First pass — calculate sizes to get tgh_rate_addon
         updated.sizes = g.sizes.map(s => calcGroupSize(updated, s))
+        // If toughened — add avg tgh_rate_addon to rate
+        if (updated.is_toughened || updated.glass_type === 'Toughened') {
+          const avgAddon = updated.sizes.length > 0
+            ? updated.sizes.reduce((s, sz) => s + (sz.tgh_rate_addon || 0), 0) / updated.sizes.length
+            : 0
+          if (avgAddon > 0) {
+            updated.rate = parseFloat(((updated.base_glass_rate || updated.rate) + avgAddon).toFixed(2))
+            // Recalculate sizes with new effective rate
+            updated.sizes = updated.sizes.map(s => calcGroupSize(updated, s))
+          }
+        }
         if (!g.processes?.length) {
           updated.processes = autoSuggestProcesses(updated)
         }
@@ -704,7 +726,19 @@ const QuotationForm = () => {
         const updated = { ...s, [field]: value }
         return calcGroupSize(g, updated)
       })
-      const updatedGroup = { ...g, sizes: updatedSizes }
+      let updatedGroup = { ...g, sizes: updatedSizes }
+
+      // Recalculate effective rate for toughened groups when sizes change
+      if (updatedGroup.is_toughened || updatedGroup.glass_type === 'Toughened') {
+        const avgAddon = updatedSizes.length > 0
+          ? updatedSizes.reduce((s, sz) => s + (sz.tgh_rate_addon || 0), 0) / updatedSizes.length
+          : 0
+        const baseRate = updatedGroup.base_glass_rate || 0
+        if (avgAddon > 0 && baseRate > 0) {
+          updatedGroup.rate = parseFloat((baseRate + avgAddon).toFixed(2))
+          updatedGroup.sizes = updatedSizes.map(s => calcGroupSize(updatedGroup, s))
+        }
+      }
 
       const totalSqft = updatedSizes.reduce((s, sz) => s + (sz.total_sqft || 0), 0)
       const totalRft = updatedSizes.reduce((s, sz) => s + (sz.running_ft || 0), 0)
@@ -996,6 +1030,7 @@ const QuotationForm = () => {
         product_id: g.product_id,
         description: g.description,
         rate: g.rate,
+        base_glass_rate: g.base_glass_rate || 0,
         rate_rft: g.rate_rft,
         cep: g.cep,
         cep_polish_rate: g.cep_polish_rate || 15,
@@ -1954,20 +1989,27 @@ const QuotationForm = () => {
                     />
                   </Tooltip>
                 </div>
-                <InputNumber
-                  size="small"
-                  value={group.rate}
-                  min={0}
-                  prefix="₹"
-                  disabled={!group.custom_costing}
-                  style={{
-                    width: '100%',
-                    borderColor: group.custom_costing ? '#f59e0b' : undefined
-                  }}
-                  onChange={val =>
-                    updateGroup(group.group_key, 'rate', val)
-                  }
-                />
+                <div>
+                  <InputNumber
+                    size="small"
+                    value={group.rate}
+                    min={0}
+                    prefix="₹"
+                    disabled={!group.custom_costing}
+                    style={{
+                      width: '100%',
+                      borderColor: group.custom_costing ? '#f59e0b' : undefined
+                    }}
+                    onChange={val =>
+                      updateGroup(group.group_key, 'rate', val)
+                    }
+                  />
+                  {(group.is_toughened || group.glass_type === 'Toughened') && group.base_glass_rate > 0 && (
+                    <Text style={{ fontSize: 10, color: '#f97316', display: 'block', marginTop: 2 }}>
+                      Base ₹{group.base_glass_rate.toFixed(2)} + Tgh included
+                    </Text>
+                  )}
+                </div>
               </Col>
               <Col flex="220px">
                 <Text style={{ fontSize: 10, color: '#94a3b8', display: 'block', marginBottom: 2 }}>CEP (Polish)</Text>
@@ -2272,48 +2314,18 @@ const QuotationForm = () => {
                 },
                 {
                   title: 'Chg W', width: 80, dataIndex: 'charged_w_inch',
-                  render: (v, row) => (
-                    <InputNumber
-                      size="small"
-                      value={v ? parseFloat(v.toFixed(3)) : null}
-                      min={0} style={{ width: '100%' }}
-                      onChange={val => setGroups(prev => prev.map(g => {
-                        if (g.group_key !== group.group_key) return g
-                        return {
-                          ...g,
-                          sizes: g.sizes.map(s => {
-                            if (s.size_key !== row.size_key) return s
-                            const ncs = val && s.charged_h_inch
-                              ? parseFloat(((val * s.charged_h_inch * s.quantity) / 144).toFixed(4))
-                              : s.charged_sqft
-                            return { ...s, charged_w_inch: val, charged_sqft: ncs }
-                          })
-                        }
-                      }))}
-                    />
+                  render: (v) => (
+                    <Text style={{ fontSize: 12, color: '#475569', paddingLeft: 4 }}>
+                      {v ? parseFloat(v.toFixed(3)) : '—'}
+                    </Text>
                   )
                 },
                 {
                   title: 'Chg H', width: 80, dataIndex: 'charged_h_inch',
-                  render: (v, row) => (
-                    <InputNumber
-                      size="small"
-                      value={v ? parseFloat(v.toFixed(3)) : null}
-                      min={0} style={{ width: '100%' }}
-                      onChange={val => setGroups(prev => prev.map(g => {
-                        if (g.group_key !== group.group_key) return g
-                        return {
-                          ...g,
-                          sizes: g.sizes.map(s => {
-                            if (s.size_key !== row.size_key) return s
-                            const ncs = val && s.charged_w_inch
-                              ? parseFloat(((s.charged_w_inch * val * s.quantity) / 144).toFixed(4))
-                              : s.charged_sqft
-                            return { ...s, charged_h_inch: val, charged_sqft: ncs }
-                          })
-                        }
-                      }))}
-                    />
+                  render: (v) => (
+                    <Text style={{ fontSize: 12, color: '#475569', paddingLeft: 4 }}>
+                      {v ? parseFloat(v.toFixed(3)) : '—'}
+                    </Text>
                   )
                 },
                 {
@@ -2368,41 +2380,7 @@ const QuotationForm = () => {
                     />
                   )
                 }] : []),
-                ...(group.is_toughened || group.glass_type === 'Toughened' ? [{
-                  title: <span>Tgh <Tag color="orange" style={{ fontSize: 9 }}>Charge</Tag></span>,
-                  width: 100, dataIndex: 'tgh_charge',
-                  render: (v, row) => (
-                    <InputNumber
-                      size="small"
-                      value={v ? parseFloat(v.toFixed(2)) : 0}
-                      min={0}
-                      prefix="₹"
-                      style={{ width: '100%', borderColor: '#f97316' }}
-                      onChange={val => setGroups(prev => prev.map(g => {
-                        if (g.group_key !== group.group_key) return g
-                        return {
-                          ...g,
-                          sizes: g.sizes.map(s => {
-                            if (s.size_key !== row.size_key) return s
-                            const updated = {
-                              ...s,
-                              tgh_charge: val || 0,
-                              _tgh_charge_manual: true,
-                            }
-                            // Recalculate subtotal
-                            const baseSub = parseFloat(
-                              ((s.effective_qty || s.total_sqft || 0) * (g.rate || 0) *
-                               (1 - (g.discount_pct || 0) / 100) +
-                               (s.cep_charges || 0)).toFixed(2)
-                            )
-                            updated.subtotal = parseFloat((baseSub + (val || 0)).toFixed(2))
-                            return updated
-                          })
-                        }
-                      }))}
-                    />
-                  )
-                }] : []),
+
                 {
                   title: 'Amount', width: 110, dataIndex: 'subtotal', align: 'right',
                   render: (v, row) => (
@@ -3178,29 +3156,28 @@ const QuotationForm = () => {
         onCancel={() => { setCompWizard(null); setWizardCostPrice(null) }}
         footer={
           <Space>
-            {wizardCostPrice !== null && wizardCostPrice !== compWizard?.cost_price && (
-              <Button
-                type="primary"
-                style={{ background: '#6366f1', borderColor: '#6366f1' }}
-                onClick={() => {
-                  if (compWizard?.group_key && wizardCostPrice > 0) {
-                    const currentMarginPct = compWizard.totalMarginPct || 20
-                    const newRate = parseFloat(
-                      (wizardCostPrice / (1 - currentMarginPct / 100)).toFixed(2)
-                    )
-                    updateGroup(compWizard.group_key, 'custom_costing', true)
-                    updateGroup(compWizard.group_key, 'rate', newRate)
-                    message.success(
-                      `Rate updated to ₹${newRate}/sqft based on cost ₹${wizardCostPrice}/sqft`
-                    )
-                  }
-                  setCompWizard(null)
-                  setWizardCostPrice(null)
-                }}
-              >
-                💾 Apply New Rate
-              </Button>
-            )}
+            <Button
+              type="primary"
+              style={{ background: '#6366f1', borderColor: '#6366f1' }}
+              disabled={!wizardCostPrice || wizardCostPrice <= 0}
+              onClick={() => {
+                if (compWizard?.group_key && wizardCostPrice > 0) {
+                  const currentMarginPct = compWizard.totalMarginPct || 20
+                  const newRate = parseFloat(
+                    (wizardCostPrice / (1 - currentMarginPct / 100)).toFixed(2)
+                  )
+                  updateGroup(compWizard.group_key, 'custom_costing', true)
+                  updateGroup(compWizard.group_key, 'rate', newRate)
+                  message.success(
+                    `Rate updated to ₹${newRate}/sqft based on cost ₹${wizardCostPrice}/sqft`
+                  )
+                }
+                setCompWizard(null)
+                setWizardCostPrice(null)
+              }}
+            >
+              💾 Apply New Rate
+            </Button>
             <Button onClick={() => { setCompWizard(null); setWizardCostPrice(null) }}>
               Close
             </Button>
@@ -3608,29 +3585,28 @@ const QuotationForm = () => {
         }}
         footer={
           <Space>
-            {wizardCostPrice !== null && wizardCostPrice !== compWizard?.cost_price && (
-              <Button
-                type="primary"
-                style={{ background: '#6366f1', borderColor: '#6366f1' }}
-                onClick={() => {
-                  if (compWizard?.group_key && wizardCostPrice > 0) {
-                    const currentMarginPct = compWizard.totalMarginPct || 20
-                    const newRate = parseFloat(
-                      (wizardCostPrice / (1 - currentMarginPct / 100)).toFixed(2)
-                    )
-                    updateGroup(compWizard.group_key, 'custom_costing', true)
-                    updateGroup(compWizard.group_key, 'rate', newRate)
-                    message.success(
-                      `Rate updated to ₹${newRate}/sqft based on cost ₹${wizardCostPrice}/sqft`
-                    )
-                  }
-                  setCompWizard(null)
-                  setWizardCostPrice(null)
-                }}
-              >
-                💾 Apply New Rate
-              </Button>
-            )}
+            <Button
+              type="primary"
+              style={{ background: '#6366f1', borderColor: '#6366f1' }}
+              disabled={!wizardCostPrice || wizardCostPrice <= 0}
+              onClick={() => {
+                if (compWizard?.group_key && wizardCostPrice > 0) {
+                  const currentMarginPct = compWizard.totalMarginPct || 20
+                  const newRate = parseFloat(
+                    (wizardCostPrice / (1 - currentMarginPct / 100)).toFixed(2)
+                  )
+                  updateGroup(compWizard.group_key, 'custom_costing', true)
+                  updateGroup(compWizard.group_key, 'rate', newRate)
+                  message.success(
+                    `Rate updated to ₹${newRate}/sqft based on cost ₹${wizardCostPrice}/sqft`
+                  )
+                }
+                setCompWizard(null)
+                setWizardCostPrice(null)
+              }}
+            >
+              💾 Apply New Rate
+            </Button>
             <Button onClick={() => {
               setCompWizard(null)
               setWizardCostPrice(null)
