@@ -112,6 +112,7 @@ const emptyGroup = () => ({
   ceiling_h_inches: 6,
   is_toughened: false,
   base_glass_rate: 0,
+  manual_cost_price: null,
   product_id: null,
   description: '',
   rate: 0,
@@ -338,6 +339,7 @@ const SalesOrderForm = () => {
           ceiling_h_inches: line.ceiling_h_inches || line.ceiling_inches || 6,
           is_toughened: line.is_toughened || false,
           base_glass_rate: line.base_glass_rate || 0,
+          manual_cost_price: line.manual_cost_price || null,
           product_id: line.product_id,
           description: line.description || '',
           rate: line.rate || line.unit_price || 0,
@@ -828,6 +830,7 @@ const SalesOrderForm = () => {
         description: g.description,
         rate: g.rate,
         base_glass_rate: g.base_glass_rate || 0,
+        manual_cost_price: g.manual_cost_price || null,
         rate_rft: g.rate_rft,
         cep: g.cep,
         pricing_method: g.pricing_method,
@@ -894,7 +897,16 @@ const SalesOrderForm = () => {
           }))
         })))
       } else if (record.lines?.length) {
-        setGroups(reconstructGroups(record.lines))
+        const reconstructed = reconstructGroups(record.lines)
+        // Backend valid_columns filter strips manual_cost_price from lines
+        // Restore from record.groups which is saved as-is
+        if (record.groups?.length) {
+          reconstructed.forEach(g => {
+            const saved = record.groups.find(sg => sg.description === g.description)
+            if (saved?.manual_cost_price) g.manual_cost_price = saved.manual_cost_price
+          })
+        }
+        setGroups(reconstructed)
       }
 
       if (record.hardware_items?.length) {
@@ -1004,12 +1016,18 @@ const SalesOrderForm = () => {
   }, [groups, hardwareItems, laborItems, wastageItems, dcCharges, dcCost, discountAmt, advanceRec, gstMode, products])
 
   const openComparisonWizard = (group) => {
-    // Try to get cost price from:
-    // 1. Product master (backward compat)
-    // 2. Rate Matrix cost_rates (new flow)
-    // 3. Fall back to 0
-    let costPerSqft = 0
+    // Always reset to null first — ensures fresh calc every open
+    setWizardCostPrice(null)
+    setCompWizard(null)
 
+  // If user previously saved a manual cost price, use it directly
+  // Otherwise auto-calculate from matrix / product master
+  let costPerSqft = 0
+
+  if (group.manual_cost_price && group.manual_cost_price > 0) {
+    // Use saved manual cost price
+    costPerSqft = group.manual_cost_price
+  } else {
     // Try product master first
     const prod = products.find(p => p.id === group.product_id)
     if (prod?.cost_price) {
@@ -1024,7 +1042,6 @@ const SalesOrderForm = () => {
         )
         const costRate = matrix?.cost_rates?.[group.glass_category]
         if (costRate && group.glass_thickness) {
-          // Same formula as selling: thickness × costRate / 10.764
           costPerSqft = parseFloat(
             (parseFloat(group.glass_thickness) * costRate / 10.764).toFixed(2)
           )
@@ -1032,10 +1049,31 @@ const SalesOrderForm = () => {
       } catch { }
     }
 
-    // If still 0, estimate as 70% of selling rate (last resort)
+    // If still 0, estimate as 70% of base glass rate (last resort)
     if (!costPerSqft && group.rate > 0) {
-      costPerSqft = parseFloat((group.rate * 0.70).toFixed(2))
+      const baseRate = group.base_glass_rate || group.rate
+      costPerSqft = parseFloat((baseRate * 0.70).toFixed(2))
     }
+  }
+
+  // Only add toughening addon if user has NOT manually set cost price
+  if (!group.manual_cost_price && (group.is_toughened || group.glass_type === 'Toughened')) {
+    try {
+      const pm = JSON.parse(localStorage.getItem('process_masters') || '[]')
+      const toughProc = pm.find(p =>
+        p.process_type === 'toughening' && p.is_active !== false
+      )
+      if (toughProc && toughProc.rate > 0) {
+        // Get avg tgh_rate_addon from sizes (already calculated)
+        const avgAddon = group.sizes.length > 0
+          ? group.sizes.reduce((s, sz) => s + (sz.tgh_rate_addon || 0), 0) / group.sizes.length
+          : 0
+        if (avgAddon > 0) {
+          costPerSqft = parseFloat((costPerSqft + avgAddon).toFixed(2))
+        }
+      }
+    } catch { }
+  }
 
     setWizardCostPrice(costPerSqft)
 
@@ -1088,22 +1126,28 @@ const SalesOrderForm = () => {
       }
     })
 
-    const totalSelling = rows.reduce((s, r) => s + r.selling_amount, 0)
+    // Per-product wizard: glass only (no HW/Labor/DC/GST)
+    const glassSellingTotal = rows.reduce((s, r) => s + r.selling_amount, 0)
     const totalCost = rows.reduce((s, r) => s + r.cost_amount, 0)
     const totalCepCost = rows.reduce((s, r) => s + r.cep_cost, 0)
+
+    // totalSelling = glass selling only (this product's subtotal)
+    const totalSelling = parseFloat(glassSellingTotal.toFixed(2))
+
     const totalMargin = parseFloat((totalSelling - totalCost).toFixed(2))
     const totalMarginPct = totalCost > 0
       ? parseFloat(((totalMargin / totalCost) * 100).toFixed(2)) : 100
 
     setCompWizard({
-      group_key: group.group_key,
       product_name: group.description || 'Product',
       cost_price: costPerSqft,
       selling_rate: group.rate,
       cep_on: group.cep,
       cep_cost_rate: CEP_COST_RATE,
       rows,
+      glassSellingTotal,
       totalSelling, totalCost, totalCepCost, totalMargin, totalMarginPct,
+      group_key: group.group_key,
     })
   }
 
@@ -2701,19 +2745,15 @@ const SalesOrderForm = () => {
                   disabled={!wizardCostPrice || wizardCostPrice <= 0}
                   onClick={() => {
                     if (compWizard?.group_key && wizardCostPrice > 0) {
-                      const currentMarginPct = compWizard.totalMarginPct || 20
-                      const newRate = parseFloat(
-                        (wizardCostPrice / (1 - currentMarginPct / 100)).toFixed(2)
-                      )
-                      updateGroup(compWizard.group_key, 'custom_costing', true)
-                      updateGroup(compWizard.group_key, 'rate', newRate)
-                      message.success(`Rate updated to ₹${newRate}/sqft`)
+                      // Only save CP — does NOT change selling rate
+                      updateGroup(compWizard.group_key, 'manual_cost_price', wizardCostPrice)
+                      message.success(`Cost price ₹${wizardCostPrice}/sqft saved`)
                     }
                     setCompWizard(null)
                     setWizardCostPrice(null)
                   }}
                 >
-                  💾 Apply New Rate
+                  💾 Save Cost Price
                 </Button>
                 <Button onClick={() => { setCompWizard(null); setWizardCostPrice(null) }}>
                   Close
@@ -2738,7 +2778,7 @@ const SalesOrderForm = () => {
                       <Text type="secondary">Cost Price (editable)</Text>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
                         <InputNumber
-                          value={wizardCostPrice ?? compWizard.cost_price}
+                          value={wizardCostPrice !== null && wizardCostPrice !== undefined ? wizardCostPrice : compWizard.cost_price}
                           min={0}
                           prefix="₹"
                           addonAfter="/sqft"
@@ -2757,7 +2797,15 @@ const SalesOrderForm = () => {
                             const totalCepCost = newRows.reduce((s, r) => s + (r.cep_cost || 0), 0)
                             const totalMargin = compWizard.totalSelling - totalCost
                             const totalMarginPct = totalCost > 0 ? parseFloat(((totalMargin / totalCost) * 100).toFixed(2)) : 100
-                            setCompWizard(prev => ({ ...prev, cost_price: newCostPrice, rows: newRows, totalCost, totalCepCost, totalMargin, totalMarginPct }))
+                            setCompWizard(prev => ({
+                              ...prev,
+                              // DO NOT update cost_price here — keeps original auto-calc
+                              rows: newRows,
+                              totalCost,
+                              totalCepCost,
+                              totalMargin,
+                              totalMarginPct
+                            }))
                           }}
                         />
                       </div>
@@ -2826,133 +2874,53 @@ const SalesOrderForm = () => {
                   ]}
                 />
 
-                {/* Hardware & Labor Costing Table */}
-                <div style={{ marginTop: 16 }}>
-                  <Text strong style={{ fontSize: 13 }}>🛠️ Hardware & Labor Costing Breakdown</Text>
-                  <Table
-                    style={{ marginTop: 8 }}
-                    size="small"
-                    pagination={false}
-                    dataSource={[
-                      ...hardwareItems.map(h => ({
-                        key: h.hw_key,
-                        type: 'Hardware',
-                        description: h.description || '(No description)',
-                        qty: h.qty || 0,
-                        uom: h.uom || '—',
-                        cost_rate: h.cost_rate || 0,
-                        selling_rate: h.rate || 0,
-                        cost_amount: h.cost_amount || (h.qty || 0) * (h.cost_rate || 0),
-                        selling_amount: h.amount || (h.qty || 0) * (h.rate || 0),
-                      })),
-                      ...laborItems.map(l => ({
-                        key: l.lb_key,
-                        type: 'Labor',
-                        description: l.description || '(No description)',
-                        qty: l.qty || 0,
-                        uom: l.uom || '—',
-                        cost_rate: l.cost_rate || 0,
-                        selling_rate: l.rate || 0,
-                        cost_amount: l.cost_amount || (l.qty || 0) * (l.cost_rate || 0),
-                        selling_amount: l.amount || (l.qty || 0) * (l.rate || 0),
-                      })),
-                    ]}
-                    columns={[
-                      { title: 'Type', dataIndex: 'type', width: 100, render: t => <Tag color={t === 'Hardware' ? 'blue' : 'orange'}>{t}</Tag> },
-                      { title: 'Description', dataIndex: 'description' },
-                      { title: 'Qty', dataIndex: 'qty', width: 60, align: 'right' },
-                      { title: 'UOM', dataIndex: 'uom', width: 80 },
-                      { title: 'Cost Rate', dataIndex: 'cost_rate', width: 100, align: 'right', render: v => `₹${Number(v).toFixed(2)}` },
-                      { title: 'Selling Rate', dataIndex: 'selling_rate', width: 100, align: 'right', render: v => `₹${Number(v).toFixed(2)}` },
-                      { title: 'Cost Amt', dataIndex: 'cost_amount', width: 110, align: 'right', render: v => <Text type="danger">₹{Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Text> },
-                      { title: 'Selling Amt', dataIndex: 'selling_amount', width: 110, align: 'right', render: v => <Text type="success">₹{Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Text> },
-                      {
-                        title: 'Margin',
-                        width: 120,
-                        align: 'right',
-                        render: (_, r) => {
-                          const margin = r.selling_amount - r.cost_amount
-                          const pct = r.cost_amount > 0 ? ((margin / r.cost_amount) * 100).toFixed(1) : '100'
-                          return (
-                            <Text strong style={{ color: margin >= 0 ? '#16a34a' : '#dc2626' }}>
-                              ₹{margin.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                              <br />
-                              <span style={{ fontSize: 10 }}>({pct}%)</span>
-                            </Text>
-                          )
-                        }
-                      }
-                    ]}
-                  />
-                </div>
-
                 <Divider style={{ margin: '12px 0' }} />
                 <Row gutter={[12, 8]}>
                   <Col span={6}>
-                    <Text type="secondary">Total Selling</Text>
-                    <div style={{ fontSize: 16, fontWeight: 700, color: '#16a34a' }}>
+                    <Text type="secondary">Glass Selling</Text>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: '#16a34a' }}>
                       ₹{compWizard.totalSelling.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </div>
                   </Col>
                   <Col span={6}>
-                    <Text type="secondary">Total Glass Cost</Text>
+                    <Text type="secondary">Glass Cost (excl. CEP)</Text>
                     <div style={{ fontSize: 15, fontWeight: 700, color: '#ea580c' }}>
-                      ₹{(compWizard.totalCost - (compWizard.totalCepCost || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      ₹{(compWizard.totalCost - (compWizard.totalCepCost || 0))
+                        .toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </div>
                   </Col>
                   {compWizard.cep_on && (
                     <Col span={6}>
-                      <Text type="secondary">CEP Cost (@ ₹{compWizard.cep_cost_rate}/rft)</Text>
+                      <Text type="secondary">CEP Cost (₹{compWizard.cep_cost_rate}/rft)</Text>
                       <div style={{ fontSize: 15, fontWeight: 700, color: '#7c3aed' }}>
                         ₹{(compWizard.totalCepCost || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                       </div>
-                      <Text type="secondary" style={{ fontSize: 10 }}>4 sides, actual rft × ₹{compWizard.cep_cost_rate}</Text>
                     </Col>
                   )}
                   <Col span={6}>
-                    <Text type="secondary">True Combined Cost</Text>
+                    <Text type="secondary">Total Glass Cost</Text>
                     <div style={{ fontSize: 15, fontWeight: 700, color: '#dc2626' }}>
-                      ₹{(
-                        compWizard.totalCost +
-                        totals.hwCostTotal +
-                        totals.lbCostTotal
-                      ).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      ₹{compWizard.totalCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </div>
-                    <Text type="secondary" style={{ fontSize: 10 }}>
-                      Glass Cost + Hardware Cost + Labor Cost
-                    </Text>
+                    <Text type="secondary" style={{ fontSize: 10 }}>Glass + CEP</Text>
                   </Col>
                   <Col span={6}>
-                    <Text type="secondary">True Combined Margin</Text>
+                    <Text type="secondary">Margin</Text>
                     <div style={{
-                      fontSize: 15,
-                      fontWeight: 700,
-                      color: (
-                        (compWizard.totalSelling + totals.hwTotal + totals.lbTotal) -
-                        (compWizard.totalCost + totals.hwCostTotal + totals.lbCostTotal)
-                      ) >= 0 ? '#16a34a' : '#dc2626'
+                      fontSize: 15, fontWeight: 700,
+                      color: compWizard.totalMargin >= 0 ? '#16a34a' : '#dc2626'
                     }}>
-                      ₹{(
-                        (compWizard.totalSelling + totals.hwTotal + totals.lbTotal) -
-                        (compWizard.totalCost + totals.hwCostTotal + totals.lbCostTotal)
-                      ).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      ₹{compWizard.totalMargin.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </div>
                   </Col>
                   <Col span={6}>
-                    <Text type="secondary">True Margin %</Text>
+                    <Text type="secondary">Margin %</Text>
                     <div style={{
-                      fontSize: 22,
-                      fontWeight: 800,
-                      color: (
-                        (compWizard.totalSelling + totals.hwTotal + totals.lbTotal) -
-                        (compWizard.totalCost + totals.hwCostTotal + totals.lbCostTotal)
-                      ) >= 0 ? '#16a34a' : '#dc2626'
+                      fontSize: 22, fontWeight: 800,
+                      color: compWizard.totalMarginPct >= 20 ? '#16a34a' :
+                             compWizard.totalMarginPct >= 10 ? '#f59e0b' : '#dc2626'
                     }}>
-                      {(() => {
-                        const cost = compWizard.totalCost + totals.hwCostTotal + totals.lbCostTotal
-                        const margin = (compWizard.totalSelling + totals.hwTotal + totals.lbTotal) - cost
-                        return cost > 0 ? ((margin / cost) * 100).toFixed(2) : '100'
-                      })()}%
+                      {compWizard.totalMarginPct}%
                     </div>
                   </Col>
                 </Row>
