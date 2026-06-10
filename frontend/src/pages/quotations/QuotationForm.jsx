@@ -1303,13 +1303,21 @@ const QuotationForm = () => {
       }
     })
 
-    // Per-product wizard: glass only (no HW/Labor/DC/GST)
+    // Per-product wizard: glass + process charges
     const glassSellingTotal = rows.reduce((s, r) => s + r.selling_amount, 0)
-    const totalCost = rows.reduce((s, r) => s + r.cost_amount, 0)
+    const glassCostTotal = rows.reduce((s, r) => s + r.cost_amount, 0)
     const totalCepCost = rows.reduce((s, r) => s + r.cep_cost, 0)
 
-    // totalSelling = glass selling only (this product's subtotal)
-    const totalSelling = parseFloat(glassSellingTotal.toFixed(2))
+    // Include group-level + size-level process charges
+    const procSelling = (group.processes || []).reduce((s, p) => s + (p.amount || 0), 0)
+    const sizeProcSelling = (group.sizes || [])
+      .flatMap(s => s.size_processes || [])
+      .reduce((s, p) => s + (p.amount || 0), 0)
+    const totalProcSelling = procSelling + sizeProcSelling
+    const totalProcCost = parseFloat((totalProcSelling * 0.70).toFixed(2))
+
+    const totalSelling = parseFloat((glassSellingTotal + totalProcSelling).toFixed(2))
+    const totalCost = parseFloat((glassCostTotal + totalProcCost).toFixed(2))
 
     const totalMargin = parseFloat((totalSelling - totalCost).toFixed(2))
     const totalMarginPct = totalCost > 0
@@ -1323,6 +1331,7 @@ const QuotationForm = () => {
       cep_cost_rate: CEP_COST_RATE,
       rows,
       glassSellingTotal,
+      totalProcSelling,
       totalSelling, totalCost, totalCepCost, totalMargin, totalMarginPct,
       group_key: group.group_key,
     })
@@ -3312,15 +3321,23 @@ const QuotationForm = () => {
               disabled={!wizardCostPrice || wizardCostPrice <= 0}
               onClick={() => {
                 if (compWizard?.group_key && wizardCostPrice > 0) {
-                  // Only save CP — does NOT change selling rate
+                  const currentMarginPct = compWizard.totalMarginPct || 20
+                  const divisor = 1 - currentMarginPct / 100
+                  const newRate = divisor > 0
+                    ? parseFloat((wizardCostPrice / divisor).toFixed(2))
+                    : wizardCostPrice
+                  updateGroup(compWizard.group_key, 'custom_costing', true)
+                  updateGroup(compWizard.group_key, 'rate', newRate)
                   updateGroup(compWizard.group_key, 'manual_cost_price', wizardCostPrice)
-                  message.success(`Cost price ₹${wizardCostPrice}/sqft saved`)
+                  message.success(
+                    `Rate updated to ₹${newRate}/sqft based on cost ₹${wizardCostPrice}/sqft`
+                  )
                 }
                 setCompWizard(null)
                 setWizardCostPrice(null)
               }}
             >
-              💾 Save Cost Price
+              💾 Apply New Rate
             </Button>
             <Button onClick={() => {
               setCompWizard(null)
@@ -3507,9 +3524,18 @@ const QuotationForm = () => {
               <Col span={6}>
                 <Text type="secondary">Glass Selling</Text>
                 <div style={{ fontSize: 15, fontWeight: 700, color: '#16a34a' }}>
-                  ₹{compWizard.totalSelling.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  ₹{compWizard.glassSellingTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </div>
               </Col>
+              {(compWizard.totalProcSelling || 0) > 0 && (
+                <Col span={6}>
+                  <Text type="secondary">Process Charges</Text>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: '#6366f1' }}>
+                    ₹{(compWizard.totalProcSelling || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </div>
+                  <Text type="secondary" style={{ fontSize: 10 }}>Cost est. @70%</Text>
+                </Col>
+              )}
               <Col span={6}>
                 <Text type="secondary">Glass Cost (excl. CEP)</Text>
                 <div style={{ fontSize: 15, fontWeight: 700, color: '#ea580c' }}>
@@ -3580,9 +3606,9 @@ const QuotationForm = () => {
             }}>
               <Text strong style={{ color: '#4338ca' }}>🎯 Target Margin:</Text>
               <InputNumber
-                value={marginTarget} min={0} max={100} placeholder="e.g. 20"
+                value={marginTarget} min={0} max={99} placeholder="e.g. 20"
                 addonAfter="%" style={{ width: 150 }}
-                onChange={val => setMarginTarget(val)} />
+                onChange={val => setMarginTarget(val > 99 ? 99 : val)} />
               {marginTarget > 0 && (
                 <Text type="secondary" style={{ fontSize: 12 }}>
                   New Rate = Cost ÷ (1 - {marginTarget}/100) &nbsp;|&nbsp; CEP & Process charges unchanged
@@ -3593,6 +3619,10 @@ const QuotationForm = () => {
                   type="primary"
                   style={{ background: '#6366f1', borderColor: '#6366f1' }}
                   onClick={() => {
+                    if (!marginTarget || marginTarget <= 0 || marginTarget >= 100) {
+                      message.error('Target margin must be between 1% and 99%')
+                      return
+                    }
                     setGroups(prev => prev.map(g => {
                       let costPerSqft = 0
                       const prod = products.find(p => p.id === g.product_id)
@@ -3696,8 +3726,11 @@ const QuotationForm = () => {
                     ),
                     key: 'new_rate', width: 110, align: 'right',
                     render: (_, r) => {
+                      if (!marginTarget || marginTarget >= 100) return <Text type="secondary">—</Text>
+                      const divisor = 1 - marginTarget / 100
+                      if (divisor <= 0) return <Text type="secondary">—</Text>
                       const newRate = r.cost_per_sqft > 0
-                        ? parseFloat((r.cost_per_sqft / (1 - marginTarget / 100)).toFixed(2))
+                        ? parseFloat((r.cost_per_sqft / divisor).toFixed(2))
                         : r.selling_rate
                       return <Text strong style={{ color: '#6366f1' }}>₹{newRate}/sqft</Text>
                     }
@@ -3711,8 +3744,11 @@ const QuotationForm = () => {
                     ),
                     key: 'new_amount', width: 120, align: 'right',
                     render: (_, r) => {
+                      if (!marginTarget || marginTarget >= 100) return <Text type="secondary">—</Text>
+                      const divisor = 1 - marginTarget / 100
+                      if (divisor <= 0) return <Text type="secondary">—</Text>
                       const newRate = r.cost_per_sqft > 0
-                        ? parseFloat((r.cost_per_sqft / (1 - marginTarget / 100)).toFixed(2))
+                        ? parseFloat((r.cost_per_sqft / divisor).toFixed(2))
                         : r.selling_rate
                       const newAmount = parseFloat((parseFloat(r.selling_sqft) * newRate).toFixed(2))
                       return (

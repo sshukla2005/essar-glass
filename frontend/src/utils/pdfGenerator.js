@@ -43,8 +43,11 @@ const toFraction = (d) => {
 
 // ── Format amount ─────────────────────────────────────────────
 const fmtN = (v) =>
-  Number(v||0).toLocaleString('en-IN',{
+  'Rs.' + Number(v||0).toLocaleString('en-IN',{
     minimumFractionDigits:2, maximumFractionDigits:2})
+
+const fmtR = (v) =>
+  'Rs. ' + Number(v||0).toFixed(2)
 
 // ── Charged size in MM ────────────────────────────────────────
 const ceilMm = (inch) =>
@@ -696,124 +699,120 @@ export const generateQuotationPDF = (quotation) => {
 
     const margin = LM
 
-    // ── PROCESS CHARGES ─────────────────────────────────
+    // ── PROCESS CHARGES ───────────────────────────────────
     const allProcesses = (groups || []).flatMap(g => [
       ...(g.processes || []),
       ...(g.sizes || []).flatMap(s => s.size_processes || [])
-    ]).filter(p => p.amount > 0)
+    ]).filter(p => (p.amount || 0) > 0)
 
     if (allProcesses.length > 0) {
-      let procY = (doc.lastAutoTable ? doc.lastAutoTable.finalY : y) + 8
+      y += 6
+      if (y + 10 > ph - 20) { doc.addPage(); y = 20 }
 
-      // Check page space
-      if (procY + 10 > doc.internal.pageSize.getHeight() - 20) {
-        doc.addPage(); procY = 20
-      }
-
-      doc.setFontSize(10)
+      doc.setFontSize(9)
       doc.setFont('helvetica', 'bold')
       doc.setTextColor(99, 102, 241)
-      doc.text('Process Charges', margin, procY)
-      procY += 4
+      doc.text('Process Charges', margin, y)
+      y += 4
 
       autoTable(doc, {
-        startY: procY,
+        startY: y,
         head: [['Process', 'Charge Type', 'Qty/Area', 'Rate', 'Amount']],
         body: allProcesses.map(p => [
           p.process_name || p.name || '—',
           p.charge_type || '—',
-          p.qty_area || 0,
-          `₹ ${Number(p.rate || 0).toFixed(2)}`,
-          `₹ ${Number(p.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
+          String(p.qty_area || 0),
+          fmtR(p.rate || 0),
+          fmtN(p.amount || 0),
         ]),
         styles: { fontSize: 8, cellPadding: 2 },
         headStyles: { fillColor: [99, 102, 241], textColor: 255, fontStyle: 'bold' },
         columnStyles: {
-          0: { cellWidth: 60 },
-          1: { cellWidth: 30 },
-          2: { cellWidth: 20, halign: 'right' },
-          3: { cellWidth: 25, halign: 'right' },
-          4: { cellWidth: 30, halign: 'right' },
+          0: { cellWidth: 65 },
+          1: { cellWidth: 32 },
+          2: { cellWidth: 22, halign: 'right' },
+          3: { cellWidth: 28, halign: 'right' },
+          4: { cellWidth: 33, halign: 'right' },
         },
         margin: { left: margin, right: margin },
+        didDrawPage: () => { drawBorder(doc) }
       })
+      y = doc.lastAutoTable.finalY
     }
 
-    // ── HARDWARE ITEMS ───────────────────────────────────
+    // ── HARDWARE ITEMS ────────────────────────────────────
     if (hardware_items?.length > 0) {
-      let hwY = (doc.lastAutoTable ? doc.lastAutoTable.finalY : y) + 8
-      if (hwY + 10 > doc.internal.pageSize.getHeight() - 20) {
-        doc.addPage(); hwY = 20
-      }
+      y += 6
+      if (y + 10 > ph - 20) { doc.addPage(); y = 20 }
 
-      doc.setFontSize(10)
+      doc.setFontSize(9)
       doc.setFont('helvetica', 'bold')
-      doc.setTextColor(245, 158, 11) // amber
-      doc.text('Hardware Items', margin, hwY)
-      hwY += 4
+      doc.setTextColor(180, 100, 0)
+      doc.text('Hardware Items', margin, y)
+      y += 4
 
       autoTable(doc, {
-        startY: hwY,
+        startY: y,
         head: [['Description', 'Qty', 'UOM', 'Rate', 'Amount']],
         body: hardware_items.map(h => [
           h.description || '—',
-          h.qty || 0,
+          String(h.qty || 0),
           h.uom || '—',
-          `₹ ${Number(h.rate || 0).toFixed(2)}`,
-          `₹ ${Number(h.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
+          fmtR(h.rate || 0),
+          fmtN(h.amount || 0),
         ]),
         styles: { fontSize: 8, cellPadding: 2 },
-        headStyles: { fillColor: [245, 158, 11], textColor: 255, fontStyle: 'bold' },
+        headStyles: { fillColor: [180, 120, 0], textColor: 255, fontStyle: 'bold' },
         columnStyles: {
-          0: { cellWidth: 70 },
+          0: { cellWidth: 75 },
           1: { cellWidth: 15, halign: 'right' },
           2: { cellWidth: 20 },
-          3: { cellWidth: 25, halign: 'right' },
-          4: { cellWidth: 35, halign: 'right' },
+          3: { cellWidth: 27, halign: 'right' },
+          4: { cellWidth: 43, halign: 'right' },
         },
         margin: { left: margin, right: margin },
+        didDrawPage: () => { drawBorder(doc) }
       })
+      y = doc.lastAutoTable.finalY
     }
 
-    // ── LABOR CHARGES ───────────────────────────────────
+    // ── LABOR CHARGES ─────────────────────────────────────
     if (labor_items?.length > 0) {
-      let lbY = (doc.lastAutoTable ? doc.lastAutoTable.finalY : y) + 8
-      if (lbY + 10 > doc.internal.pageSize.getHeight() - 20) {
-        doc.addPage(); lbY = 20
-      }
+      y += 6
+      if (y + 10 > ph - 20) { doc.addPage(); y = 20 }
 
-      doc.setFontSize(10)
+      doc.setFontSize(9)
       doc.setFont('helvetica', 'bold')
-      doc.setTextColor(139, 92, 246) // purple
-      doc.text('Labor Charges', margin, lbY)
-      lbY += 4
+      doc.setTextColor(100, 50, 180)
+      doc.text('Labor Charges', margin, y)
+      y += 4
 
       autoTable(doc, {
-        startY: lbY,
+        startY: y,
         head: [['Description', 'Qty', 'UOM', 'Rate', 'Amount']],
         body: labor_items.map(l => [
           l.description || '—',
-          l.qty || 0,
+          String(l.qty || 0),
           l.uom || '—',
-          `₹ ${Number(l.rate || 0).toFixed(2)}`,
-          `₹ ${Number(l.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
+          fmtR(l.rate || 0),
+          fmtN(l.amount || 0),
         ]),
         styles: { fontSize: 8, cellPadding: 2 },
-        headStyles: { fillColor: [139, 92, 246], textColor: 255, fontStyle: 'bold' },
+        headStyles: { fillColor: [100, 50, 180], textColor: 255, fontStyle: 'bold' },
         columnStyles: {
-          0: { cellWidth: 70 },
+          0: { cellWidth: 75 },
           1: { cellWidth: 15, halign: 'right' },
           2: { cellWidth: 20 },
-          3: { cellWidth: 25, halign: 'right' },
-          4: { cellWidth: 35, halign: 'right' },
+          3: { cellWidth: 27, halign: 'right' },
+          4: { cellWidth: 43, halign: 'right' },
         },
         margin: { left: margin, right: margin },
+        didDrawPage: () => { drawBorder(doc) }
       })
-    }
-
-    if (doc.lastAutoTable) {
       y = doc.lastAutoTable.finalY
     }
+
+    y += 4
 
     // ── Two-column bottom section ─────────────────────────────
     const t      = quotation.totals || {}

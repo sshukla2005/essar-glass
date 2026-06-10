@@ -1126,13 +1126,21 @@ const SalesOrderForm = () => {
       }
     })
 
-    // Per-product wizard: glass only (no HW/Labor/DC/GST)
+    // Per-product wizard: glass + process charges
     const glassSellingTotal = rows.reduce((s, r) => s + r.selling_amount, 0)
-    const totalCost = rows.reduce((s, r) => s + r.cost_amount, 0)
+    const glassCostTotal = rows.reduce((s, r) => s + r.cost_amount, 0)
     const totalCepCost = rows.reduce((s, r) => s + r.cep_cost, 0)
 
-    // totalSelling = glass selling only (this product's subtotal)
-    const totalSelling = parseFloat(glassSellingTotal.toFixed(2))
+    // Include group-level + size-level process charges
+    const procSelling = (group.processes || []).reduce((s, p) => s + (p.amount || 0), 0)
+    const sizeProcSelling = (group.sizes || [])
+      .flatMap(s => s.size_processes || [])
+      .reduce((s, p) => s + (p.amount || 0), 0)
+    const totalProcSelling = procSelling + sizeProcSelling
+    const totalProcCost = parseFloat((totalProcSelling * 0.70).toFixed(2))
+
+    const totalSelling = parseFloat((glassSellingTotal + totalProcSelling).toFixed(2))
+    const totalCost = parseFloat((glassCostTotal + totalProcCost).toFixed(2))
 
     const totalMargin = parseFloat((totalSelling - totalCost).toFixed(2))
     const totalMarginPct = totalCost > 0
@@ -1146,6 +1154,7 @@ const SalesOrderForm = () => {
       cep_cost_rate: CEP_COST_RATE,
       rows,
       glassSellingTotal,
+      totalProcSelling,
       totalSelling, totalCost, totalCepCost, totalMargin, totalMarginPct,
       group_key: group.group_key,
     })
@@ -2879,9 +2888,18 @@ const SalesOrderForm = () => {
                   <Col span={6}>
                     <Text type="secondary">Glass Selling</Text>
                     <div style={{ fontSize: 15, fontWeight: 700, color: '#16a34a' }}>
-                      ₹{compWizard.totalSelling.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      ₹{compWizard.glassSellingTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </div>
                   </Col>
+                  {(compWizard.totalProcSelling || 0) > 0 && (
+                    <Col span={6}>
+                      <Text type="secondary">Process Charges</Text>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: '#6366f1' }}>
+                        ₹{(compWizard.totalProcSelling || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </div>
+                      <Text type="secondary" style={{ fontSize: 10 }}>Cost est. @70%</Text>
+                    </Col>
+                  )}
                   <Col span={6}>
                     <Text type="secondary">Glass Cost (excl. CEP)</Text>
                     <div style={{ fontSize: 15, fontWeight: 700, color: '#ea580c' }}>
