@@ -76,11 +76,24 @@ const GlassRateMatrix = () => {
     const perSqft = perSqmt / SQMT_TO_SQFT
     const costSqmt = thick * costRate
     const costSqft = costSqmt / SQMT_TO_SQFT
+
+    // Toughening addon from process_masters
+    let tghRate = 0
+    try {
+      const pm = JSON.parse(localStorage.getItem('process_masters') || '[]')
+      const tghProc = pm.find(p => p.process_type === 'toughening' && p.is_active !== false)
+      tghRate = tghProc?.rate || 0
+    } catch { }
+    const tghAddon = parseFloat((tghRate / SQMT_TO_SQFT).toFixed(2))
+    const toughSellSqft = parseFloat((perSqft + tghAddon).toFixed(2))
+
     return {
       perSqmt: perSqmt.toFixed(2),
       perSqft: perSqft.toFixed(2),
       costSqmt: costSqmt.toFixed(2),
       costSqft: costSqft.toFixed(2),
+      tghAddon: tghAddon.toFixed(2),
+      toughSellSqft: toughSellSqft.toFixed(2),
     }
   }
 
@@ -102,6 +115,8 @@ const GlassRateMatrix = () => {
     CATEGORIES.forEach(cat => {
       const r = calcRate(cat, t)
       row[cat] = r.perSqft
+      row[`${cat}_tough`] = r.toughSellSqft
+      row['tghAddon'] = r.tghAddon // same addon per row regardless of category
     })
     return row
   })
@@ -115,8 +130,31 @@ const GlassRateMatrix = () => {
       title: cat,
       dataIndex: cat,
       align: 'center',
-      render: v => <Text style={{ color: '#1d4ed8' }}>₹{v}/sqft</Text>
-    }))
+      render: (v, row) => (
+        <div>
+          <Text style={{ color: '#1d4ed8', display: 'block' }}>₹{v}/sqft</Text>
+          {parseFloat(row.tghAddon) > 0 && (
+            <Text style={{ color: '#f97316', fontSize: 10 }}>
+              🔥 ₹{row[`${cat}_tough`]}/sqft
+            </Text>
+          )}
+        </div>
+      )
+    })),
+    {
+      title: (
+        <span style={{ color: '#f97316' }}>
+          Tgh Addon<br />
+          <span style={{ fontSize: 10, fontWeight: 400 }}>₹/sqft (approx)</span>
+        </span>
+      ),
+      dataIndex: 'tghAddon',
+      align: 'center',
+      width: 110,
+      render: v => parseFloat(v) > 0
+        ? <Tag color="orange">+₹{v}/sqft</Tag>
+        : <Text type="secondary" style={{ fontSize: 11 }}>Not set</Text>
+    }
   ]
 
   return (

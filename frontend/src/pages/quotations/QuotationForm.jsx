@@ -818,6 +818,8 @@ const QuotationForm = () => {
     qty_area: 0,
     rate: 0,
     amount: 0,
+    cost_rate: 0,
+    cost_amount: 0,
   })
 
   const addSizeProcess = (gkey, skey) => {
@@ -883,10 +885,12 @@ const QuotationForm = () => {
                   updated.amount = 0
                 }
               }
-              if (field === 'qty_area' || field === 'rate') {
+              if (field === 'qty_area' || field === 'rate' || field === 'cost_rate') {
                 updated.amount = parseFloat(
-                  ((updated.qty_area || 0) * (updated.rate || 0))
-                    .toFixed(2)
+                  ((updated.qty_area || 0) * (updated.rate || 0)).toFixed(2)
+                )
+                updated.cost_amount = parseFloat(
+                  ((updated.qty_area || 0) * (updated.cost_rate || 0)).toFixed(2)
                 )
               }
               return updated
@@ -1266,8 +1270,15 @@ const QuotationForm = () => {
       const selling_amount = s.subtotal || 0
 
       // ── COST SIDE ──
-      const ceil3 = (x) => Math.ceil(x / 3) * 3
-      const charged_sqft = (ceil3(w) * ceil3(h) * qty) / 144
+      const cost_ceil_w = 3
+      const cost_ceil_h = 3
+      const costCeilFn = (x, c) => {
+        if (c === 'plus30mm') return x + (30 / 25.4)
+        return Math.ceil(x / c) * c
+      }
+      const cost_charged_w = parseFloat(costCeilFn(w, cost_ceil_w).toFixed(4))
+      const cost_charged_h = parseFloat(costCeilFn(h, cost_ceil_h).toFixed(4))
+      const charged_sqft = (cost_charged_w * cost_charged_h * qty) / 144
 
       // Glass cost = charged sqft × cost price
       const glass_cost = parseFloat((charged_sqft * costPerSqft).toFixed(2))
@@ -1300,6 +1311,12 @@ const QuotationForm = () => {
         cost_amount,
         margin_amount,
         margin_pct,
+        _w_raw: w,
+        _h_raw: h,
+        cost_ceil_w: 3,
+        cost_ceil_h: 3,
+        cost_charged_w,
+        cost_charged_h,
       }
     })
 
@@ -2137,7 +2154,7 @@ const QuotationForm = () => {
                         <div style={{
                           display: 'grid',
                           gridTemplateColumns:
-                            '200px 80px 50px 110px 110px 40px',
+                            '200px 80px 50px 110px 110px 110px 40px',
                           gap: 6,
                           padding: '4px 0',
                           marginBottom: 4,
@@ -2149,6 +2166,7 @@ const QuotationForm = () => {
                           <div>Qty</div>
                           <div>Unit</div>
                           <div>Rate</div>
+                          <div style={{ color: '#f59e0b' }}>Cost Rate</div>
                           <div>Amount</div>
                           <div></div>
                         </div>
@@ -2160,7 +2178,7 @@ const QuotationForm = () => {
                           style={{
                             display: 'grid',
                             gridTemplateColumns:
-                              '200px 80px 50px 110px 110px 40px',
+                              '200px 80px 50px 110px 110px 110px 40px',
                             gap: 6,
                             alignItems: 'center',
                             marginBottom: 6,
@@ -2214,6 +2232,20 @@ const QuotationForm = () => {
                               updateSizeProcess(
                                 group.group_key, size.size_key,
                                 proc.sproc_key, 'rate', val
+                              )
+                            }
+                          />
+                          <InputNumber
+                            size="small"
+                            value={proc.cost_rate || 0}
+                            min={0}
+                            prefix="₹"
+                            placeholder="Cost"
+                            style={{ width: '100%', borderColor: '#f59e0b' }}
+                            onChange={val =>
+                              updateSizeProcess(
+                                group.group_key, size.size_key,
+                                proc.sproc_key, 'cost_rate', val
                               )
                             }
                           />
@@ -2352,23 +2384,63 @@ const QuotationForm = () => {
                   )
                 },
                 {
-                  title: 'Chg W', width: 80, dataIndex: 'charged_w_inch',
-                  render: (v) => (
-                    <Text style={{ fontSize: 12, color: '#475569', paddingLeft: 4 }}>
-                      {v ? parseFloat(v.toFixed(3)) : '—'}
-                    </Text>
+                  title: 'Chg W', width: 88, dataIndex: 'charged_w_inch',
+                  render: (v, row) => (
+                    <InputNumber
+                      size="small"
+                      value={v ? parseFloat(v.toFixed(3)) : null}
+                      min={0} step={0.5}
+                      style={{ width: '100%', borderColor: '#f59e0b' }}
+                      onChange={val => setGroups(prev => prev.map(g => {
+                        if (g.group_key !== group.group_key) return g
+                        return {
+                          ...g,
+                          sizes: g.sizes.map(s => {
+                            if (s.size_key !== row.size_key) return s
+                            const cW = val || 0
+                            const cH = s.charged_h_inch || 0
+                            const qty = s.quantity || 1
+                            const charged_sqft = parseFloat(((cW * cH * qty) / 144).toFixed(4))
+                            const eff = g.pricing_method === 'per_rft' ? s.running_ft
+                              : g.pricing_method === 'per_piece' ? qty : charged_sqft
+                            const sub = parseFloat((eff * (g.rate || 0) * (1 - (g.discount_pct || 0) / 100) + (s.cep_charges || 0)).toFixed(2))
+                            return { ...s, charged_w_inch: val, charged_sqft, subtotal: sub }
+                          })
+                        }
+                      }))}
+                    />
                   )
                 },
                 {
-                  title: 'Chg H', width: 80, dataIndex: 'charged_h_inch',
-                  render: (v) => (
-                    <Text style={{ fontSize: 12, color: '#475569', paddingLeft: 4 }}>
-                      {v ? parseFloat(v.toFixed(3)) : '—'}
-                    </Text>
+                  title: 'Chg H', width: 88, dataIndex: 'charged_h_inch',
+                  render: (v, row) => (
+                    <InputNumber
+                      size="small"
+                      value={v ? parseFloat(v.toFixed(3)) : null}
+                      min={0} step={0.5}
+                      style={{ width: '100%', borderColor: '#f59e0b' }}
+                      onChange={val => setGroups(prev => prev.map(g => {
+                        if (g.group_key !== group.group_key) return g
+                        return {
+                          ...g,
+                          sizes: g.sizes.map(s => {
+                            if (s.size_key !== row.size_key) return s
+                            const cW = s.charged_w_inch || 0
+                            const cH = val || 0
+                            const qty = s.quantity || 1
+                            const charged_sqft = parseFloat(((cW * cH * qty) / 144).toFixed(4))
+                            const eff = g.pricing_method === 'per_rft' ? s.running_ft
+                              : g.pricing_method === 'per_piece' ? qty : charged_sqft
+                            const sub = parseFloat((eff * (g.rate || 0) * (1 - (g.discount_pct || 0) / 100) + (s.cep_charges || 0)).toFixed(2))
+                            return { ...s, charged_h_inch: val, charged_sqft, subtotal: sub }
+                          })
+                        }
+                      }))}
+                    />
                   )
                 },
                 {
-                  title: 'Sqft', width: 80, dataIndex: 'total_sqft',
+                  title: 'Sqft', width: 80, dataIndex: 'charged_sqft',
                   render: (v, row) => (
                     <InputNumber
                       size="small"
@@ -2380,12 +2452,15 @@ const QuotationForm = () => {
                           ...g,
                           sizes: g.sizes.map(s => {
                             if (s.size_key !== row.size_key) return s
+                            const charged_sqft = parseFloat((val || 0).toFixed(4))
+                            const eff = g.pricing_method === 'per_rft' ? s.running_ft
+                              : g.pricing_method === 'per_piece' ? (s.quantity || 1) : charged_sqft
                             const sub = parseFloat(
-                              ((val || 0) * (g.rate || 0) *
+                              (eff * (g.rate || 0) *
                                 (1 - (g.discount_pct || 0) / 100) +
                                 (s.cep_charges || 0)).toFixed(2)
                             )
-                            return { ...s, total_sqft: val, subtotal: sub }
+                            return { ...s, charged_sqft, subtotal: sub }
                           })
                         }
                       }))}
@@ -3381,7 +3456,9 @@ const QuotationForm = () => {
                         const newCost = val || 0
                         const newRows = compWizard.rows.map(r => {
                           const glass_cost = parseFloat(
-                            (parseFloat(r.charged_sqft) * newCost).toFixed(2)
+                            ((r.cost_charged_w && r.cost_charged_h
+                              ? (r.cost_charged_w * r.cost_charged_h * r.quantity) / 144
+                              : parseFloat(r.charged_sqft)) * newCost).toFixed(2)
                           )
                           const cost_amount = parseFloat(
                             (glass_cost + (r.cep_cost || 0)).toFixed(2)
@@ -3426,10 +3503,36 @@ const QuotationForm = () => {
                 background: '#f5f3ff', border: '1px solid #ddd6fe',
                 borderRadius: 8, padding: '8px 14px', marginBottom: 12,
                 fontSize: 12, color: '#6d28d9',
-                display: 'flex', alignItems: 'center', gap: 6
+                display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap'
               }}>
-                🔵 <strong>CEP (Polish - 4 sides)</strong> cost included:
-                Actual running ft × ₹{compWizard.cep_cost_rate}/rft
+                🔵 <strong>CEP (Polish - 4 sides)</strong> cost:
+                <Select
+                  size="small"
+                  value={compWizard.cep_cost_rate}
+                  style={{ width: 110 }}
+                  options={[
+                    { value: 5, label: '₹5/rft' },
+                    { value: 7, label: '₹7/rft' },
+                    { value: 15, label: '₹15/rft' },
+                  ]}
+                  onChange={val => {
+                    const newRows = compWizard.rows.map(r => {
+                      const cep_cost = parseFloat((parseFloat(r.actual_rft) * val).toFixed(2))
+                      const cost_amount = parseFloat((r.glass_cost + cep_cost).toFixed(2))
+                      const margin_amount = parseFloat((r.selling_amount - cost_amount).toFixed(2))
+                      const margin_pct = cost_amount > 0
+                        ? parseFloat(((margin_amount / cost_amount) * 100).toFixed(2)) : 100
+                      return { ...r, cep_cost, cost_amount, margin_amount, margin_pct }
+                    })
+                    const totalCost = newRows.reduce((s, r) => s + r.cost_amount, 0)
+                    const totalCepCost = newRows.reduce((s, r) => s + (r.cep_cost || 0), 0)
+                    const totalMargin = compWizard.totalSelling - totalCost
+                    const totalMarginPct = totalCost > 0
+                      ? parseFloat(((totalMargin / totalCost) * 100).toFixed(2)) : 100
+                    setCompWizard(prev => ({ ...prev, rows: newRows, totalCost, totalCepCost, totalMargin, totalMarginPct, cep_cost_rate: val }))
+                  }}
+                />
+                <Text style={{ color: '#6d28d9', fontSize: 12 }}>× Actual running ft per size</Text>
               </div>
             )}
 
@@ -3459,6 +3562,98 @@ const QuotationForm = () => {
                 {
                   title: 'Actual Rft', dataIndex: 'actual_rft', width: 80,
                   render: v => <Text type="secondary">{v}</Text>
+                },
+                {
+                  title: 'Cost Chg W', key: 'cost_chg_w', width: 110, align: 'center',
+                  render: (_, r) => {
+                    const costCeilFn = (x, c) => c === 'plus30mm' ? x + (30 / 25.4) : Math.ceil(x / c) * c
+                    return (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        <Select
+                          size="small"
+                          value={r.cost_ceil_w}
+                          style={{ width: '100%' }}
+                          options={[
+                            { value: 3, label: '3" (Tight)' },
+                            { value: 6, label: '6" (Standard)' },
+                            { value: 'plus30mm', label: '+30mm' },
+                          ]}
+                          onChange={val => {
+                            const w = parseFloat(r.width_display)
+                            // parse actual w from row — use stored raw value
+                            setCompWizard(prev => {
+                              const newRows = prev.rows.map(row => {
+                                if (row.key !== r.key) return row
+                                const cost_charged_w = parseFloat(costCeilFn(row._w_raw || 0, val).toFixed(4))
+                                const cost_charged_h = row.cost_charged_h || 0
+                                const qty = row.quantity || 1
+                                const charged_sqft = (cost_charged_w * cost_charged_h * qty) / 144
+                                const glass_cost = parseFloat((charged_sqft * (prev.cost_price || 0)).toFixed(2))
+                                const cep_cost = parseFloat((parseFloat(row.actual_rft) * prev.cep_cost_rate).toFixed(2))
+                                const cost_amount = parseFloat((glass_cost + cep_cost).toFixed(2))
+                                const margin_amount = parseFloat((row.selling_amount - cost_amount).toFixed(2))
+                                const margin_pct = cost_amount > 0 ? parseFloat(((margin_amount / cost_amount) * 100).toFixed(2)) : 100
+                                return { ...row, cost_ceil_w: val, cost_charged_w, charged_sqft: charged_sqft.toFixed(3), glass_cost, cep_cost, cost_amount, margin_amount, margin_pct }
+                              })
+                              const totalCost = newRows.reduce((s, row) => s + row.cost_amount, 0)
+                              const totalCepCost = newRows.reduce((s, row) => s + (row.cep_cost || 0), 0)
+                              const totalMargin = prev.totalSelling - totalCost
+                              const totalMarginPct = totalCost > 0 ? parseFloat(((totalMargin / totalCost) * 100).toFixed(2)) : 100
+                              return { ...prev, rows: newRows, totalCost, totalCepCost, totalMargin, totalMarginPct }
+                            })
+                          }}
+                        />
+                        <Text style={{ fontSize: 10, color: '#6366f1', textAlign: 'center' }}>
+                          {r.cost_charged_w ? parseFloat(r.cost_charged_w.toFixed(3)) : '—'}
+                        </Text>
+                      </div>
+                    )
+                  }
+                },
+                {
+                  title: 'Cost Chg H', key: 'cost_chg_h', width: 110, align: 'center',
+                  render: (_, r) => {
+                    const costCeilFn = (x, c) => c === 'plus30mm' ? x + (30 / 25.4) : Math.ceil(x / c) * c
+                    return (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        <Select
+                          size="small"
+                          value={r.cost_ceil_h}
+                          style={{ width: '100%' }}
+                          options={[
+                            { value: 3, label: '3" (Tight)' },
+                            { value: 6, label: '6" (Standard)' },
+                            { value: 'plus30mm', label: '+30mm' },
+                          ]}
+                          onChange={val => {
+                            setCompWizard(prev => {
+                              const newRows = prev.rows.map(row => {
+                                if (row.key !== r.key) return row
+                                const cost_charged_w = row.cost_charged_w || 0
+                                const cost_charged_h = parseFloat(costCeilFn(row._h_raw || 0, val).toFixed(4))
+                                const qty = row.quantity || 1
+                                const charged_sqft = (cost_charged_w * cost_charged_h * qty) / 144
+                                const glass_cost = parseFloat((charged_sqft * (prev.cost_price || 0)).toFixed(2))
+                                const cep_cost = parseFloat((parseFloat(row.actual_rft) * prev.cep_cost_rate).toFixed(2))
+                                const cost_amount = parseFloat((glass_cost + cep_cost).toFixed(2))
+                                const margin_amount = parseFloat((row.selling_amount - cost_amount).toFixed(2))
+                                const margin_pct = cost_amount > 0 ? parseFloat(((margin_amount / cost_amount) * 100).toFixed(2)) : 100
+                                return { ...row, cost_ceil_h: val, cost_charged_h, charged_sqft: charged_sqft.toFixed(3), glass_cost, cep_cost, cost_amount, margin_amount, margin_pct }
+                              })
+                              const totalCost = newRows.reduce((s, row) => s + row.cost_amount, 0)
+                              const totalCepCost = newRows.reduce((s, row) => s + (row.cep_cost || 0), 0)
+                              const totalMargin = prev.totalSelling - totalCost
+                              const totalMarginPct = totalCost > 0 ? parseFloat(((totalMargin / totalCost) * 100).toFixed(2)) : 100
+                              return { ...prev, rows: newRows, totalCost, totalCepCost, totalMargin, totalMarginPct }
+                            })
+                          }}
+                        />
+                        <Text style={{ fontSize: 10, color: '#6366f1', textAlign: 'center' }}>
+                          {r.cost_charged_h ? parseFloat(r.cost_charged_h.toFixed(3)) : '—'}
+                        </Text>
+                      </div>
+                    )
+                  }
                 },
                 {
                   title: 'Selling Amt', dataIndex: 'selling_amount', width: 100, align: 'right',
@@ -3623,23 +3818,16 @@ const QuotationForm = () => {
                       message.error('Target margin must be between 1% and 99%')
                       return
                     }
-                    setGroups(prev => prev.map(g => {
-                      let costPerSqft = 0
-                      const prod = products.find(p => p.id === g.product_id)
-                      if (prod?.cost_price) {
-                        costPerSqft = prod.cost_price
-                      } else if (g.glass_category && g.glass_thickness) {
-                        try {
-                          const matrix = JSON.parse(localStorage.getItem('glass_rate_matrix') || '{}')
-                          const costRate = matrix?.cost_rates?.[g.glass_category]
-                          if (costRate) costPerSqft = parseFloat((parseFloat(g.glass_thickness) * costRate / 10.764).toFixed(2))
-                        } catch { }
-                      }
-                      if (!costPerSqft && g.rate > 0) costPerSqft = parseFloat((g.rate * 0.70).toFixed(2))
-                      const newRate = costPerSqft > 0
-                        ? parseFloat((costPerSqft / (1 - marginTarget / 100)).toFixed(2))
-                        : g.rate
-                      const updatedGroup = { ...g, rate: newRate }
+                    setGroups(prev => prev.map((g, gi) => {
+                      // Use cost_per_sqft directly from the already-displayed allRows
+                      // instead of re-fetching from master — stays consistent with what user sees
+                      const matchingRow = globalComparison.allRows.find(
+                        r => r.group_no === gi + 1 && r.is_first_in_group
+                      )
+                      const costPerSqft = matchingRow?.cost_per_sqft || 0
+                      if (!costPerSqft) return g
+                      const newRate = parseFloat((costPerSqft / (1 - marginTarget / 100)).toFixed(2))
+                      const updatedGroup = { ...g, rate: newRate, manual_cost_price: costPerSqft }
                       updatedGroup.sizes = g.sizes.map(s => calcGroupSize(updatedGroup, s))
                       return updatedGroup
                     }))
@@ -3955,68 +4143,242 @@ const QuotationForm = () => {
                     )
                   }}
                 />
-
-                {/* True Combined Total */}
-                <div style={{
-                  marginTop: 12,
-                  background: '#0f172a',
-                  borderRadius: 8,
-                  padding: '12px 20px',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  flexWrap: 'wrap',
-                  gap: 16,
-                }}>
-                  {(() => {
-                    const hwSell = hardwareItems.reduce((s, h) => s + (h.amount || 0), 0)
-                    const hwCost = hardwareItems.reduce((s, h) => s + (h.cost_amount || (h.qty || 0) * (h.cost_rate || 0)), 0)
-                    const lbSell = laborItems.reduce((s, l) => s + (l.amount || 0), 0)
-                    const lbCost = laborItems.reduce((s, l) => s + (l.cost_amount || (l.qty || 0) * (l.cost_rate || 0)), 0)
-                    const wstSell = wastageItems.reduce((s, w) => s + (w.amount || 0), 0)
-                    const wstCost = wastageItems.reduce((s, w) => s + (w.cost_amount || (w.qty || 0) * (w.cost_rate || 0)), 0)
-                    const trueSell = globalComparison.totalSelling + hwSell + lbSell + wstSell
-                    const trueCost = globalComparison.totalCost + hwCost + lbCost + wstCost
-                    const trueMargin = trueSell - trueCost
-                    const truePct = trueCost > 0
-                      ? ((trueMargin / trueCost) * 100).toFixed(2)
-                      : '100'
-                    const color = parseFloat(truePct) >= 20 ? '#4ade80'
-                      : parseFloat(truePct) >= 10 ? '#fbbf24' : '#f87171'
-                    return (
-                      <>
-                        <div>
-                          <div style={{ color: '#94a3b8', fontSize: 11 }}>True Total Selling</div>
-                          <div style={{ color: '#4ade80', fontSize: 16, fontWeight: 700 }}>
-                            ₹{trueSell.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                          </div>
-                          <div style={{ color: '#64748b', fontSize: 10 }}>Glass + HW + Labor + Wastage</div>
-                        </div>
-                        <div>
-                          <div style={{ color: '#94a3b8', fontSize: 11 }}>True Total Cost</div>
-                          <div style={{ color: '#f87171', fontSize: 16, fontWeight: 700 }}>
-                            ₹{trueCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                          </div>
-                          <div style={{ color: '#64748b', fontSize: 10 }}>Glass + HW + Labor</div>
-                        </div>
-                        <div>
-                          <div style={{ color: '#94a3b8', fontSize: 11 }}>True Margin</div>
-                          <div style={{ color, fontSize: 16, fontWeight: 700 }}>
-                            ₹{trueMargin.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                          </div>
-                        </div>
-                        <div>
-                          <div style={{ color: '#94a3b8', fontSize: 11 }}>True Margin %</div>
-                          <div style={{ color, fontSize: 28, fontWeight: 800 }}>
-                            {truePct}%
-                          </div>
-                        </div>
-                      </>
-                    )
-                  })()}
-                </div>
               </div>
             )}
+
+            {/* Grand Total Breakdown interleaved div */}
+            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 16px', marginTop: 12 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, fontSize: 11, fontWeight: 600, color: '#9ca3af', borderBottom: '1px solid #f1f5f9', paddingBottom: 4 }}>
+                <span style={{ flex: 1 }}>Grand Total Breakdown</span>
+                <span style={{ minWidth: 90, textAlign: 'right' }}>Selling</span>
+                <span style={{ minWidth: 90, textAlign: 'right' }}>Cost</span>
+              </div>
+              {(() => {
+                const ceil3 = x => Math.ceil(x / 3) * 3
+                const rows = []
+
+                // 1) Glass group rows and their processes
+                groups.forEach((group, gi) => {
+                  const sell = group.sizes?.reduce((s, x) => s + (x.subtotal || 0), 0) || 0
+
+                  // Cost price lookup logic
+                  let costPerSqft = 0
+                  if (group.manual_cost_price && group.manual_cost_price > 0) {
+                    costPerSqft = group.manual_cost_price
+                  } else {
+                    const prod = products.find(p => p.id === group.product_id)
+                    if (prod?.cost_price) {
+                      costPerSqft = prod.cost_price
+                    } else if (group.glass_category && group.glass_thickness) {
+                      try {
+                        const matrix = JSON.parse(localStorage.getItem('glass_rate_matrix') || '{}')
+                        const costRate = matrix?.cost_rates?.[group.glass_category]
+                        if (costRate) costPerSqft = parseFloat((parseFloat(group.glass_thickness) * costRate / 10.764).toFixed(2))
+                      } catch { }
+                    }
+                    if (!costPerSqft && (group.base_glass_rate || group.rate) > 0) {
+                      costPerSqft = parseFloat(((group.base_glass_rate || group.rate) * 0.70).toFixed(2))
+                    }
+                    if (group.is_toughened || group.glass_type === 'Toughened') {
+                      try {
+                        const tghPm = JSON.parse(localStorage.getItem('process_masters') || '[]')
+                        const toughProc = tghPm.find(p => p.process_type === 'toughening' && p.is_active !== false)
+                        if (toughProc && toughProc.rate > 0) {
+                          const avgAddon = group.sizes.length > 0
+                            ? group.sizes.reduce((s, sz) => s + (sz.tgh_rate_addon || 0), 0) / group.sizes.length
+                            : 0
+                          if (avgAddon > 0) costPerSqft = parseFloat((costPerSqft + avgAddon).toFixed(2))
+                        }
+                      } catch { }
+                    }
+                  }
+
+                  const cost = group.sizes?.reduce((s, sz) => {
+                    const w = sz.width_inch || 0
+                    const h = sz.height_inch || 0
+                    const qty = sz.quantity || 1
+                    const charged_sqft = (ceil3(w) * ceil3(h) * qty) / 144
+                    const glass_cost = charged_sqft * costPerSqft
+                    const actual_rft = ((w + h) * 2 / 12 * qty)
+                    const cep_cost = group.cep ? (actual_rft * 5) : 0
+                    return s + glass_cost + cep_cost
+                  }, 0) || 0
+
+                  rows.push(
+                    <div key={`group-${gi}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4, fontSize: 12 }}>
+                      <span style={{ color: '#374151', flex: 1 }}>{gi + 1}) {group.description || `Group ${gi + 1}`}</span>
+                      <span style={{ color: '#16a34a', minWidth: 90, textAlign: 'right' }}>₹{Number(sell).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                      <span style={{ color: '#dc2626', minWidth: 90, textAlign: 'right' }}>₹{Number(cost).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                  )
+
+                  // Process rows
+                  const processes = [
+                    ...(group.processes || []),
+                    ...(group.sizes?.flatMap(s => s.size_processes || []) || [])
+                  ]
+                  processes.forEach((p, pi) => {
+                    if (p.amount > 0) {
+                      rows.push(
+                        <div key={`proc-${gi}-${pi}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4, fontSize: 11, color: '#6366f1', paddingLeft: 20, borderLeft: '2px solid #e9d5ff', marginLeft: 8 }}>
+                          <span style={{ flex: 1 }}>└ {p.process_name || p.name || 'Process'}</span>
+                          <span style={{ minWidth: 90, textAlign: 'right' }}>₹{Number(p.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                          <span style={{ minWidth: 90, textAlign: 'right' }}>₹{Number(p.amount * 0.70).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                        </div>
+                      )
+                    }
+                  })
+                })
+
+                // 2) Hardware rows
+                hardwareItems.forEach((h, hi) => {
+                  const sell = h.amount || 0
+                  const cost = h.cost_amount || (h.qty * h.cost_rate) || 0
+                  rows.push(
+                    <div key={`hw-${hi}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4, fontSize: 12 }}>
+                      <span style={{ color: '#374151', flex: 1 }}>
+                        <span style={{ color: '#6b7280', fontSize: 11, marginRight: 6 }}>[HW]</span>
+                        {h.description || '(No description)'}
+                      </span>
+                      <span style={{ color: '#16a34a', minWidth: 90, textAlign: 'right' }}>₹{Number(sell).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                      <span style={{ color: '#dc2626', minWidth: 90, textAlign: 'right' }}>₹{Number(cost).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                  )
+                })
+
+                // 3) Labor rows
+                laborItems.forEach((l, li) => {
+                  const sell = l.amount || 0
+                  const cost = l.cost_amount || (l.qty * l.cost_rate) || 0
+                  rows.push(
+                    <div key={`labor-${li}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4, fontSize: 12 }}>
+                      <span style={{ color: '#374151', flex: 1 }}>
+                        <span style={{ color: '#6b7280', fontSize: 11, marginRight: 6 }}>[Labor]</span>
+                        {l.description || '(No description)'}
+                      </span>
+                      <span style={{ color: '#16a34a', minWidth: 90, textAlign: 'right' }}>₹{Number(sell).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                      <span style={{ color: '#dc2626', minWidth: 90, textAlign: 'right' }}>₹{Number(cost).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                  )
+                })
+
+                // 4) Wastage rows
+                wastageItems.forEach((w, wi) => {
+                  const sell = w.amount || 0
+                  const cost = w.cost_amount || (w.qty * w.cost_rate) || 0
+                  rows.push(
+                    <div key={`wastage-${wi}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4, fontSize: 12 }}>
+                      <span style={{ color: '#374151', flex: 1 }}>
+                        <span style={{ color: '#6b7280', fontSize: 11, marginRight: 6 }}>[Wastage]</span>
+                        {w.description || '(No description)'}
+                      </span>
+                      <span style={{ color: '#16a34a', minWidth: 90, textAlign: 'right' }}>₹{Number(sell).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                      <span style={{ color: '#dc2626', minWidth: 90, textAlign: 'right' }}>₹{Number(cost).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                  )
+                })
+
+                // 5) DC Charges row
+                if (totals.dcCharges > 0 || totals.dcCost > 0) {
+                  rows.push(
+                    <div key="dc-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4, fontSize: 12 }}>
+                      <span style={{ color: '#374151', flex: 1 }}>D/C Charges</span>
+                      <span style={{ color: '#16a34a', minWidth: 90, textAlign: 'right' }}>₹{Number(totals.dcCharges || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                      <span style={{ color: '#dc2626', minWidth: 90, textAlign: 'right' }}>₹{Number(totals.dcCost || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                  )
+                }
+
+                // 6) GST row
+                if (globalComparison.gstAmt > 0) {
+                  rows.push(
+                    <div key="gst-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4, fontSize: 12 }}>
+                      <span style={{ color: '#374151', flex: 1 }}>GST (18%)</span>
+                      <span style={{ color: '#16a34a', minWidth: 90, textAlign: 'right' }}>₹{Number(globalComparison.gstAmt || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                      <span style={{ color: '#dc2626', minWidth: 90, textAlign: 'right' }}>₹{Number(globalComparison.costGst || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                  )
+                }
+
+                return rows
+              })()}
+              <Divider style={{ margin: '8px 0' }} />
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontWeight: 700, fontSize: 13 }}>
+                <span style={{ flex: 1 }}>
+                  Grand Total (incl. GST) &nbsp;
+                  <span style={{
+                    color: globalComparison.totalMarginPct >= 20 ? '#16a34a' :
+                           globalComparison.totalMarginPct >= 10 ? '#f59e0b' : '#dc2626',
+                    fontSize: 11,
+                    fontWeight: 'normal'
+                  }}>
+                    (Margin: ₹{Number(globalComparison.totalMargin).toLocaleString('en-IN', { minimumFractionDigits: 2 })} | {globalComparison.totalMarginPct}%)
+                  </span>
+                </span>
+                <span style={{ color: '#16a34a', minWidth: 90, textAlign: 'right' }}>₹{Number(globalComparison.totalSelling).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                <span style={{ color: '#dc2626', minWidth: 90, textAlign: 'right' }}>₹{Number(globalComparison.totalCost).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+              </div>
+            </div>
+
+            {/* Dark background True Margin panel */}
+            <div style={{
+              marginTop: 12,
+              background: '#0f172a',
+              borderRadius: 8,
+              padding: '12px 20px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: 16,
+            }}>
+              {(() => {
+                const hwSell = hardwareItems.reduce((s, h) => s + (h.amount || 0), 0)
+                const hwCost = hardwareItems.reduce((s, h) => s + (h.cost_amount || (h.qty || 0) * (h.cost_rate || 0)), 0)
+                const lbSell = laborItems.reduce((s, l) => s + (l.amount || 0), 0)
+                const lbCost = laborItems.reduce((s, l) => s + (l.cost_amount || (l.qty || 0) * (l.cost_rate || 0)), 0)
+                const wstSell = wastageItems.reduce((s, w) => s + (w.amount || 0), 0)
+                const wstCost = wastageItems.reduce((s, w) => s + (w.cost_amount || (w.qty || 0) * (w.cost_rate || 0)), 0)
+                const trueSell = globalComparison.totalSelling + hwSell + lbSell + wstSell
+                const trueCost = globalComparison.totalCost + hwCost + lbCost + wstCost
+                const trueMargin = trueSell - trueCost
+                const truePct = trueCost > 0
+                  ? ((trueMargin / trueCost) * 100).toFixed(2)
+                  : '100'
+                const color = parseFloat(truePct) >= 20 ? '#4ade80'
+                  : parseFloat(truePct) >= 10 ? '#fbbf24' : '#f87171'
+                return (
+                  <>
+                    <div>
+                      <div style={{ color: '#94a3b8', fontSize: 11 }}>True Total Selling</div>
+                      <div style={{ color: '#4ade80', fontSize: 16, fontWeight: 700 }}>
+                        ₹{trueSell.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </div>
+                      <div style={{ color: '#64748b', fontSize: 10 }}>Glass + HW + Labor + Wastage</div>
+                    </div>
+                    <div>
+                      <div style={{ color: '#94a3b8', fontSize: 11 }}>True Total Cost</div>
+                      <div style={{ color: '#f87171', fontSize: 16, fontWeight: 700 }}>
+                        ₹{trueCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </div>
+                      <div style={{ color: '#64748b', fontSize: 10 }}>Glass + HW + Labor</div>
+                    </div>
+                    <div>
+                      <div style={{ color: '#94a3b8', fontSize: 11 }}>True Margin</div>
+                      <div style={{ color, fontSize: 16, fontWeight: 700 }}>
+                        ₹{trueMargin.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ color: '#94a3b8', fontSize: 11 }}>True Margin %</div>
+                      <div style={{ color, fontSize: 28, fontWeight: 800 }}>
+                        {truePct}%
+                      </div>
+                    </div>
+                  </>
+                )
+              })()}
+            </div>
           </>
         )}
       </Modal>
