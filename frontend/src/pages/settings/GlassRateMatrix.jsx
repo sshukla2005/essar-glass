@@ -17,8 +17,32 @@ const GlassRateMatrix = () => {
 
   const getMatrix = () => {
     try {
-      return JSON.parse(localStorage.getItem('glass_rate_matrix') || '{}')
-    } catch { return {} }
+      const parsed = JSON.parse(localStorage.getItem('glass_rate_matrix') || '{}')
+      if (parsed && !parsed.toughening_sell_rates) {
+        parsed.toughening_sell_rates = {
+          "3.5": 15,
+          "4": 20,
+          "5": 25,
+          "6": 30,
+          "8": 35,
+          "10": 40,
+          "12": 50
+        }
+      }
+      return parsed
+    } catch {
+      return {
+        toughening_sell_rates: {
+          "3.5": 15,
+          "4": 20,
+          "5": 25,
+          "6": 30,
+          "8": 35,
+          "10": 40,
+          "12": 50
+        }
+      }
+    }
   }
 
   const [matrix, setMatrix] = useState(getMatrix)
@@ -27,6 +51,17 @@ const GlassRateMatrix = () => {
   useEffect(() => {
     settingsApi.get(settingsApi.KEYS.GLASS_RATE_MATRIX).then(data => {
       if (data && Object.keys(data).length > 0) {
+        if (!data.toughening_sell_rates) {
+          data.toughening_sell_rates = {
+            "3.5": 15,
+            "4": 20,
+            "5": 25,
+            "6": 30,
+            "8": 35,
+            "10": 40,
+            "12": 50
+          }
+        }
         setMatrix(data)
         localStorage.setItem('glass_rate_matrix', JSON.stringify(data))
       }
@@ -61,6 +96,23 @@ const GlassRateMatrix = () => {
     setMatrix(prev => ({ ...prev, [field]: value }))
   }
 
+  const updateTougheningCostRate = (thickness, value) => {
+    setMatrix(prev => ({
+      ...prev,
+      toughening_cost_rates: { ...(prev.toughening_cost_rates || {}), [thickness]: value }
+    }))
+  }
+
+  const updateTougheningSellRate = (thickness, value) => {
+    setMatrix(prev => ({
+      ...prev,
+      toughening_sell_rates: {
+        ...(prev.toughening_sell_rates || {}),
+        [thickness]: value
+      }
+    }))
+  }
+
   const handleSave = async () => {
     const toSave = { ...matrix, updated_at: new Date().toISOString() }
     localStorage.setItem('glass_rate_matrix', JSON.stringify(toSave))
@@ -77,14 +129,9 @@ const GlassRateMatrix = () => {
     const costSqmt = thick * costRate
     const costSqft = costSqmt / SQMT_TO_SQFT
 
-    // Toughening addon from process_masters
-    let tghRate = 0
-    try {
-      const pm = JSON.parse(localStorage.getItem('process_masters') || '[]')
-      const tghProc = pm.find(p => p.process_type === 'toughening' && p.is_active !== false)
-      tghRate = tghProc?.rate || 0
-    } catch { }
-    const tghAddon = parseFloat((tghRate / SQMT_TO_SQFT).toFixed(2))
+    const tghAddon = parseFloat(matrix?.toughening_sell_rates?.[thickness] || 0)
+    const tghCostAddon = parseFloat((matrix?.toughening_cost_rates?.[thickness] || 0))
+    const toughCostSqft = parseFloat((parseFloat(costSqft) + tghCostAddon).toFixed(2))
     const toughSellSqft = parseFloat((perSqft + tghAddon).toFixed(2))
 
     return {
@@ -93,6 +140,8 @@ const GlassRateMatrix = () => {
       costSqmt: costSqmt.toFixed(2),
       costSqft: costSqft.toFixed(2),
       tghAddon: tghAddon.toFixed(2),
+      tghCostAddon: tghCostAddon.toFixed(2),
+      toughCostSqft: toughCostSqft.toFixed(2),
       toughSellSqft: toughSellSqft.toFixed(2),
     }
   }
@@ -118,6 +167,7 @@ const GlassRateMatrix = () => {
       row[`${cat}_tough`] = r.toughSellSqft
       row['tghAddon'] = r.tghAddon // same addon per row regardless of category
     })
+    row['tghCostAddon'] = matrix?.toughening_cost_rates?.[t] || 0
     return row
   })
 
@@ -145,15 +195,30 @@ const GlassRateMatrix = () => {
       title: (
         <span style={{ color: '#f97316' }}>
           Tgh Addon<br />
-          <span style={{ fontSize: 10, fontWeight: 400 }}>₹/sqft (approx)</span>
+          <span style={{ fontSize: 10, fontWeight: 400 }}>Sell | Cost ₹/sqft</span>
         </span>
       ),
       dataIndex: 'tghAddon',
       align: 'center',
-      width: 110,
-      render: v => parseFloat(v) > 0
-        ? <Tag color="orange">+₹{v}/sqft</Tag>
-        : <Text type="secondary" style={{ fontSize: 11 }}>Not set</Text>
+      width: 130,
+      render: (v, row) => (
+        <div>
+          {parseFloat(row.tghAddon) > 0
+            ? <Tag color="orange">+₹{row.tghAddon}/sqft sell</Tag>
+            : <Text type="secondary" style={{ fontSize: 11 }}>Not set</Text>
+          }
+          <InputNumber
+            size="small"
+            value={row.tghCostAddon || 0}
+            min={0}
+            prefix="₹"
+            placeholder="Cost"
+            style={{ width: '100%', marginTop: 4, borderColor: '#fed7aa' }}
+            onChange={val => updateTougheningCostRate(row.key, val)}
+          />
+          <Text type="secondary" style={{ fontSize: 10 }}>cost/sqft</Text>
+        </div>
+      )
     }
   ]
 
@@ -291,6 +356,60 @@ const GlassRateMatrix = () => {
                 style={{ width: '100%' }}
                 onChange={val => updateThicknessRate(t, val)}
               />
+            </Col>
+          ))}
+        </Row>
+      </Card>
+
+      {/* Toughening Cost Rates */}
+      <Card style={{ borderRadius: 12, marginBottom: 16 }}>
+        <Divider orientation="left">
+          <Text strong style={{ color: '#f97316' }}>🔥 Toughening Cost Rate (₹/sqft per Thickness)</Text>
+        </Divider>
+        <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
+          Your cost from toughening vendor per sqft — separate from selling price addon. Used in Cost vs Selling wizard.
+        </Text>
+        <Row gutter={16}>
+          {THICKNESSES.map(t => (
+            <Col key={t} span={3}>
+              <div style={{ marginBottom: 4 }}>
+                <Text strong>{t}mm</Text>
+              </div>
+              <InputNumber
+                value={matrix?.toughening_cost_rates?.[t] || 0}
+                min={0}
+                prefix="₹"
+                style={{ width: '100%', borderColor: '#fed7aa' }}
+                onChange={val => updateTougheningCostRate(t, val)}
+              />
+              <Text type="secondary" style={{ fontSize: 10 }}>/sqft</Text>
+            </Col>
+          ))}
+        </Row>
+      </Card>
+
+      {/* Toughening Sell Rates */}
+      <Card style={{ borderRadius: 12, marginBottom: 16 }}>
+        <Divider orientation="left">
+          <Text strong style={{ color: '#f97316' }}>🔥 Toughening Sell Rate (₹/sqft per Thickness)</Text>
+        </Divider>
+        <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
+          Customer selling price addon for toughening per sqft — separate from cost rate. Used in Cost vs Selling wizard.
+        </Text>
+        <Row gutter={16}>
+          {THICKNESSES.map(t => (
+            <Col key={t} span={3}>
+              <div style={{ marginBottom: 4 }}>
+                <Text strong>{t}mm</Text>
+              </div>
+              <InputNumber
+                value={matrix?.toughening_sell_rates?.[t] || 0}
+                min={0}
+                prefix="₹"
+                style={{ width: '100%', borderColor: '#fed7aa' }}
+                onChange={val => updateTougheningSellRate(t, val)}
+              />
+              <Text type="secondary" style={{ fontSize: 10 }}>sell/sqft</Text>
             </Col>
           ))}
         </Row>

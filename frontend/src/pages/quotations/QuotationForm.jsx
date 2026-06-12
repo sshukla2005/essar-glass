@@ -165,6 +165,8 @@ const emptyGroup = () => ({
   ceiling_inches: 6,
   ceiling_w_inches: 6,
   ceiling_h_inches: 6,
+  wizard_cost_ceil_w: 3,
+  wizard_cost_ceil_h: 3,
   is_toughened: false,
   base_glass_rate: 0,
   manual_cost_price: null,
@@ -1270,8 +1272,8 @@ const QuotationForm = () => {
       const selling_amount = s.subtotal || 0
 
       // ── COST SIDE ──
-      const cost_ceil_w = 3
-      const cost_ceil_h = 3
+      const cost_ceil_w = group.wizard_cost_ceil_w || 3
+      const cost_ceil_h = group.wizard_cost_ceil_h || 3
       const costCeilFn = (x, c) => {
         if (c === 'plus30mm') return x + (30 / 25.4)
         return Math.ceil(x / c) * c
@@ -1313,10 +1315,11 @@ const QuotationForm = () => {
         margin_pct,
         _w_raw: w,
         _h_raw: h,
-        cost_ceil_w: 3,
-        cost_ceil_h: 3,
+        cost_ceil_w,
+        cost_ceil_h,
         cost_charged_w,
         cost_charged_h,
+        _group_key: group.group_key,
       }
     })
 
@@ -3391,6 +3394,20 @@ const QuotationForm = () => {
         footer={
           <Space>
             <Button
+              style={{ borderColor: '#10b981', color: '#10b981' }}
+              disabled={!wizardCostPrice || wizardCostPrice <= 0}
+              onClick={() => {
+                if (compWizard?.group_key && wizardCostPrice > 0) {
+                  updateGroup(compWizard.group_key, 'manual_cost_price', wizardCostPrice)
+                  message.success(`Cost price ₹${wizardCostPrice}/sqft saved — selling rate unchanged`)
+                }
+                setCompWizard(null)
+                setWizardCostPrice(null)
+              }}
+            >
+              💾 Save Cost Price
+            </Button>
+            <Button
               type="primary"
               style={{ background: '#6366f1', borderColor: '#6366f1' }}
               disabled={!wizardCostPrice || wizardCostPrice <= 0}
@@ -3579,8 +3596,7 @@ const QuotationForm = () => {
                             { value: 'plus30mm', label: '+30mm' },
                           ]}
                           onChange={val => {
-                            const w = parseFloat(r.width_display)
-                            // parse actual w from row — use stored raw value
+                            const effectiveCostPrice = wizardCostPrice ?? compWizard?.cost_price ?? 0
                             setCompWizard(prev => {
                               const newRows = prev.rows.map(row => {
                                 if (row.key !== r.key) return row
@@ -3588,7 +3604,7 @@ const QuotationForm = () => {
                                 const cost_charged_h = row.cost_charged_h || 0
                                 const qty = row.quantity || 1
                                 const charged_sqft = (cost_charged_w * cost_charged_h * qty) / 144
-                                const glass_cost = parseFloat((charged_sqft * (prev.cost_price || 0)).toFixed(2))
+                                const glass_cost = parseFloat((charged_sqft * effectiveCostPrice).toFixed(2))
                                 const cep_cost = parseFloat((parseFloat(row.actual_rft) * prev.cep_cost_rate).toFixed(2))
                                 const cost_amount = parseFloat((glass_cost + cep_cost).toFixed(2))
                                 const margin_amount = parseFloat((row.selling_amount - cost_amount).toFixed(2))
@@ -3601,6 +3617,7 @@ const QuotationForm = () => {
                               const totalMarginPct = totalCost > 0 ? parseFloat(((totalMargin / totalCost) * 100).toFixed(2)) : 100
                               return { ...prev, rows: newRows, totalCost, totalCepCost, totalMargin, totalMarginPct }
                             })
+                            if (r._group_key) updateGroup(r._group_key, 'wizard_cost_ceil_w', val)
                           }}
                         />
                         <Text style={{ fontSize: 10, color: '#6366f1', textAlign: 'center' }}>
@@ -3626,6 +3643,7 @@ const QuotationForm = () => {
                             { value: 'plus30mm', label: '+30mm' },
                           ]}
                           onChange={val => {
+                            const effectiveCostPrice = wizardCostPrice ?? compWizard?.cost_price ?? 0
                             setCompWizard(prev => {
                               const newRows = prev.rows.map(row => {
                                 if (row.key !== r.key) return row
@@ -3633,7 +3651,7 @@ const QuotationForm = () => {
                                 const cost_charged_h = parseFloat(costCeilFn(row._h_raw || 0, val).toFixed(4))
                                 const qty = row.quantity || 1
                                 const charged_sqft = (cost_charged_w * cost_charged_h * qty) / 144
-                                const glass_cost = parseFloat((charged_sqft * (prev.cost_price || 0)).toFixed(2))
+                                const glass_cost = parseFloat((charged_sqft * effectiveCostPrice).toFixed(2))
                                 const cep_cost = parseFloat((parseFloat(row.actual_rft) * prev.cep_cost_rate).toFixed(2))
                                 const cost_amount = parseFloat((glass_cost + cep_cost).toFixed(2))
                                 const margin_amount = parseFloat((row.selling_amount - cost_amount).toFixed(2))
@@ -3646,6 +3664,7 @@ const QuotationForm = () => {
                               const totalMarginPct = totalCost > 0 ? parseFloat(((totalMargin / totalCost) * 100).toFixed(2)) : 100
                               return { ...prev, rows: newRows, totalCost, totalCepCost, totalMargin, totalMarginPct }
                             })
+                            if (r._group_key) updateGroup(r._group_key, 'wizard_cost_ceil_h', val)
                           }}
                         />
                         <Text style={{ fontSize: 10, color: '#6366f1', textAlign: 'center' }}>
