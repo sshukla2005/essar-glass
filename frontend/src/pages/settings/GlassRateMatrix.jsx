@@ -410,6 +410,7 @@ const GlassRateMatrix = () => {
                 onChange={val => updateTougheningSellRate(t, val)}
               />
               <Text type="secondary" style={{ fontSize: 10 }}>sell/sqft</Text>
+
             </Col>
           ))}
         </Row>

@@ -559,7 +559,7 @@ const QuotationForm = () => {
     const tgh_sqmt = ((size.width_inch || 0) * 25.4 + 30) * ((size.height_inch || 0) * 25.4 + 30) * qty / 1000000
 
     const polishRate = group.cep_polish_rate === 'custom'
-      ? (group.cep_polish_rate_custom || 15)
+      ? (group.cep_polish_rate_custom ?? 15)
       : (group.cep_polish_rate || 15)
     const cep_charges = group.cep
       ? parseFloat((running_ft * polishRate).toFixed(2)) : 0
@@ -1349,6 +1349,8 @@ const QuotationForm = () => {
       selling_rate: group.rate,
       cep_on: group.cep,
       cep_cost_rate: CEP_COST_RATE,
+      cost_ceil_w: group.wizard_cost_ceil_w || 3,
+      cost_ceil_h: group.wizard_cost_ceil_h || 3,
       rows,
       glassSellingTotal,
       totalProcSelling,
@@ -2097,7 +2099,7 @@ const QuotationForm = () => {
                   {group.cep && group.cep_polish_rate === 'custom' && (
                     <InputNumber
                       size="small"
-                      value={group.cep_polish_rate_custom || 15}
+                      value={group.cep_polish_rate_custom ?? 15}
                       min={0}
                       prefix="₹"
                       style={{ width: 80 }}
@@ -3553,6 +3555,84 @@ const QuotationForm = () => {
               </div>
             )}
 
+            <div style={{
+              background: '#f8fafc', border: '1px solid #e2e8f0',
+              borderRadius: 8, padding: '8px 14px', marginBottom: 12,
+              display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap'
+            }}>
+              <Text style={{ fontSize: 12, fontWeight: 600, color: '#374151' }}>📐 Cost Ceiling:</Text>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Text style={{ fontSize: 12, color: '#6b7280' }}>W:</Text>
+                <Select
+                  size="small"
+                  value={compWizard.cost_ceil_w}
+                  style={{ width: 130 }}
+                  options={[
+                    { value: 3, label: '3" (Tight)' },
+                    { value: 6, label: '6" (Standard)' },
+                    { value: 'plus30mm', label: '+30mm' },
+                  ]}
+                  onChange={val => {
+                    const effectiveCostPrice = wizardCostPrice ?? compWizard?.cost_price ?? 0
+                    const costCeilFn = (x, c) => c === 'plus30mm' ? x + (30 / 25.4) : Math.ceil(x / c) * c
+                    const newRows = compWizard.rows.map(row => {
+                      const cost_charged_w = parseFloat(costCeilFn(row._w_raw || 0, val).toFixed(4))
+                      const cost_charged_h = row.cost_charged_h || 0
+                      const qty = row.quantity || 1
+                      const charged_sqft = (cost_charged_w * cost_charged_h * qty) / 144
+                      const glass_cost = parseFloat((charged_sqft * effectiveCostPrice).toFixed(2))
+                      const cep_cost = parseFloat((parseFloat(row.actual_rft) * (compWizard.cep_cost_rate || 5)).toFixed(2))
+                      const cost_amount = parseFloat((glass_cost + cep_cost).toFixed(2))
+                      const margin_amount = parseFloat((row.selling_amount - cost_amount).toFixed(2))
+                      const margin_pct = cost_amount > 0 ? parseFloat(((margin_amount / cost_amount) * 100).toFixed(2)) : 100
+                      return { ...row, cost_ceil_w: val, cost_charged_w, charged_sqft: charged_sqft.toFixed(3), glass_cost, cep_cost, cost_amount, margin_amount, margin_pct }
+                    })
+                    const totalCost = newRows.reduce((s, r) => s + r.cost_amount, 0)
+                    const totalCepCost = newRows.reduce((s, r) => s + (r.cep_cost || 0), 0)
+                    const totalMargin = compWizard.totalSelling - totalCost
+                    const totalMarginPct = totalCost > 0 ? parseFloat(((totalMargin / totalCost) * 100).toFixed(2)) : 100
+                    setCompWizard(prev => ({ ...prev, rows: newRows, totalCost, totalCepCost, totalMargin, totalMarginPct, cost_ceil_w: val }))
+                    if (compWizard.group_key) updateGroup(compWizard.group_key, 'wizard_cost_ceil_w', val)
+                  }}
+                />
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Text style={{ fontSize: 12, color: '#6b7280' }}>H:</Text>
+                <Select
+                  size="small"
+                  value={compWizard.cost_ceil_h}
+                  style={{ width: 130 }}
+                  options={[
+                    { value: 3, label: '3" (Tight)' },
+                    { value: 6, label: '6" (Standard)' },
+                    { value: 'plus30mm', label: '+30mm' },
+                  ]}
+                  onChange={val => {
+                    const effectiveCostPrice = wizardCostPrice ?? compWizard?.cost_price ?? 0
+                    const costCeilFn = (x, c) => c === 'plus30mm' ? x + (30 / 25.4) : Math.ceil(x / c) * c
+                    const newRows = compWizard.rows.map(row => {
+                      const cost_charged_w = row.cost_charged_w || 0
+                      const cost_charged_h = parseFloat(costCeilFn(row._h_raw || 0, val).toFixed(4))
+                      const qty = row.quantity || 1
+                      const charged_sqft = (cost_charged_w * cost_charged_h * qty) / 144
+                      const glass_cost = parseFloat((charged_sqft * effectiveCostPrice).toFixed(2))
+                      const cep_cost = parseFloat((parseFloat(row.actual_rft) * (compWizard.cep_cost_rate || 5)).toFixed(2))
+                      const cost_amount = parseFloat((glass_cost + cep_cost).toFixed(2))
+                      const margin_amount = parseFloat((row.selling_amount - cost_amount).toFixed(2))
+                      const margin_pct = cost_amount > 0 ? parseFloat(((margin_amount / cost_amount) * 100).toFixed(2)) : 100
+                      return { ...row, cost_ceil_h: val, cost_charged_h, charged_sqft: charged_sqft.toFixed(3), glass_cost, cep_cost, cost_amount, margin_amount, margin_pct }
+                    })
+                    const totalCost = newRows.reduce((s, r) => s + r.cost_amount, 0)
+                    const totalCepCost = newRows.reduce((s, r) => s + (r.cep_cost || 0), 0)
+                    const totalMargin = compWizard.totalSelling - totalCost
+                    const totalMarginPct = totalCost > 0 ? parseFloat(((totalMargin / totalCost) * 100).toFixed(2)) : 100
+                    setCompWizard(prev => ({ ...prev, rows: newRows, totalCost, totalCepCost, totalMargin, totalMarginPct, cost_ceil_h: val }))
+                    if (compWizard.group_key) updateGroup(compWizard.group_key, 'wizard_cost_ceil_h', val)
+                  }}
+                />
+              </div>
+            </div>
+
             <Table
               dataSource={compWizard.rows}
               pagination={false}
@@ -3581,98 +3661,20 @@ const QuotationForm = () => {
                   render: v => <Text type="secondary">{v}</Text>
                 },
                 {
-                  title: 'Cost Chg W', key: 'cost_chg_w', width: 110, align: 'center',
-                  render: (_, r) => {
-                    const costCeilFn = (x, c) => c === 'plus30mm' ? x + (30 / 25.4) : Math.ceil(x / c) * c
-                    return (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                        <Select
-                          size="small"
-                          value={r.cost_ceil_w}
-                          style={{ width: '100%' }}
-                          options={[
-                            { value: 3, label: '3" (Tight)' },
-                            { value: 6, label: '6" (Standard)' },
-                            { value: 'plus30mm', label: '+30mm' },
-                          ]}
-                          onChange={val => {
-                            const effectiveCostPrice = wizardCostPrice ?? compWizard?.cost_price ?? 0
-                            setCompWizard(prev => {
-                              const newRows = prev.rows.map(row => {
-                                if (row.key !== r.key) return row
-                                const cost_charged_w = parseFloat(costCeilFn(row._w_raw || 0, val).toFixed(4))
-                                const cost_charged_h = row.cost_charged_h || 0
-                                const qty = row.quantity || 1
-                                const charged_sqft = (cost_charged_w * cost_charged_h * qty) / 144
-                                const glass_cost = parseFloat((charged_sqft * effectiveCostPrice).toFixed(2))
-                                const cep_cost = parseFloat((parseFloat(row.actual_rft) * prev.cep_cost_rate).toFixed(2))
-                                const cost_amount = parseFloat((glass_cost + cep_cost).toFixed(2))
-                                const margin_amount = parseFloat((row.selling_amount - cost_amount).toFixed(2))
-                                const margin_pct = cost_amount > 0 ? parseFloat(((margin_amount / cost_amount) * 100).toFixed(2)) : 100
-                                return { ...row, cost_ceil_w: val, cost_charged_w, charged_sqft: charged_sqft.toFixed(3), glass_cost, cep_cost, cost_amount, margin_amount, margin_pct }
-                              })
-                              const totalCost = newRows.reduce((s, row) => s + row.cost_amount, 0)
-                              const totalCepCost = newRows.reduce((s, row) => s + (row.cep_cost || 0), 0)
-                              const totalMargin = prev.totalSelling - totalCost
-                              const totalMarginPct = totalCost > 0 ? parseFloat(((totalMargin / totalCost) * 100).toFixed(2)) : 100
-                              return { ...prev, rows: newRows, totalCost, totalCepCost, totalMargin, totalMarginPct }
-                            })
-                            if (r._group_key) updateGroup(r._group_key, 'wizard_cost_ceil_w', val)
-                          }}
-                        />
-                        <Text style={{ fontSize: 10, color: '#6366f1', textAlign: 'center' }}>
-                          {r.cost_charged_w ? parseFloat(r.cost_charged_w.toFixed(3)) : '—'}
-                        </Text>
-                      </div>
-                    )
-                  }
+                  title: 'Cost Chg W', key: 'cost_chg_w', width: 80, align: 'center',
+                  render: (_, r) => (
+                    <Text style={{ fontSize: 12, color: '#6366f1', fontWeight: 600 }}>
+                      {r.cost_charged_w ? parseFloat(r.cost_charged_w).toFixed(3) : '—'}
+                    </Text>
+                  )
                 },
                 {
-                  title: 'Cost Chg H', key: 'cost_chg_h', width: 110, align: 'center',
-                  render: (_, r) => {
-                    const costCeilFn = (x, c) => c === 'plus30mm' ? x + (30 / 25.4) : Math.ceil(x / c) * c
-                    return (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                        <Select
-                          size="small"
-                          value={r.cost_ceil_h}
-                          style={{ width: '100%' }}
-                          options={[
-                            { value: 3, label: '3" (Tight)' },
-                            { value: 6, label: '6" (Standard)' },
-                            { value: 'plus30mm', label: '+30mm' },
-                          ]}
-                          onChange={val => {
-                            const effectiveCostPrice = wizardCostPrice ?? compWizard?.cost_price ?? 0
-                            setCompWizard(prev => {
-                              const newRows = prev.rows.map(row => {
-                                if (row.key !== r.key) return row
-                                const cost_charged_w = row.cost_charged_w || 0
-                                const cost_charged_h = parseFloat(costCeilFn(row._h_raw || 0, val).toFixed(4))
-                                const qty = row.quantity || 1
-                                const charged_sqft = (cost_charged_w * cost_charged_h * qty) / 144
-                                const glass_cost = parseFloat((charged_sqft * effectiveCostPrice).toFixed(2))
-                                const cep_cost = parseFloat((parseFloat(row.actual_rft) * prev.cep_cost_rate).toFixed(2))
-                                const cost_amount = parseFloat((glass_cost + cep_cost).toFixed(2))
-                                const margin_amount = parseFloat((row.selling_amount - cost_amount).toFixed(2))
-                                const margin_pct = cost_amount > 0 ? parseFloat(((margin_amount / cost_amount) * 100).toFixed(2)) : 100
-                                return { ...row, cost_ceil_h: val, cost_charged_h, charged_sqft: charged_sqft.toFixed(3), glass_cost, cep_cost, cost_amount, margin_amount, margin_pct }
-                              })
-                              const totalCost = newRows.reduce((s, row) => s + row.cost_amount, 0)
-                              const totalCepCost = newRows.reduce((s, row) => s + (row.cep_cost || 0), 0)
-                              const totalMargin = prev.totalSelling - totalCost
-                              const totalMarginPct = totalCost > 0 ? parseFloat(((totalMargin / totalCost) * 100).toFixed(2)) : 100
-                              return { ...prev, rows: newRows, totalCost, totalCepCost, totalMargin, totalMarginPct }
-                            })
-                            if (r._group_key) updateGroup(r._group_key, 'wizard_cost_ceil_h', val)
-                          }}
-                        />
-                        <Text style={{ fontSize: 10, color: '#6366f1', textAlign: 'center' }}>
-                          {r.cost_charged_h ? parseFloat(r.cost_charged_h.toFixed(3)) : '—'}
-                        </Text>
-                      </div>
-                    )
-                  }
+                  title: 'Cost Chg H', key: 'cost_chg_h', width: 80, align: 'center',
+                  render: (_, r) => (
+                    <Text style={{ fontSize: 12, color: '#6366f1', fontWeight: 600 }}>
+                      {r.cost_charged_h ? parseFloat(r.cost_charged_h).toFixed(3) : '—'}
+                    </Text>
+                  )
                 },
                 {
                   title: 'Selling Amt', dataIndex: 'selling_amount', width: 100, align: 'right',
