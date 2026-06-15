@@ -1366,22 +1366,44 @@ const QuotationForm = () => {
 
     groups.forEach((group, gi) => {
       let costPerSqft = 0
-      const prod = products.find(p => p.id === group.product_id)
-      if (prod?.cost_price) {
-        costPerSqft = prod.cost_price
-      } else if (group.glass_category && group.glass_thickness) {
-        try {
-          const matrix = JSON.parse(
-            localStorage.getItem('glass_rate_matrix') || '{}'
-          )
-          const costRate = matrix?.cost_rates?.[group.glass_category]
-          if (costRate) costPerSqft = parseFloat(
-            (parseFloat(group.glass_thickness) * costRate / 10.764).toFixed(2)
-          )
-        } catch { }
+
+      // ── 1. Manual cost price takes highest priority ──
+      if (group.manual_cost_price && group.manual_cost_price > 0) {
+        costPerSqft = group.manual_cost_price
+      } else {
+        // ── 2. Product master cost price ──
+        const prod = products.find(p => p.id === group.product_id)
+        if (prod?.cost_price) {
+          costPerSqft = prod.cost_price
+        } else if (group.glass_category && group.glass_thickness) {
+          // ── 3. Rate matrix cost_rates ──
+          try {
+            const matrix = JSON.parse(
+              localStorage.getItem('glass_rate_matrix') || '{}'
+            )
+            const costRate = matrix?.cost_rates?.[group.glass_category]
+            if (costRate) costPerSqft = parseFloat(
+              (parseFloat(group.glass_thickness) * costRate / 10.764).toFixed(2)
+            )
+          } catch { }
+        }
+        // ── 4. 70% fallback ──
+        if (!costPerSqft && group.rate > 0)
+          costPerSqft = parseFloat((group.rate * 0.70).toFixed(2))
+
+        // ── 5. Add toughening cost addon if toughened (only if no manual CP) ──
+        if (group.is_toughened || group.glass_type === 'Toughened') {
+          try {
+            const matrix = JSON.parse(localStorage.getItem('glass_rate_matrix') || '{}')
+            const tghCostAddon = parseFloat(
+              matrix?.toughening_cost_rates?.[String(group.glass_thickness)] || 0
+            )
+            if (tghCostAddon > 0) {
+              costPerSqft = parseFloat((costPerSqft + tghCostAddon).toFixed(2))
+            }
+          } catch { }
+        }
       }
-      if (!costPerSqft && group.rate > 0)
-        costPerSqft = parseFloat((group.rate * 0.70).toFixed(2))
 
       group.sizes?.forEach((s, si) => {
         const w = s.width_inch || 0
