@@ -1291,8 +1291,13 @@ const QuotationForm = () => {
         ? parseFloat((actual_rft * CEP_COST_RATE).toFixed(2))
         : 0
 
-      // Total cost = glass cost + CEP cost
-      const cost_amount = parseFloat((glass_cost + cep_cost).toFixed(2))
+      // Total cost = glass cost + CEP cost + process cost
+      const proc_cost = parseFloat(
+        ((s.size_processes || []).reduce((sum, p) =>
+          sum + ((p.qty_area || 0) * (p.cost_rate || 0)), 0
+        )).toFixed(2)
+      )
+      const cost_amount = parseFloat((glass_cost + cep_cost + proc_cost).toFixed(2))
       const margin_amount = parseFloat((selling_amount - cost_amount).toFixed(2))
       const margin_pct = cost_amount > 0
         ? parseFloat(((margin_amount / cost_amount) * 100).toFixed(2))
@@ -1309,6 +1314,7 @@ const QuotationForm = () => {
         actual_rft: actual_rft.toFixed(3),
         glass_cost,
         cep_cost,
+        proc_cost,
         selling_amount,
         cost_amount,
         margin_amount,
@@ -3502,7 +3508,7 @@ const QuotationForm = () => {
                               : parseFloat(r.charged_sqft)) * newCost).toFixed(2)
                           )
                           const cost_amount = parseFloat(
-                            (glass_cost + (r.cep_cost || 0)).toFixed(2)
+                            (glass_cost + (r.cep_cost || 0) + (r.proc_cost || 0)).toFixed(2)
                           )
                           const margin_amount = parseFloat(
                             (r.selling_amount - cost_amount).toFixed(2)
@@ -3549,17 +3555,23 @@ const QuotationForm = () => {
                 🔵 <strong>CEP (Polish - 4 sides)</strong> cost:
                 <Select
                   size="small"
-                  value={compWizard.cep_cost_rate}
+                  value={[5, 7, 15].includes(compWizard.cep_cost_rate) ? compWizard.cep_cost_rate : 'custom'}
                   style={{ width: 110 }}
                   options={[
                     { value: 5, label: '₹5/rft' },
                     { value: 7, label: '₹7/rft' },
                     { value: 15, label: '₹15/rft' },
+                    { value: 'custom', label: 'Custom' },
                   ]}
                   onChange={val => {
+                    if (val === 'custom') {
+                      setCompWizard(prev => ({ ...prev, cep_cost_rate: 'custom' }))
+                      return
+                    }
+                    const newRate = val || 0
                     const newRows = compWizard.rows.map(r => {
-                      const cep_cost = parseFloat((parseFloat(r.actual_rft) * val).toFixed(2))
-                      const cost_amount = parseFloat((r.glass_cost + cep_cost).toFixed(2))
+                      const cep_cost = parseFloat((parseFloat(r.actual_rft) * newRate).toFixed(2))
+                      const cost_amount = parseFloat((r.glass_cost + cep_cost + (r.proc_cost || 0)).toFixed(2))
                       const margin_amount = parseFloat((r.selling_amount - cost_amount).toFixed(2))
                       const margin_pct = cost_amount > 0
                         ? parseFloat(((margin_amount / cost_amount) * 100).toFixed(2)) : 100
@@ -3570,9 +3582,35 @@ const QuotationForm = () => {
                     const totalMargin = compWizard.totalSelling - totalCost
                     const totalMarginPct = totalCost > 0
                       ? parseFloat(((totalMargin / totalCost) * 100).toFixed(2)) : 100
-                    setCompWizard(prev => ({ ...prev, rows: newRows, totalCost, totalCepCost, totalMargin, totalMarginPct, cep_cost_rate: val }))
+                    setCompWizard(prev => ({ ...prev, rows: newRows, totalCost, totalCepCost, totalMargin, totalMarginPct, cep_cost_rate: newRate }))
                   }}
                 />
+                {compWizard.cep_cost_rate === 'custom' && (
+                  <InputNumber
+                    size="small"
+                    min={0}
+                    prefix="₹"
+                    placeholder="Enter rate"
+                    style={{ width: 120 }}
+                    onChange={val => {
+                      const newRate = val || 0
+                      const newRows = compWizard.rows.map(r => {
+                        const cep_cost = parseFloat((parseFloat(r.actual_rft) * newRate).toFixed(2))
+                        const cost_amount = parseFloat((r.glass_cost + cep_cost + (r.proc_cost || 0)).toFixed(2))
+                        const margin_amount = parseFloat((r.selling_amount - cost_amount).toFixed(2))
+                        const margin_pct = cost_amount > 0
+                          ? parseFloat(((margin_amount / cost_amount) * 100).toFixed(2)) : 100
+                        return { ...r, cep_cost, cost_amount, margin_amount, margin_pct }
+                      })
+                      const totalCost = newRows.reduce((s, r) => s + r.cost_amount, 0)
+                      const totalCepCost = newRows.reduce((s, r) => s + (r.cep_cost || 0), 0)
+                      const totalMargin = compWizard.totalSelling - totalCost
+                      const totalMarginPct = totalCost > 0
+                        ? parseFloat(((totalMargin / totalCost) * 100).toFixed(2)) : 100
+                      setCompWizard(prev => ({ ...prev, rows: newRows, totalCost, totalCepCost, totalMargin, totalMarginPct, cep_cost_rate: newRate }))
+                    }}
+                  />
+                )}
                 <Text style={{ color: '#6d28d9', fontSize: 12 }}>× Actual running ft per size</Text>
               </div>
             )}
@@ -3604,7 +3642,7 @@ const QuotationForm = () => {
                       const charged_sqft = (cost_charged_w * cost_charged_h * qty) / 144
                       const glass_cost = parseFloat((charged_sqft * effectiveCostPrice).toFixed(2))
                       const cep_cost = parseFloat((parseFloat(row.actual_rft) * (compWizard.cep_cost_rate || 5)).toFixed(2))
-                      const cost_amount = parseFloat((glass_cost + cep_cost).toFixed(2))
+                      const cost_amount = parseFloat((glass_cost + cep_cost + (row.proc_cost || 0)).toFixed(2))
                       const margin_amount = parseFloat((row.selling_amount - cost_amount).toFixed(2))
                       const margin_pct = cost_amount > 0 ? parseFloat(((margin_amount / cost_amount) * 100).toFixed(2)) : 100
                       return { ...row, cost_ceil_w: val, cost_charged_w, charged_sqft: charged_sqft.toFixed(3), glass_cost, cep_cost, cost_amount, margin_amount, margin_pct }
@@ -3639,7 +3677,7 @@ const QuotationForm = () => {
                       const charged_sqft = (cost_charged_w * cost_charged_h * qty) / 144
                       const glass_cost = parseFloat((charged_sqft * effectiveCostPrice).toFixed(2))
                       const cep_cost = parseFloat((parseFloat(row.actual_rft) * (compWizard.cep_cost_rate || 5)).toFixed(2))
-                      const cost_amount = parseFloat((glass_cost + cep_cost).toFixed(2))
+                      const cost_amount = parseFloat((glass_cost + cep_cost + (row.proc_cost || 0)).toFixed(2))
                       const margin_amount = parseFloat((row.selling_amount - cost_amount).toFixed(2))
                       const margin_pct = cost_amount > 0 ? parseFloat(((margin_amount / cost_amount) * 100).toFixed(2)) : 100
                       return { ...row, cost_ceil_h: val, cost_charged_h, charged_sqft: charged_sqft.toFixed(3), glass_cost, cep_cost, cost_amount, margin_amount, margin_pct }
@@ -3711,6 +3749,14 @@ const QuotationForm = () => {
                   render: v => (
                     <Text style={{ color: '#ea580c' }}>
                       ₹{Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </Text>
+                  )
+                },
+                {
+                  title: 'Proc Cost', dataIndex: 'proc_cost', width: 90, align: 'right',
+                  render: v => (
+                    <Text style={{ color: '#f59e0b' }}>
+                      ₹{Number(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </Text>
                   )
                 },
