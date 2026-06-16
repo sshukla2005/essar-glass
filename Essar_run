@@ -1,0 +1,23 @@
+# Local — commit & push
+cd /home/saurabh/workspace/essar-glass
+git add .
+git commit -m "Fix compWizard CP persistence: restore from groups, skip tgh addon, save-only button"
+git push origin main
+
+
+# Server — pull & build
+ssh -i /home/saurabh/essar-path/essar-glass-key.pem ubuntu@54.82.47.196
+cd /var/www/essar-glass && git pull origin main
+cd frontend && npm run build && sudo systemctl restart nginx
+echo "✅ Done!"
+
+
+
+
+cd /home/saurabh/workspace/tathastu
+
+# Strapi CMS
+cd apps/cms && npm run develop      # admin at http://localhost:1337/admin
+
+# Next.js frontend (new terminal tab)
+cd apps/web && npm run dev          # site at http://localhost:3000

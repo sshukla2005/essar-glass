@@ -3992,46 +3992,6 @@ const QuotationForm = () => {
                 ] : []),
               ]}
 
-              summary={() => (
-                <Table.Summary fixed>
-                  <Table.Summary.Row
-                    style={{ background: '#f0f4ff', fontWeight: 700 }}
-                  >
-                    <Table.Summary.Cell colSpan={5}>
-                      <Text strong>GRAND TOTAL</Text>
-                    </Table.Summary.Cell>
-                    <Table.Summary.Cell align="right">
-                      <Text strong style={{ color: '#16a34a' }}>
-                        ₹{globalComparison.totalSelling.toLocaleString(
-                          'en-IN', { minimumFractionDigits: 2 })}
-                      </Text>
-                    </Table.Summary.Cell>
-                    <Table.Summary.Cell align="right">
-                      <Text strong style={{ color: '#dc2626' }}>
-                        ₹{globalComparison.totalCost.toLocaleString(
-                          'en-IN', { minimumFractionDigits: 2 })}
-                      </Text>
-                    </Table.Summary.Cell>
-                    <Table.Summary.Cell align="right">
-                      <Text strong style={{
-                        fontSize: 14,
-                        color: globalComparison.totalMarginPct >= 20
-                          ? '#16a34a'
-                          : globalComparison.totalMarginPct >= 10
-                            ? '#f59e0b'
-                            : '#dc2626'
-                      }}>
-                        ₹{globalComparison.totalMargin.toLocaleString(
-                          'en-IN', { minimumFractionDigits: 2 })}
-                        <br />
-                        <span style={{ fontSize: 13 }}>
-                          ({globalComparison.totalMarginPct}%)
-                        </span>
-                      </Text>
-                    </Table.Summary.Cell>
-                  </Table.Summary.Row>
-                </Table.Summary>
-              )}
             />
 
             {/* Hardware & Labor Breakdown */}
