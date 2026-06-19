@@ -49,6 +49,7 @@ const menuItems = [
   ]},
   { key: 'grp_settings', icon: <SettingOutlined />, label: 'Settings', children: [
     { key: '/settings/company', label: 'Company' },
+    { key: '/settings/payment-accounts', label: 'Payment Accounts', icon: '💳' },
     { key: '/settings/glass-calc', label: 'Glass Calc Settings', icon: <CalculatorOutlined /> },
     { key: '/settings/glass-rate-matrix', label: 'Glass Rate Matrix', icon: <CalculatorOutlined /> },
     { key: '/settings/glass-dropdowns', label: 'Glass Dropdowns', icon: <ControlOutlined /> },

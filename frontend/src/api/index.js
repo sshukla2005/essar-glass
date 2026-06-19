@@ -97,7 +97,7 @@ export const taxGroupApi = createLocalApi('tax_groups')
 export const taxApi = createLocalApi('taxes')
 export const hsnApi = createLocalApi('hsn_codes')
 export const currencyApi = createLocalApi('currencies')
-export const paymentApi = createLocalApi('payments', { field: 'payment_number', prefix: 'PMT' })
+export const paymentApi = createApi('payments')
 
 // ── Glass rate matrix (localStorage — config only) ─
 export { settingsApi } from './settingsApi'
@@ -132,4 +132,19 @@ export const companyLogoApi = {
     const res = await api.delete('/api/v1/settings/company/logo')
     return { data: res.data }
   }
+}
+
+export const receivablesApi = {
+  summary: async () => {
+    const res = await api.get('/api/v1/receivables/summary')
+    return { data: res.data }
+  },
+  byCustomer: async () => {
+    const res = await api.get('/api/v1/receivables/customers')
+    return { data: res.data }
+  },
+  customerLedger: async (customerId) => {
+    const res = await api.get(`/api/v1/receivables/customer/${customerId}`)
+    return { data: res.data }
+  },
 }

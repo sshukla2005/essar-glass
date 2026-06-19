@@ -5,7 +5,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import dayjs from 'dayjs'
 import MasterForm from '../../components/common/MasterForm'
-import { salesOrderApi, customerApi, productApi, quotationApi, purchaseOrderApi, deliveryChallanApi, invoiceApi, warehouseApi, workshopOrderApi, processMasterApi } from '../../api'
+import { salesOrderApi, customerApi, productApi, quotationApi, purchaseOrderApi, deliveryChallanApi, invoiceApi, warehouseApi, workshopOrderApi, processMasterApi, employeeApi } from '../../api'
 import { generateSOPDF } from '../../utils/pdfGenerator'
 import CompanySelector from '../../components/common/CompanySelector'
 
@@ -110,6 +110,8 @@ const emptyGroup = () => ({
   ceiling_inches: 6,
   ceiling_w_inches: 6,
   ceiling_h_inches: 6,
+  wizard_cost_ceil_w: 3,
+  wizard_cost_ceil_h: 3,
   is_toughened: false,
   base_glass_rate: 0,
   manual_cost_price: null,
@@ -313,6 +315,7 @@ const SalesOrderForm = () => {
   const { data: processMastersData } = useQuery({ queryKey: ['process-masters'], queryFn: () => processMasterApi.dropdown().then(r => r.data) })
   const { data: quotationsData } = useQuery({ queryKey: ['quotations-dd'], queryFn: () => quotationApi.dropdown().then(r => r.data) })
   const { data: warehousesData } = useQuery({ queryKey: ['warehouses-dd'], queryFn: () => warehouseApi.dropdown().then(r => r.data) })
+  const { data: employeesData } = useQuery({ queryKey: ['employees-dd'], queryFn: () => employeeApi.dropdown().then(r => r.data) })
 
   const { data: posData } = useQuery({ queryKey: ['pos-so', id], queryFn: () => purchaseOrderApi.list({ so_id: id }).then(r => r.data), enabled: isEdit })
   const { data: dcsData } = useQuery({ queryKey: ['dcs-so', id], queryFn: () => deliveryChallanApi.list({ so_id: id }).then(r => r.data), enabled: isEdit })
@@ -324,6 +327,7 @@ const SalesOrderForm = () => {
   const processMasters = Array.isArray(processMastersData) ? processMastersData : (processMastersData?.items || [])
   const quotations = Array.isArray(quotationsData) ? quotationsData : (quotationsData?.items || [])
   const warehouses = Array.isArray(warehousesData) ? warehousesData : (warehousesData?.items || [])
+  const employees = Array.isArray(employeesData) ? employeesData : (employeesData?.items || [])
   const reconstructGroups = (flatLines) => {
     const groupMap = new Map()
     flatLines.forEach((line, i) => {
@@ -353,6 +357,8 @@ const SalesOrderForm = () => {
           cep_rft_multiplier: line.cep_rft_multiplier || null,
           artwork_file: line.artwork_file || null,
           artwork_name: line.artwork_name || null,
+          wizard_cost_ceil_w: line.wizard_cost_ceil_w || 3,
+          wizard_cost_ceil_h: line.wizard_cost_ceil_h || 3,
           sizes: [],
           processes: (line.processes || []).map(p => ({
             ...p,
@@ -831,6 +837,8 @@ const SalesOrderForm = () => {
         rate: g.rate,
         base_glass_rate: g.base_glass_rate || 0,
         manual_cost_price: g.manual_cost_price || null,
+        wizard_cost_ceil_w: g.wizard_cost_ceil_w ?? 3,
+        wizard_cost_ceil_h: g.wizard_cost_ceil_h ?? 3,
         rate_rft: g.rate_rft,
         cep: g.cep,
         pricing_method: g.pricing_method,
@@ -901,9 +909,11 @@ const SalesOrderForm = () => {
         // Backend valid_columns filter strips manual_cost_price from lines
         // Restore from record.groups which is saved as-is
         if (record.groups?.length) {
-          reconstructed.forEach(g => {
-            const saved = record.groups.find(sg => sg.description === g.description)
+          reconstructed.forEach((g, idx) => {
+            const saved = record.groups[idx]  // match by INDEX not description
             if (saved?.manual_cost_price) g.manual_cost_price = saved.manual_cost_price
+            if (saved?.wizard_cost_ceil_w) g.wizard_cost_ceil_w = saved.wizard_cost_ceil_w
+            if (saved?.wizard_cost_ceil_h) g.wizard_cost_ceil_h = saved.wizard_cost_ceil_h
           })
         }
         setGroups(reconstructed)
@@ -1530,6 +1540,20 @@ const SalesOrderForm = () => {
                     }
                   } catch (e) { }
                 }}
+              />
+            </Form.Item>
+          </Col>
+          <Col span={4}>
+            <Form.Item name="salesperson" label="Salesperson">
+              <Select
+                showSearch
+                allowClear
+                placeholder="Select salesperson"
+                optionFilterProp="label"
+                options={employees.map(e => ({
+                  value: e.name,
+                  label: e.name,
+                }))}
               />
             </Form.Item>
           </Col>

@@ -6,7 +6,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import dayjs from 'dayjs'
 import * as XLSX from 'xlsx'
 import MasterForm from '../../components/common/MasterForm'
-import { quotationApi, customerApi, productApi, salesOrderApi, processMasterApi } from '../../api'
+import { quotationApi, customerApi, productApi, salesOrderApi, processMasterApi, employeeApi } from '../../api'
 import { generateQuotationPDF } from '../../utils/pdfGenerator'
 import CompanySelector from '../../components/common/CompanySelector'
 
@@ -384,6 +384,12 @@ const QuotationForm = () => {
     queryFn: () => processMasterApi.dropdown().then(r => r.data)
   })
 
+  const { data: employeesData } = useQuery({
+    queryKey: ['employees-dd'],
+    queryFn: () => employeeApi.dropdown().then(r => r.data)
+  })
+  const employees = Array.isArray(employeesData) ? employeesData : (employeesData?.items || [])
+
   // Safe extraction — works for both array and {items:[]} format
   const customers = Array.isArray(customersData) ? customersData : (customersData?.items || [])
   const products = Array.isArray(productsData) ? productsData : (productsData?.items || [])
@@ -446,6 +452,8 @@ const QuotationForm = () => {
           custom_costing: line.custom_costing || false,
           manual_rate: line.manual_rate || null,
           cep_rft_multiplier: line.cep_rft_multiplier || null,
+          wizard_cost_ceil_w: line.wizard_cost_ceil_w || 3,
+          wizard_cost_ceil_h: line.wizard_cost_ceil_h || 3,
 
           sizes: [],
           processes: (line.processes || []).map(p => ({
@@ -496,9 +504,11 @@ const QuotationForm = () => {
         // Backend valid_columns filter strips manual_cost_price from lines
         // Restore from record.groups which is saved as-is
         if (record.groups?.length) {
-          reconstructed.forEach(g => {
-            const saved = record.groups.find(sg => sg.description === g.description)
+          reconstructed.forEach((g, idx) => {
+            const saved = record.groups[idx]  // match by INDEX not description
             if (saved?.manual_cost_price) g.manual_cost_price = saved.manual_cost_price
+            if (saved?.wizard_cost_ceil_w) g.wizard_cost_ceil_w = saved.wizard_cost_ceil_w
+            if (saved?.wizard_cost_ceil_h) g.wizard_cost_ceil_h = saved.wizard_cost_ceil_h
           })
         }
         setGroups(reconstructed)
@@ -1051,6 +1061,8 @@ const QuotationForm = () => {
         rate: g.rate,
         base_glass_rate: g.base_glass_rate || 0,
         manual_cost_price: g.manual_cost_price || null,
+        wizard_cost_ceil_w: g.wizard_cost_ceil_w ?? 3,
+        wizard_cost_ceil_h: g.wizard_cost_ceil_h ?? 3,
         rate_rft: g.rate_rft,
         cep: g.cep,
         cep_polish_rate: g.cep_polish_rate || 15,
@@ -1373,39 +1385,43 @@ const QuotationForm = () => {
     groups.forEach((group, gi) => {
       let costPerSqft = 0
 
-      // ── 1. Manual cost price takes highest priority ──
+      // 1. Manual cost price — highest priority
       if (group.manual_cost_price && group.manual_cost_price > 0) {
         costPerSqft = group.manual_cost_price
       } else {
-        // ── 2. Product master cost price ──
+        // 2. Product master cost price
         const prod = products.find(p => p.id === group.product_id)
         if (prod?.cost_price) {
           costPerSqft = prod.cost_price
         } else if (group.glass_category && group.glass_thickness) {
-          // ── 3. Rate matrix cost_rates ──
+          // 3. Rate matrix cost_rates
           try {
-            const matrix = JSON.parse(
-              localStorage.getItem('glass_rate_matrix') || '{}'
-            )
+            const matrix = JSON.parse(localStorage.getItem('glass_rate_matrix') || '{}')
             const costRate = matrix?.cost_rates?.[group.glass_category]
             if (costRate) costPerSqft = parseFloat(
               (parseFloat(group.glass_thickness) * costRate / 10.764).toFixed(2)
             )
           } catch { }
         }
-        // ── 4. 70% fallback ──
+        // 4. 70% fallback
         if (!costPerSqft && group.rate > 0)
           costPerSqft = parseFloat((group.rate * 0.70).toFixed(2))
 
-        // ── 5. Add toughening cost addon if toughened (only if no manual CP) ──
-        if (group.is_toughened || group.glass_type === 'Toughened') {
+        // 5. Toughening cost addon — use tgh_rate_addon from sizes (SAME AS PER-PRODUCT WIZARD)
+        // NOT toughening_cost_rates from matrix — that was wrong
+        if (!group.manual_cost_price && (group.is_toughened || group.glass_type === 'Toughened')) {
           try {
-            const matrix = JSON.parse(localStorage.getItem('glass_rate_matrix') || '{}')
-            const tghCostAddon = parseFloat(
-              matrix?.toughening_cost_rates?.[String(group.glass_thickness)] || 0
+            const pm = JSON.parse(localStorage.getItem('process_masters') || '[]')
+            const toughProc = pm.find(p =>
+              p.process_type === 'toughening' && p.is_active !== false
             )
-            if (tghCostAddon > 0) {
-              costPerSqft = parseFloat((costPerSqft + tghCostAddon).toFixed(2))
+            if (toughProc && toughProc.rate > 0) {
+              const avgAddon = group.sizes.length > 0
+                ? group.sizes.reduce((s, sz) => s + (sz.tgh_rate_addon || 0), 0) / group.sizes.length
+                : 0
+              if (avgAddon > 0) {
+                costPerSqft = parseFloat((costPerSqft + avgAddon).toFixed(2))
+              }
             }
           } catch { }
         }
@@ -1791,7 +1807,20 @@ const QuotationForm = () => {
           </Col>
           <Col span={4}><Form.Item name="quote_date" label="Quote Date"><DatePicker style={{ width: '100%' }} format="DD/MM/YYYY" /></Form.Item></Col>
           <Col span={4}><Form.Item name="valid_until" label="Valid Until"><DatePicker style={{ width: '100%' }} format="DD/MM/YYYY" /></Form.Item></Col>
-          <Col span={4}><Form.Item name="salesperson" label="Salesperson"><Input /></Form.Item></Col>
+          <Col span={4}>
+            <Form.Item name="salesperson" label="Salesperson">
+              <Select
+                showSearch
+                allowClear
+                placeholder="Select salesperson"
+                optionFilterProp="label"
+                options={employees.map(e => ({
+                  value: e.name,
+                  label: e.name,
+                }))}
+              />
+            </Form.Item>
+          </Col>
           <Col span={4}><Form.Item name="payment_terms" label="Payment Terms"><Select options={PAYMENT_TERMS} /></Form.Item></Col>
         </Row>
 

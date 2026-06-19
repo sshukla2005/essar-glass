@@ -98,8 +98,10 @@ import StockOverview from './pages/inventory/StockOverview'
 import StockMovements from './pages/inventory/StockMovements'
 
 // ── Invoices ──────────────────────────────────────────────────────────────────
-import InvoiceList from './pages/invoices/InvoiceList'
+import InvoiceDashboard from './pages/invoices/InvoiceDashboard'
 import InvoiceForm from './pages/invoices/InvoiceForm'
+import CustomerLedger from './pages/invoices/CustomerLedger'
+import PaymentAccounts from './pages/settings/PaymentAccounts'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -187,9 +189,10 @@ const App = () => {
             <Route path="delivery-challans/:id/edit" element={<DeliveryChallanForm />} />
 
             {/* ── Invoices ───────────────────────────────────────────── */}
-            <Route path="invoices"                  element={<InvoiceList />} />
-            <Route path="invoices/new"              element={<InvoiceForm />} />
-            <Route path="invoices/:id/edit"         element={<InvoiceForm />} />
+            <Route path="invoices"                        element={<InvoiceDashboard />} />
+            <Route path="invoices/new"                    element={<InvoiceForm />} />
+            <Route path="invoices/:id/edit"               element={<InvoiceForm />} />
+            <Route path="invoices/customer/:customerId"   element={<CustomerLedger />} />
 
             {/* ── Masters: Customers ──────────────────────────────────── */}
             <Route path="masters/customers"          element={<CustomerList />} />
@@ -263,6 +266,7 @@ const App = () => {
 
             {/* ── Settings: Process Masters ─────────────────────────── */}
             <Route path="settings/process-masters"           element={<ProcessMasterList />} />
+            <Route path="settings/payment-accounts"          element={<PaymentAccounts />} />
             <Route path="settings/process-masters/new"       element={<ProcessMasterForm />} />
             <Route path="settings/process-masters/:id/edit"  element={<ProcessMasterForm />} />
 

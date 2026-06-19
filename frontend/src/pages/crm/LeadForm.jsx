@@ -5,7 +5,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import dayjs from 'dayjs'
 import MasterForm from '../../components/common/MasterForm'
-import { crmLeadApi, crmStageApi, customerApi, quotationApi } from '../../api'
+import { crmLeadApi, crmStageApi, customerApi, quotationApi, employeeApi } from '../../api'
 import CompanySelector from '../../components/common/CompanySelector'
 
 const { TextArea } = Input
@@ -32,15 +32,20 @@ const LeadForm = () => {
   const { data: customers = [] } = useQuery({
     queryKey: ['customers-dropdown'], queryFn: () => customerApi.dropdown().then(r => r.data),
   })
+  const { data: employeesData } = useQuery({
+    queryKey: ['employees-dd'],
+    queryFn: () => employeeApi.dropdown().then(r => r.data),
+  })
+  const employees = Array.isArray(employeesData) ? employeesData : (employeesData?.items || [])
 
-  // ── Linked quotations count (smart button) ─────────────────────────────────
   const { data: quotationsData } = useQuery({
     queryKey: ['quotations-for-lead', id],
     enabled: !!id,
     queryFn: async () => {
       try {
-        const allQuotes = JSON.parse(localStorage.getItem('quotations') || '[]')
-        const linked = allQuotes.filter(q =>
+        const res = await quotationApi.list({ page: 1, page_size: 500 })
+        const items = res.data?.items || []
+        const linked = items.filter(q =>
           q.is_active !== false &&
           (String(q.crm_lead_id) === String(id) || q.crm_lead_id === parseInt(id))
         )
@@ -49,8 +54,8 @@ const LeadForm = () => {
         return { total: 0, items: [] }
       }
     },
-    refetchOnWindowFocus: true,
     staleTime: 0,
+    refetchOnWindowFocus: true,
   })
   const quotationCount = quotationsData?.total || 0
 
@@ -225,7 +230,20 @@ const LeadForm = () => {
           <Col span={6}><Form.Item name="lead_type" label="Type"><Radio.Group><Radio.Button value="lead">Lead</Radio.Button><Radio.Button value="opportunity">Opportunity</Radio.Button></Radio.Group></Form.Item></Col>
         </Row>
         <Row gutter={16}>
-          <Col span={8}><Form.Item name="salesperson" label="Salesperson"><Input /></Form.Item></Col>
+          <Col span={8}>
+            <Form.Item name="salesperson" label="Salesperson">
+              <Select
+                showSearch
+                allowClear
+                placeholder="Select salesperson"
+                optionFilterProp="label"
+                options={employees.map(e => ({
+                  value: e.name,
+                  label: e.name,
+                }))}
+              />
+            </Form.Item>
+          </Col>
           <Col span={8}><Form.Item name="sales_team" label="Sales Team"><Input /></Form.Item></Col>
         </Row>
       </>

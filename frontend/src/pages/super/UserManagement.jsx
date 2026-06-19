@@ -9,6 +9,8 @@ import {
   UserOutlined, LockOutlined, ArrowLeftOutlined
 } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { userApi, companyApi } from '../../api'
 
 const { Title, Text } = Typography
 
@@ -37,59 +39,88 @@ const UserManagement = () => {
   const [editingUser, setEditingUser] = useState(null)
   const [form] = Form.useForm()
 
-  const companies = useMemo(() => {
-    try { return JSON.parse(localStorage.getItem('companies_master') || '[]') } catch { return [] }
-  }, [])
+  const { data: companiesData } = useQuery({
+    queryKey: ['companies-dd'],
+    queryFn: () => companyApi.dropdown().then(r => r.data)
+  })
+  const companies = Array.isArray(companiesData) ? companiesData : (companiesData?.items || [])
 
-  const [users, setUsers] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem('app_users') || '[]').filter(u => u.role !== 'superadmin')
-    } catch { return [] }
+  const queryClient = useQueryClient()
+
+  const { data: usersData, isLoading: usersLoading } = useQuery({
+    queryKey: ['users-list'],
+    queryFn: () => userApi.list({ page: 1, page_size: 200 }).then(r => r.data)
+  })
+  const users = (usersData?.items || []).filter(u => u.role !== 'superadmin')
+
+  const createUserMutation = useMutation({
+    mutationFn: (data) => userApi.create(data),
+    onSuccess: () => {
+      message.success('User created')
+      queryClient.invalidateQueries({ queryKey: ['users-list'] })
+      setModalOpen(false)
+      form.resetFields()
+    },
+    onError: () => message.error('Failed to create user')
   })
 
-  const saveUsers = (updatedUsers) => {
-    try {
-      const allUsers = JSON.parse(localStorage.getItem('app_users') || '[]')
-      const superAdmins = allUsers.filter(u => u.role === 'superadmin')
-      localStorage.setItem('app_users', JSON.stringify([...superAdmins, ...updatedUsers]))
-      setUsers(updatedUsers)
-    } catch(e) { message.error('Failed to save users') }
-  }
+  const updateUserMutation = useMutation({
+    mutationFn: ({ id, data }) => userApi.update(id, data),
+    onSuccess: () => {
+      message.success('User updated')
+      queryClient.invalidateQueries({ queryKey: ['users-list'] })
+      setModalOpen(false)
+      form.resetFields()
+    },
+    onError: () => message.error('Failed to update user')
+  })
+
+  const deleteUserMutation = useMutation({
+    mutationFn: (id) => userApi.archive(id),
+    onSuccess: () => {
+      message.success('User deleted')
+      queryClient.invalidateQueries({ queryKey: ['users-list'] })
+    },
+    onError: () => message.error('Failed to delete user')
+  })
+
+  const toggleActiveMutation = useMutation({
+    mutationFn: ({ id, is_active }) => userApi.update(id, { is_active }),
+    onSuccess: (_, vars) => {
+      message.success(vars.is_active ? 'User activated' : 'User deactivated')
+      queryClient.invalidateQueries({ queryKey: ['users-list'] })
+    }
+  })
 
   const handleOpenAdd = () => { setEditingUser(null); form.resetFields(); setModalOpen(true) }
 
   const handleEdit = (user) => { setEditingUser(user); form.setFieldsValue({ ...user, password: '' }); setModalOpen(true) }
 
-  const handleDelete = (userId) => { saveUsers(users.filter(u => u.id !== userId)); message.success('User deleted') }
+  const handleDelete = (userId) => {
+    deleteUserMutation.mutate(userId)
+  }
 
   const handleToggleActive = (userId, val) => {
-    saveUsers(users.map(u => u.id === userId ? { ...u, is_active: val } : u))
-    message.success(val ? 'User activated' : 'User deactivated')
+    toggleActiveMutation.mutate({ id: userId, is_active: val })
   }
 
   const handleSave = async () => {
     try {
       const values = await form.validateFields()
-      const allUsers = JSON.parse(localStorage.getItem('app_users') || '[]')
-      const duplicate = allUsers.find(u => u.username === values.username && u.id !== editingUser?.id)
-      if (duplicate) { message.error('Username already exists'); return }
-
-      if (editingUser) {
-        const updated = users.map(u => {
-          if (u.id !== editingUser.id) return u
-          return { ...u, ...values, permissions: ROLE_PERMISSIONS[values.role] || [], password: values.password || u.password, updated_at: new Date().toISOString() }
-        })
-        saveUsers(updated)
-        message.success('User updated successfully')
-      } else {
-        const newId = Math.max(0, ...allUsers.map(u => u.id || 0)) + 1
-        const newUser = { id: newId, ...values, permissions: ROLE_PERMISSIONS[values.role] || [], is_active: true, created_at: new Date().toISOString() }
-        saveUsers([...users, newUser])
-        message.success(`User ${newUser.name} created successfully!`)
+      const payload = {
+        ...values,
+        permissions: ROLE_PERMISSIONS[values.role] || [],
       }
-      setModalOpen(false)
-      form.resetFields()
-    } catch(e) {}
+      // Don't send empty password on update
+      if (editingUser && !values.password) {
+        delete payload.password
+      }
+      if (editingUser) {
+        updateUserMutation.mutate({ id: editingUser.id, data: payload })
+      } else {
+        createUserMutation.mutate(payload)
+      }
+    } catch (_) {}
   }
 
   const columns = [
@@ -157,7 +188,7 @@ const UserManagement = () => {
       </Row>
 
       <Card style={{ borderRadius: 12 }} bodyStyle={{ padding: 0 }}>
-        <Table dataSource={users} columns={columns} rowKey="id" pagination={{ pageSize: 20 }} locale={{ emptyText: 'No users yet. Click "New User" to create one.' }} />
+        <Table dataSource={users} loading={usersLoading} columns={columns} rowKey="id" pagination={{ pageSize: 20 }} locale={{ emptyText: 'No users yet. Click "New User" to create one.' }} />
       </Card>
 
       <Modal title={<Space><UserOutlined style={{ color: '#6366f1' }} /><span>{editingUser ? 'Edit User' : 'Create New User'}</span></Space>}

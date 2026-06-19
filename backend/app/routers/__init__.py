@@ -127,6 +127,11 @@ def make_crud_router(
 
         # Remove fields that don't exist in model
         # Prevents TypeError: 'xyz' is an invalid keyword argument
+        from app.models.user import User as UserModel
+        if model is UserModel and 'password' in obj_data and obj_data['password']:
+            from app.services.auth_service import hash_password
+            obj_data['password'] = hash_password(obj_data['password'])
+
         valid_columns = {c.key for c in model.__table__.columns}
         obj_data = {k: v for k, v in obj_data.items()
                     if k in valid_columns}
@@ -170,6 +175,11 @@ def make_crud_router(
                     group['artwork_file'] = None
 
         # Only update valid model columns
+        from app.models.user import User as UserModel
+        if model is UserModel and 'password' in update_data and update_data['password']:
+            from app.services.auth_service import hash_password
+            update_data['password'] = hash_password(update_data['password'])
+
         valid_columns = {c.key for c in model.__table__.columns}
         for k, v in update_data.items():
             if k in valid_columns:
