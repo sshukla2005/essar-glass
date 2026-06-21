@@ -3458,17 +3458,17 @@ const QuotationForm = () => {
               onClick={() => {
                 if (compWizard?.group_key && wizardCostPrice > 0) {
                   updateGroup(compWizard.group_key, 'manual_cost_price', wizardCostPrice)
-                  message.success(`Cost price ₹${wizardCostPrice}/sqft saved — selling rate unchanged`)
+                  message.success(`✅ Cost price ₹${wizardCostPrice}/sqft saved — selling rate UNCHANGED`)
                 }
                 setCompWizard(null)
                 setWizardCostPrice(null)
               }}
             >
-              💾 Save Cost Price
+              💾 Save Cost Price Only
             </Button>
             <Button
               type="primary"
-              style={{ background: '#6366f1', borderColor: '#6366f1' }}
+              style={{ background: '#f59e0b', borderColor: '#f59e0b' }}
               disabled={!wizardCostPrice || wizardCostPrice <= 0}
               onClick={() => {
                 if (compWizard?.group_key && wizardCostPrice > 0) {
@@ -3481,14 +3481,14 @@ const QuotationForm = () => {
                   updateGroup(compWizard.group_key, 'rate', newRate)
                   updateGroup(compWizard.group_key, 'manual_cost_price', wizardCostPrice)
                   message.success(
-                    `Rate updated to ₹${newRate}/sqft based on cost ₹${wizardCostPrice}/sqft`
+                    `⚠️ Selling rate updated to ₹${newRate}/sqft (cost ₹${wizardCostPrice}/sqft @ ${currentMarginPct.toFixed(1)}% margin)`
                   )
                 }
                 setCompWizard(null)
                 setWizardCostPrice(null)
               }}
             >
-              💾 Apply New Rate
+              ⚠️ Apply as Selling Rate
             </Button>
             <Button onClick={() => {
               setCompWizard(null)
@@ -3503,17 +3503,23 @@ const QuotationForm = () => {
         {compWizard && (
           <>
             <Row gutter={16} style={{ marginBottom: 16 }}>
-              <Col span={12}>
-                <Card
-                  size="small"
-                  style={{ background: '#f0fdf4', borderColor: '#86efac' }}
-                >
-                  <Text type="secondary">Selling Rate</Text>
-                  <div style={{ fontSize: 20, fontWeight: 700, color: '#16a34a' }}>
-                    ₹{compWizard.selling_rate}/sqft
-                  </div>
-                </Card>
-              </Col>
+                  <Col span={12}>
+                    <Card
+                      size="small"
+                      style={{ background: '#f0fdf4', borderColor: '#86efac' }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Text type="secondary">Selling Rate (Current)</Text>
+                        <Tag color="green" style={{ fontSize: 10, margin: 0 }}>LOCKED</Tag>
+                      </div>
+                      <div style={{ fontSize: 20, fontWeight: 700, color: '#16a34a' }}>
+                        ₹{compWizard.selling_rate}/sqft
+                      </div>
+                      <Text type="secondary" style={{ fontSize: 10, display: 'block', marginTop: 2 }}>
+                        Cost ceiling changes do NOT affect this
+                      </Text>
+                    </Card>
+                  </Col>
               <Col span={12}>
                 <Card
                   size="small"
@@ -3643,6 +3649,16 @@ const QuotationForm = () => {
                 <Text style={{ color: '#6d28d9', fontSize: 12 }}>× Actual running ft per size</Text>
               </div>
             )}
+
+            <div style={{
+              background: '#fffbeb', border: '1px solid #fcd34d',
+              borderRadius: 8, padding: '8px 14px', marginBottom: 8,
+              fontSize: 12, color: '#92400e',
+            }}>
+              ⚠️ <strong>Cost Ceiling</strong> sirf cost side ka calculation change karta hai.
+              Quotation ka <strong>selling rate tab tak nahi badlega</strong> jab tak
+              aap <strong>"⚠️ Apply as Selling Rate"</strong> button click nahi karte.
+            </div>
 
             <div style={{
               background: '#f8fafc', border: '1px solid #e2e8f0',
