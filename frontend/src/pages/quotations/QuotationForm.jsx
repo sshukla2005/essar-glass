@@ -1353,16 +1353,21 @@ const QuotationForm = () => {
     const glassCostTotal = rows.reduce((s, r) => s + r.cost_amount, 0)
     const totalCepCost = rows.reduce((s, r) => s + r.cep_cost, 0)
 
-    // Include group-level + size-level process charges
+    // Group-level processes — no cost_rate field, use 70% estimate
     const procSelling = (group.processes || []).reduce((s, p) => s + (p.amount || 0), 0)
+    const groupProcCost = parseFloat((procSelling * 0.70).toFixed(2))
+
+    // Size-level processes — actual cost_rate already included in glassCostTotal via proc_cost
+    // Only add their selling amount here; their cost is already counted above
     const sizeProcSelling = (group.sizes || [])
       .flatMap(s => s.size_processes || [])
       .reduce((s, p) => s + (p.amount || 0), 0)
-    const totalProcSelling = procSelling + sizeProcSelling
-    const totalProcCost = parseFloat((totalProcSelling * 0.70).toFixed(2))
 
+    const totalProcSelling = procSelling + sizeProcSelling
+
+    // totalCost = glass rows cost (includes size proc actual cost) + group proc 70% estimate only
     const totalSelling = parseFloat((glassSellingTotal + totalProcSelling).toFixed(2))
-    const totalCost = parseFloat((glassCostTotal + totalProcCost).toFixed(2))
+    const totalCost = parseFloat((glassCostTotal + groupProcCost).toFixed(2))
 
     const totalMargin = parseFloat((totalSelling - totalCost).toFixed(2))
     const totalMarginPct = totalCost > 0
@@ -1454,7 +1459,15 @@ const QuotationForm = () => {
           : CEP_COST_RATE
         const cep_cost = group.cep
           ? parseFloat((actual_rft * groupCepRate).toFixed(2)) : 0
-        const cost_amount = parseFloat((glass_cost + cep_cost).toFixed(2))
+
+        // Size process cost — actual cost_rate × qty_area (same as per-product wizard)
+        const proc_cost = parseFloat(
+          ((s.size_processes || []).reduce((sum, p) =>
+            sum + ((p.qty_area || 0) * (p.cost_rate || 0)), 0
+          )).toFixed(2)
+        )
+
+        const cost_amount = parseFloat((glass_cost + cep_cost + proc_cost).toFixed(2))
         const selling_amount = s.subtotal || 0
         const margin_amount = parseFloat((selling_amount - cost_amount).toFixed(2))
         const margin_pct = cost_amount > 0
