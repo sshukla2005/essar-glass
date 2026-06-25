@@ -1301,10 +1301,13 @@ const QuotationForm = () => {
       // Glass cost = charged sqft × cost price
       const glass_cost = parseFloat((charged_sqft * costPerSqft).toFixed(2))
 
-      // CEP cost = actual running ft × ₹5 (inch to inch, no ceiling)
+      // CEP cost = actual running ft × saved CEP cost rate (default 5)
       const actual_rft = parseFloat(((w + h) * 2 / 12 * qty).toFixed(4))
+      const initCepRate = (typeof group.wizard_cep_cost_rate === 'number' && group.wizard_cep_cost_rate > 0)
+        ? group.wizard_cep_cost_rate
+        : CEP_COST_RATE
       const cep_cost = group.cep
-        ? parseFloat((actual_rft * CEP_COST_RATE).toFixed(2))
+        ? parseFloat((actual_rft * initCepRate).toFixed(2))
         : 0
 
       // Total cost = glass cost + CEP cost + process cost
