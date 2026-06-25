@@ -167,6 +167,7 @@ const emptyGroup = () => ({
   ceiling_h_inches: 6,
   wizard_cost_ceil_w: 3,
   wizard_cost_ceil_h: 3,
+  wizard_cep_cost_rate: 5,
   is_toughened: false,
   base_glass_rate: 0,
   manual_cost_price: null,
@@ -454,6 +455,7 @@ const QuotationForm = () => {
           cep_rft_multiplier: line.cep_rft_multiplier || null,
           wizard_cost_ceil_w: line.wizard_cost_ceil_w || 3,
           wizard_cost_ceil_h: line.wizard_cost_ceil_h || 3,
+          wizard_cep_cost_rate: line.wizard_cep_cost_rate || 5,
 
           sizes: [],
           processes: (line.processes || []).map(p => ({
@@ -509,6 +511,7 @@ const QuotationForm = () => {
             if (saved?.manual_cost_price) g.manual_cost_price = saved.manual_cost_price
             if (saved?.wizard_cost_ceil_w) g.wizard_cost_ceil_w = saved.wizard_cost_ceil_w
             if (saved?.wizard_cost_ceil_h) g.wizard_cost_ceil_h = saved.wizard_cost_ceil_h
+            if (saved?.wizard_cep_cost_rate) g.wizard_cep_cost_rate = saved.wizard_cep_cost_rate
           })
         }
         setGroups(reconstructed)
@@ -1063,6 +1066,7 @@ const QuotationForm = () => {
         manual_cost_price: g.manual_cost_price || null,
         wizard_cost_ceil_w: g.wizard_cost_ceil_w ?? 3,
         wizard_cost_ceil_h: g.wizard_cost_ceil_h ?? 3,
+        wizard_cep_cost_rate: g.wizard_cep_cost_rate ?? 5,
         rate_rft: g.rate_rft,
         cep: g.cep,
         cep_polish_rate: g.cep_polish_rate || 15,
@@ -1366,7 +1370,7 @@ const QuotationForm = () => {
       cost_price: costPerSqft,
       selling_rate: group.rate,
       cep_on: group.cep,
-      cep_cost_rate: CEP_COST_RATE,
+      cep_cost_rate: group.wizard_cep_cost_rate || CEP_COST_RATE,
       cost_ceil_w: group.wizard_cost_ceil_w || 3,
       cost_ceil_h: group.wizard_cost_ceil_h || 3,
       rows,
@@ -1431,12 +1435,22 @@ const QuotationForm = () => {
         const w = s.width_inch || 0
         const h = s.height_inch || 0
         const qty = s.quantity || 1
-        const ceil3 = x => Math.ceil(x / 3) * 3
-        const charged_sqft = (ceil3(w) * ceil3(h) * qty) / 144
+
+        // Use group's saved cost ceiling — same as per-product wizard
+        const gcw = group.wizard_cost_ceil_w || 3
+        const gch = group.wizard_cost_ceil_h || 3
+        const gcFn = (x, c) => c === 'plus30mm' ? x + (30 / 25.4) : Math.ceil(x / c) * c
+        const charged_sqft = (gcFn(w, gcw) * gcFn(h, gch) * qty) / 144
+
         const glass_cost = parseFloat((charged_sqft * costPerSqft).toFixed(2))
         const actual_rft = parseFloat(((w + h) * 2 / 12 * qty).toFixed(4))
+
+        // Use group's saved CEP cost rate — same as per-product wizard
+        const groupCepRate = (typeof group.wizard_cep_cost_rate === 'number' && group.wizard_cep_cost_rate > 0)
+          ? group.wizard_cep_cost_rate
+          : CEP_COST_RATE
         const cep_cost = group.cep
-          ? parseFloat((actual_rft * CEP_COST_RATE).toFixed(2)) : 0
+          ? parseFloat((actual_rft * groupCepRate).toFixed(2)) : 0
         const cost_amount = parseFloat((glass_cost + cep_cost).toFixed(2))
         const selling_amount = s.subtotal || 0
         const margin_amount = parseFloat((selling_amount - cost_amount).toFixed(2))
@@ -3601,9 +3615,11 @@ const QuotationForm = () => {
                   onChange={val => {
                     if (val === 'custom') {
                       setCompWizard(prev => ({ ...prev, cep_cost_rate: 'custom' }))
+                      if (compWizard.group_key) updateGroup(compWizard.group_key, 'wizard_cep_cost_rate', 'custom')
                       return
                     }
                     const newRate = val || 0
+                    if (compWizard.group_key) updateGroup(compWizard.group_key, 'wizard_cep_cost_rate', newRate)
                     const newRows = compWizard.rows.map(r => {
                       const cep_cost = parseFloat((parseFloat(r.actual_rft) * newRate).toFixed(2))
                       const cost_amount = parseFloat((r.glass_cost + cep_cost + (r.proc_cost || 0)).toFixed(2))
@@ -3629,6 +3645,7 @@ const QuotationForm = () => {
                     style={{ width: 120 }}
                     onChange={val => {
                       const newRate = val || 0
+                      if (compWizard.group_key) updateGroup(compWizard.group_key, 'wizard_cep_cost_rate', newRate)
                       const newRows = compWizard.rows.map(r => {
                         const cep_cost = parseFloat((parseFloat(r.actual_rft) * newRate).toFixed(2))
                         const cost_amount = parseFloat((r.glass_cost + cep_cost + (r.proc_cost || 0)).toFixed(2))
@@ -4347,10 +4364,15 @@ const QuotationForm = () => {
                     const w = sz.width_inch || 0
                     const h = sz.height_inch || 0
                     const qty = sz.quantity || 1
-                    const charged_sqft = (ceil3(w) * ceil3(h) * qty) / 144
+                    const gcw = group.wizard_cost_ceil_w || 3
+                    const gch = group.wizard_cost_ceil_h || 3
+                    const gcFn = (x, c) => c === 'plus30mm' ? x + (30 / 25.4) : Math.ceil(x / c) * c
+                    const charged_sqft = (gcFn(w, gcw) * gcFn(h, gch) * qty) / 144
                     const glass_cost = charged_sqft * costPerSqft
                     const actual_rft = ((w + h) * 2 / 12 * qty)
-                    const cep_cost = group.cep ? (actual_rft * 5) : 0
+                    const gCepRate = (typeof group.wizard_cep_cost_rate === 'number' && group.wizard_cep_cost_rate > 0)
+                      ? group.wizard_cep_cost_rate : 5
+                    const cep_cost = group.cep ? (actual_rft * gCepRate) : 0
                     return s + glass_cost + cep_cost
                   }, 0) || 0
 
