@@ -8,7 +8,7 @@ git push origin main
 # Server — pull & build
 ssh -i /home/saurabh/essar-path/essar-glass-key.pem ubuntu@54.82.47.196
 cd /var/www/essar-glass && git pull origin main
-cd frontend && npm run build && sudo systemctl restart nginx
+export NODE_OPTIONS="--max-old-space-size=1536" && npm run build && sudo systemctl restart nginx
 echo "✅ Done!"
 
 

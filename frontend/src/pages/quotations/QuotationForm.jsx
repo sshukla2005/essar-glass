@@ -4400,18 +4400,31 @@ const QuotationForm = () => {
                     </div>
                   )
 
-                  // Process rows
-                  const processes = [
-                    ...(group.processes || []),
-                    ...(group.sizes?.flatMap(s => s.size_processes || []) || [])
-                  ]
-                  processes.forEach((p, pi) => {
+                  // Group processes — no cost_rate field, use 70% estimate
+                  const groupProcesses = (group.processes || [])
+                  // Size processes — use actual cost_amount (cost_rate × qty_area)
+                  const sizeProcesses = (group.sizes?.flatMap(s => s.size_processes || []) || [])
+
+                  groupProcesses.forEach((p, pi) => {
                     if (p.amount > 0) {
                       rows.push(
                         <div key={`proc-${gi}-${pi}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4, fontSize: 11, color: '#6366f1', paddingLeft: 20, borderLeft: '2px solid #e9d5ff', marginLeft: 8 }}>
-                          <span style={{ flex: 1 }}>└ {p.process_name || p.name || 'Process'}</span>
+                          <span style={{ flex: 1 }}>└ {p.process_name || p.name || 'Process'} <span style={{ color: '#9ca3af', fontSize: 10 }}>(est. @70%)</span></span>
                           <span style={{ minWidth: 90, textAlign: 'right' }}>₹{Number(p.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                           <span style={{ minWidth: 90, textAlign: 'right' }}>₹{Number(p.amount * 0.70).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                        </div>
+                      )
+                    }
+                  })
+
+                  sizeProcesses.forEach((p, pi) => {
+                    if (p.amount > 0) {
+                      const actualCost = p.cost_amount || ((p.qty_area || 0) * (p.cost_rate || 0))
+                      rows.push(
+                        <div key={`sproc-${gi}-${pi}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4, fontSize: 11, color: '#6366f1', paddingLeft: 20, borderLeft: '2px solid #e9d5ff', marginLeft: 8 }}>
+                          <span style={{ flex: 1 }}>└ {p.process_name || p.name || 'Process'}</span>
+                          <span style={{ minWidth: 90, textAlign: 'right' }}>₹{Number(p.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                          <span style={{ minWidth: 90, textAlign: 'right' }}>₹{Number(actualCost).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                         </div>
                       )
                     }
@@ -4521,14 +4534,10 @@ const QuotationForm = () => {
               gap: 16,
             }}>
               {(() => {
-                const hwSell = hardwareItems.reduce((s, h) => s + (h.amount || 0), 0)
-                const hwCost = hardwareItems.reduce((s, h) => s + (h.cost_amount || (h.qty || 0) * (h.cost_rate || 0)), 0)
-                const lbSell = laborItems.reduce((s, l) => s + (l.amount || 0), 0)
-                const lbCost = laborItems.reduce((s, l) => s + (l.cost_amount || (l.qty || 0) * (l.cost_rate || 0)), 0)
-                const wstSell = wastageItems.reduce((s, w) => s + (w.amount || 0), 0)
-                const wstCost = wastageItems.reduce((s, w) => s + (w.cost_amount || (w.qty || 0) * (w.cost_rate || 0)), 0)
-                const trueSell = globalComparison.totalSelling + hwSell + lbSell + wstSell
-                const trueCost = globalComparison.totalCost + hwCost + lbCost + wstCost
+                // totalSelling and totalCost from openGlobalComparison already include
+                // HW + Labor + Wastage + DC — do NOT add them again (would double-count)
+                const trueSell = globalComparison.totalSelling
+                const trueCost = globalComparison.totalCost
                 const trueMargin = trueSell - trueCost
                 const truePct = trueCost > 0
                   ? ((trueMargin / trueCost) * 100).toFixed(2)
