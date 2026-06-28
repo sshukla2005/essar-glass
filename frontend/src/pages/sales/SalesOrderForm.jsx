@@ -404,6 +404,26 @@ const SalesOrderForm = () => {
     } catch { return 15 }
   }
 
+  const getGroupBaseCostRate = (g, products) => {
+    let costPerSqft = g.manual_cost_price || 0
+    if (!costPerSqft) {
+      const prod = products.find(p => p.id === g.product_id)
+      if (prod?.cost_price) {
+        costPerSqft = prod.cost_price
+      } else if (g.glass_category && g.glass_thickness) {
+        try {
+          const matrix = JSON.parse(localStorage.getItem('glass_rate_matrix') || '{}')
+          const costRate = matrix?.cost_rates?.[g.glass_category]
+          if (costRate) costPerSqft = parseFloat((parseFloat(g.glass_thickness) * costRate / 10.764).toFixed(2))
+        } catch { }
+      }
+      if (!costPerSqft && (g.base_glass_rate || g.rate) > 0) {
+        costPerSqft = parseFloat(((g.base_glass_rate || g.rate) * 0.70).toFixed(2))
+      }
+    }
+    return costPerSqft
+  }
+
   const calcGroupSize = (group, size) => {
     const w_inch = size.width_inch || 0
     const h_inch = size.height_inch || 0
@@ -450,11 +470,6 @@ const SalesOrderForm = () => {
     else if (group.pricing_method === 'per_rft') effective_qty = running_ft
     else effective_qty = qty
 
-    const sqft_amt = effective_qty * (group.rate || 0)
-    const rft_amt = running_ft * (group.rate_rft || 0)
-    let subtotal = (sqft_amt + rft_amt) * (1 - (group.discount_pct || 0) / 100)
-    subtotal = parseFloat((subtotal + cep_charges).toFixed(2))
-
     // Toughening — compute per-sqft addon (NOT added to subtotal here)
     // It will be incorporated into group.rate directly
     let tgh_charge = 0
@@ -479,6 +494,59 @@ const SalesOrderForm = () => {
         }
       } catch { }
     }
+
+    // ── COST SIDE ── (stable & immutable)
+    let costPerSqft = getGroupBaseCostRate(group, products)
+    
+    // Add toughening cost addon if applicable
+    if (group.is_toughened || group.glass_type === 'Toughened') {
+      try {
+        const pm = JSON.parse(localStorage.getItem('process_masters') || '[]')
+        const toughProc = pm.find(p => p.process_type === 'toughening' && p.is_active !== false)
+        if (toughProc && toughProc.rate > 0) {
+          const size_tgh_sqmt = ((size.width_inch || 0) * 25.4 + 30) * ((size.height_inch || 0) * 25.4 + 30) * qty / 1000000
+          const size_tgh_charge = parseFloat((size_tgh_sqmt * toughProc.rate).toFixed(2))
+          const size_base_sqft = effective_qty || total_sqft || 0.001
+          const size_addon = size_base_sqft > 0 ? parseFloat((size_tgh_charge / size_base_sqft).toFixed(4)) : 0
+          if (size_addon > 0) costPerSqft = parseFloat((costPerSqft + size_addon).toFixed(2))
+        }
+      } catch { }
+    }
+
+    const cost_ceil_w = group.wizard_cost_ceil_w || 3
+    const cost_ceil_h = group.wizard_cost_ceil_h || 3
+    const costCeilFn = (x, c) => {
+      if (c === 'plus30mm') return x + (30 / 25.4)
+      return Math.ceil(x / c) * c
+    }
+    const cost_charged_w = parseFloat(costCeilFn(w_inch, cost_ceil_w).toFixed(4))
+    const cost_charged_h = parseFloat(costCeilFn(h_inch, cost_ceil_h).toFixed(4))
+    const cost_charged_sqft = (cost_charged_w * cost_charged_h * qty) / 144
+    const glass_cost = parseFloat((cost_charged_sqft * costPerSqft).toFixed(2))
+
+    const CEP_COST_RATE = 5
+    const initCepRate = (typeof group.wizard_cep_cost_rate === 'number' && group.wizard_cep_cost_rate > 0)
+      ? group.wizard_cep_cost_rate
+      : CEP_COST_RATE
+    const cep_cost = group.cep
+      ? parseFloat((running_ft * initCepRate).toFixed(2))
+      : 0
+
+    const proc_cost = parseFloat(
+      ((size.size_processes || []).reduce((sum, p) => {
+        const spCostRate = p.cost_rate ?? (p.rate * 0.70)
+        return sum + ((p.qty_area || 0) * spCostRate)
+      }, 0)).toFixed(2)
+    )
+
+    const cost_amount = parseFloat((glass_cost + cep_cost + proc_cost).toFixed(2))
+
+    // ── SELLING SIDE ──
+    const sqft_amt = effective_qty * (group.rate || 0)
+    const rft_amt = running_ft * (group.rate_rft || 0)
+    let subtotal = (sqft_amt + rft_amt) * (1 - (group.discount_pct || 0) / 100)
+    subtotal = parseFloat((subtotal + cep_charges).toFixed(2))
+
     const tax_amt = parseFloat((subtotal * (group.tax_rate || 18) / 100).toFixed(2))
     const line_total = parseFloat((subtotal + tax_amt).toFixed(2))
 
@@ -496,7 +564,19 @@ const SalesOrderForm = () => {
       tgh_charge: parseFloat(tgh_charge.toFixed(2)),
       tgh_rate_addon: parseFloat(tgh_rate_addon.toFixed(4)),
       effective_qty: parseFloat(effective_qty.toFixed(4)),
-      subtotal, tax_amount: tax_amt, line_total
+      subtotal,
+      tax_amount: tax_amt,
+      line_total,
+
+      // Cost Side properties
+      cost_charged_w,
+      cost_charged_h,
+      glass_cost,
+      cep_cost,
+      proc_cost,
+      cost_amount,
+      margin_amount: parseFloat((subtotal - cost_amount).toFixed(2)),
+      margin_pct: subtotal > 0 ? parseFloat((((subtotal - cost_amount) / subtotal) * 100).toFixed(2)) : 100
     }
   }
 
@@ -510,6 +590,10 @@ const SalesOrderForm = () => {
     setGroups(prev => prev.map(g => {
       if (g.group_key !== gkey) return g
       const updated = { ...g, [field]: value }
+
+      if (['rate', 'rate_rft', 'discount_pct', 'pricing_method', 'product_id', 'glass_thickness', 'glass_type', 'glass_category', 'custom_costing'].includes(field)) {
+        updated.target_margin = null
+      }
 
       if (['glass_thickness', 'glass_type', 'glass_category'].includes(field)) {
         updated.description = buildDescription(updated)
@@ -889,7 +973,7 @@ const SalesOrderForm = () => {
       })
 
       if (record.groups?.length) {
-        setGroups(record.groups.map(g => ({
+        const mappedGroups = record.groups.map(g => ({
           ...emptyGroup(),
           ...g,
           group_key: Date.now() + Math.random(),
@@ -903,7 +987,11 @@ const SalesOrderForm = () => {
             ...p,
             proc_key: Date.now() + Math.random(),
           }))
-        })))
+        }))
+        mappedGroups.forEach(g => {
+          g.sizes = g.sizes.map(s => calcGroupSize(g, s))
+        })
+        setGroups(mappedGroups)
       } else if (record.lines?.length) {
         const reconstructed = reconstructGroups(record.lines)
         // Backend valid_columns filter strips manual_cost_price from lines
@@ -914,8 +1002,12 @@ const SalesOrderForm = () => {
             if (saved?.manual_cost_price) g.manual_cost_price = saved.manual_cost_price
             if (saved?.wizard_cost_ceil_w) g.wizard_cost_ceil_w = saved.wizard_cost_ceil_w
             if (saved?.wizard_cost_ceil_h) g.wizard_cost_ceil_h = saved.wizard_cost_ceil_h
+            if (saved?.target_margin) g.target_margin = saved.target_margin
           })
         }
+        reconstructed.forEach(g => {
+          g.sizes = g.sizes.map(s => calcGroupSize(g, s))
+        })
         setGroups(reconstructed)
       }
 
@@ -1013,8 +1105,10 @@ const SalesOrderForm = () => {
         totalCost += (p.amount || 0) * 0.7
       })
     })
-    const marginAmt = subIII - totalCost
-    const marginPct = totalCost > 0 ? (marginAmt / totalCost) * 100 : 100
+    const sellableTotal = subIII - (dcCharges || 0)
+    const sellableCost = totalCost + hwCostTotal + lbCostTotal + wstCostTotal
+    const marginAmt = sellableTotal - sellableCost
+    const marginPct = sellableTotal > 0 ? (marginAmt / sellableTotal) * 100 : 100
 
     return {
       subI, procTotal, hwTotal, lbTotal, wstTotal, dcCharges, dcCost, subII,
@@ -1030,62 +1124,8 @@ const SalesOrderForm = () => {
     setWizardCostPrice(null)
     setCompWizard(null)
 
-  // If user previously saved a manual cost price, use it directly
-  // Otherwise auto-calculate from matrix / product master
-  let costPerSqft = 0
-
-  if (group.manual_cost_price && group.manual_cost_price > 0) {
-    // Use saved manual cost price
-    costPerSqft = group.manual_cost_price
-  } else {
-    // Try product master first
-    const prod = products.find(p => p.id === group.product_id)
-    if (prod?.cost_price) {
-      costPerSqft = prod.cost_price
-    }
-
-    // If no product or no cost_price, use rate matrix cost_rates
-    if (!costPerSqft && group.glass_category && group.glass_thickness) {
-      try {
-        const matrix = JSON.parse(
-          localStorage.getItem('glass_rate_matrix') || '{}'
-        )
-        const costRate = matrix?.cost_rates?.[group.glass_category]
-        if (costRate && group.glass_thickness) {
-          costPerSqft = parseFloat(
-            (parseFloat(group.glass_thickness) * costRate / 10.764).toFixed(2)
-          )
-        }
-      } catch { }
-    }
-
-    // If still 0, estimate as 70% of base glass rate (last resort)
-    if (!costPerSqft && group.rate > 0) {
-      const baseRate = group.base_glass_rate || group.rate
-      costPerSqft = parseFloat((baseRate * 0.70).toFixed(2))
-    }
-  }
-
-  // Only add toughening addon if user has NOT manually set cost price
-  if (!group.manual_cost_price && (group.is_toughened || group.glass_type === 'Toughened')) {
-    try {
-      const pm = JSON.parse(localStorage.getItem('process_masters') || '[]')
-      const toughProc = pm.find(p =>
-        p.process_type === 'toughening' && p.is_active !== false
-      )
-      if (toughProc && toughProc.rate > 0) {
-        // Get avg tgh_rate_addon from sizes (already calculated)
-        const avgAddon = group.sizes.length > 0
-          ? group.sizes.reduce((s, sz) => s + (sz.tgh_rate_addon || 0), 0) / group.sizes.length
-          : 0
-        if (avgAddon > 0) {
-          costPerSqft = parseFloat((costPerSqft + avgAddon).toFixed(2))
-        }
-      }
-    } catch { }
-  }
-
-    setWizardCostPrice(costPerSqft)
+  const costPerSqft = getGroupBaseCostRate(group, products)
+  setWizardCostPrice(costPerSqft)
 
     const CEP_COST_RATE = 5  // ₹5 per running foot (client confirmed)
 
@@ -1114,8 +1154,8 @@ const SalesOrderForm = () => {
       // Total cost = glass cost + CEP cost
       const cost_amount = parseFloat((glass_cost + cep_cost).toFixed(2))
       const margin_amount = parseFloat((selling_amount - cost_amount).toFixed(2))
-      const margin_pct = cost_amount > 0
-        ? parseFloat(((margin_amount / cost_amount) * 100).toFixed(2))
+      const margin_pct = selling_amount > 0
+        ? parseFloat(((margin_amount / selling_amount) * 100).toFixed(2))
         : 100
 
       return {
@@ -1153,8 +1193,8 @@ const SalesOrderForm = () => {
     const totalCost = parseFloat((glassCostTotal + totalProcCost).toFixed(2))
 
     const totalMargin = parseFloat((totalSelling - totalCost).toFixed(2))
-    const totalMarginPct = totalCost > 0
-      ? parseFloat(((totalMargin / totalCost) * 100).toFixed(2)) : 100
+    const totalMarginPct = totalSelling > 0
+      ? parseFloat(((totalMargin / totalSelling) * 100).toFixed(2)) : 100
 
     setCompWizard({
       product_name: group.description || 'Product',

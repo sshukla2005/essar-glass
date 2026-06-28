@@ -1,7 +1,6 @@
 import { jsPDF } from 'jspdf'
-import autoTable from 'jspdf-autotable'
 
-// ── Number to words (Indian format) ──────────────────────────
+// ── Number to words (Indian format) ──────
 const toWords = (amount) => {
   const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven',
     'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen',
@@ -26,7 +25,7 @@ const toWords = (amount) => {
   return ('Rupees ' + convert(n) + 'Only').replace(/\s+/g, ' ').trim()
 }
 
-// ── Fraction display ──────────────────────────────────────────
+// ── Fraction formatter for inches ──────
 const toFraction = (d) => {
   if (!d && d !== 0) return ''
   const num = parseFloat(d)
@@ -41,20 +40,13 @@ const toFraction = (d) => {
   return w === 0 ? `${s / g}/${16 / g}` : `${w} ${s / g}/${16 / g}`
 }
 
-// ── Format amount ─────────────────────────────────────────────
-const fmtN = (v) =>
-  'Rs.' + Number(v || 0).toLocaleString('en-IN', {
+// ── Currency Formatter ──────
+const fmtR = (v) =>
+  'Rs. ' + Number(v || 0).toLocaleString('en-IN', {
     minimumFractionDigits: 2, maximumFractionDigits: 2
   })
 
-const fmtR = (v) =>
-  'Rs. ' + Number(v || 0).toFixed(2)
-
-// ── Charged size in MM ────────────────────────────────────────
-const ceilMm = (inch) =>
-  Math.round(Math.ceil((inch || 0) / 3) * 3 * 25.4)
-
-// ── Get company from localStorage ────────────────────────────
+// ── Master Data Resolvers ──────
 const getCompany = (id) => {
   try {
     const all = JSON.parse(localStorage.getItem('companies_master') || '[]')
@@ -71,495 +63,853 @@ const getCompany = (id) => {
   }
 }
 
-// ── Get process master ────────────────────────────────────────
-const getPM = (id) => {
-  try {
-    const pm = JSON.parse(localStorage.getItem('process_masters') || '[]')
-    return pm.find(p => p.id === id) || null
-  } catch { return null }
+// ── Color Theme and Layout Constants ──────
+const C = {
+  primary: [26, 35, 126],        // Deep Indigo
+  primaryMid: [57, 73, 171],     // Medium Indigo
+  primaryLight: [232, 234, 246], // Light Indigo background tint
+  accent: [0, 150, 136],         // Teal accent
+  accentLight: [224, 242, 241],
+  glassHeader: [13, 71, 161],
+  glassHeaderBg: [227, 242, 253],
+  rowAlt: [250, 251, 254],
+  rowHover: [232, 240, 254],
+  procHeader: [74, 20, 140],
+  procHeaderBg: [243, 229, 245],
+  hwHeader: [230, 81, 0],
+  hwHeaderBg: [255, 243, 224],
+  summaryBg: [248, 250, 254],
+  grandBg: [21, 101, 192],
+  text: [30, 41, 59],            // Slate 800
+  textMid: [71, 85, 105],        // Slate 600
+  textLight: [148, 163, 184],    // Slate 400
+  border: [203, 213, 225],       // Slate 300
+  borderLight: [226, 232, 240],  // Slate 200
+  white: [255, 255, 255],
 }
 
-// ── Page constants ────────────────────────────────────────────
-const LM = 10   // left margin
-const RM = 10   // right margin
-const TM = 8    // top margin after header
+// Spacing System (8pt-based, mapped to mm)
+const SP_8 = 3.0
+const SP_16 = 6.0
+const SP_24 = 9.0
+const SP_32 = 12.0
 
-// ════════════════════════════════════════════════════════════════
-// DRAW FUNCTIONS
-// ════════════════════════════════════════════════════════════════
+const MARGIN = { l: 10, r: 10, t: 10 }
+const PAGE_W = 210
+const PAGE_H = 297
+const CONTENT_W = PAGE_W - MARGIN.l - MARGIN.r
 
-// Draw thick border around entire content area
+// ── Drawing Utilities ──────
+const setFont = (doc, size, style = 'normal', color = C.text) => {
+  doc.setFont('helvetica', style)
+  doc.setFontSize(size)
+  doc.setTextColor(...color)
+}
+
+const drawRect = (doc, x, y, w, h, fillColor, strokeColor, lw = 0.25) => {
+  if (fillColor) {
+    doc.setFillColor(...fillColor)
+    doc.rect(x, y, w, h, strokeColor ? 'FD' : 'F')
+  }
+  if (strokeColor) {
+    doc.setDrawColor(...strokeColor)
+    doc.setLineWidth(lw)
+    if (!fillColor) doc.rect(x, y, w, h, 'S')
+  }
+}
+
+const drawCard = (doc, x, y, w, h, fillColor = C.white, strokeColor = C.border, rx = 2.0) => {
+  if (fillColor) doc.setFillColor(...fillColor)
+  if (strokeColor) {
+    doc.setDrawColor(...strokeColor)
+    doc.setLineWidth(0.3)
+  }
+  const style = (fillColor && strokeColor) ? 'FD' : fillColor ? 'F' : 'S'
+  doc.roundedRect(x, y, w, h, rx, rx, style)
+}
+
+const drawLine = (doc, x1, y1, x2, y2, color = C.border, lw = 0.25) => {
+  doc.setDrawColor(...color)
+  doc.setLineWidth(lw)
+  doc.line(x1, y1, x2, y2)
+}
+
+const drawText = (doc, text, x, y, opts = {}) => {
+  try { doc.text(String(text || ''), x, y, opts) } catch { }
+}
+
 const drawBorder = (doc) => {
-  const pw = doc.internal.pageSize.getWidth()
-  const ph = doc.internal.pageSize.getHeight()
-  doc.setDrawColor(26, 35, 126)
-  doc.setLineWidth(0.5)
-  doc.rect(LM - 2, TM - 2, pw - LM - RM + 4, ph - TM - 8, 'S')
-  doc.setLineWidth(0.2)
+  // Main page bounding box border
+  drawRect(doc, MARGIN.l - 2, MARGIN.t - 2, CONTENT_W + 4, PAGE_H - MARGIN.t - 7, null, C.primary, 0.4)
 }
 
-// ── Company header (Sapphire style: centered, bold) ──────────
-const drawCompanyHeader = (doc, company) => {
-  const pw = doc.internal.pageSize.getWidth()
-  let y = TM + 2
-
-  // Company name — large centered
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(16)
-  doc.setTextColor(0, 0, 0)
-  doc.text(company.name || 'ESSAR SONS', pw / 2, y, { align: 'center' })
-  y += 5
-
-  // Tagline
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(8)
-  doc.setTextColor(40, 40, 40)
-  doc.text(company.tagline || "AN 'ESSAR SONS' GROUP COMPANY",
-    pw / 2, y, { align: 'center' })
-  y += 4
-
-  // Address
+// ── Header & Customer Cards ──────
+const drawHeader = (doc, company, docTitle) => {
+  let y = MARGIN.t
+  // Top deep primary brand block
+  drawRect(doc, MARGIN.l - 2, y - 2, CONTENT_W + 4, 30, C.primary)
+  
+  setFont(doc, 16, 'bold', C.white)
+  drawText(doc, company.name || 'ESSAR SONS', PAGE_W / 2, y + 8, { align: 'center' })
+  
+  setFont(doc, 8, 'normal', C.primaryLight)
+  drawText(doc, company.tagline || '', PAGE_W / 2, y + 14, { align: 'center' })
+  
+  setFont(doc, 7.5, 'normal', [210, 220, 245])
   const addr = [company.address, company.city].filter(Boolean).join(', ')
-  doc.text(addr.substring(0, 75), pw / 2, y, { align: 'center' })
-  y += 4
-
-  // GST + Phone + Website
+  drawText(doc, addr.substring(0, 90), PAGE_W / 2, y + 19.5, { align: 'center' })
+  
   const contact = [
-    company.gst || company.gstin ? `GSTIN: ${company.gst || company.gstin}` : '',
+    company.gst ? `GSTIN: ${company.gst}` : '',
     company.phone ? `Ph: ${company.phone}` : '',
+    company.email || '',
     company.website || '',
-  ].filter(Boolean).join('   |   ')
-  doc.text(contact.substring(0, 80), pw / 2, y, { align: 'center' })
-  y += 5
-
-  // Divider line
-  doc.setDrawColor(180, 190, 220)
-  doc.setLineWidth(0.3)
-  doc.line(LM, y, pw - RM, y)
-  y += 4
-
-  // "Proforma Invoice" title (centered, bold — Sapphire exact)
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(12)
-  doc.setTextColor(0, 0, 0)
-  doc.text('Proforma Invoice', pw / 2, y, { align: 'center' })
-  y += 5
-
-  // Divider
-  doc.setDrawColor(180, 190, 220)
-  doc.line(LM, y, pw - RM, y)
-  y += 3
-
-  return y
+  ].filter(Boolean).join('   \u2022   ')
+  setFont(doc, 7, 'normal', [190, 200, 235])
+  drawText(doc, contact.substring(0, 100), PAGE_W / 2, y + 25, { align: 'center' })
+  
+  y += 32
+  // Teal accent title bar
+  drawRect(doc, MARGIN.l - 2, y - 1, CONTENT_W + 4, 10, C.accent)
+  setFont(doc, 10, 'bold', C.white)
+  drawText(doc, docTitle || 'PROFORMA INVOICE', PAGE_W / 2, y + 5.5, { align: 'center' })
+  
+  return y + 12
 }
 
-// ── Doc info row (like Sapphire's PROFORMA No | Date etc) ────
-const drawDocInfoRow = (doc, info, y) => {
-  const pw = doc.internal.pageSize.getWidth()
-  const col = (pw - LM - RM) / info.length
-
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(7.5)
-  doc.setTextColor(0, 0, 0)
-
-  info.forEach((item, i) => {
-    const x = LM + i * col
-    doc.setFont('helvetica', 'bold')
-    doc.text(item.label, x, y)
-    doc.setFont('helvetica', 'normal')
-    doc.text(String(item.value || ''), x + item.lw, y)
-  })
-
-  doc.setDrawColor(180, 190, 220)
-  doc.setLineWidth(0.2)
-  doc.line(LM, y + 2, pw - RM, y + 2)
-  return y + 6
-}
-
-// ── Bill To / Ship To (side by side like Sapphire) ───────────
-const drawBillShipTo = (doc, billTo, shipTo, y) => {
-  const pw = doc.internal.pageSize.getWidth()
-  const mid = pw / 2
-  const bh = 36
-
-  // Vertical divider
-  doc.setDrawColor(180, 190, 220)
-  doc.line(mid, y, mid, y + bh)
-
-  // Horizontal borders
-  doc.line(LM, y, pw - RM, y)
-  doc.line(LM, y + bh, pw - RM, y + bh)
-
-  const drawSide = (data, startX, label) => {
-    let ly = y + 4
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(8)
-    doc.setTextColor(0, 0, 0)
-    doc.text(label + ' :', startX, ly)
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(8.5)
-    doc.text((data.name || '').substring(0, 34), startX, ly + 4)
-    ly += 8
-
-    doc.setFont('helvetica', 'normal')
-    doc.setFontSize(7.5)
-    doc.setTextColor(30, 30, 30)
-    if (data.address) {
-      const lines = doc.splitTextToSize(data.address, mid - startX - 4)
-      lines.slice(0, 2).forEach(l => { doc.text(l, startX, ly); ly += 3.5 })
-    }
-    if (data.phone) { doc.text(`Tel : ${data.phone}`, startX, ly); ly += 3.5 }
-    if (data.gstin) { doc.text(`GSTIN: ${data.gstin}`, startX, ly); ly += 3.5 }
-    if (data.state) { doc.text(`State : ${data.state}`, startX, ly) }
-  }
-
-  drawSide(billTo, LM + 2, 'Bill To')
-  drawSide(shipTo, mid + 3, 'Ship To')
-
-  return y + bh
-}
-
-// ── Account row (Account To | Outstanding | Credit Limit) ────
-const drawAccountRow = (doc, accountName, outstanding, creditLimit, y) => {
-  const pw = doc.internal.pageSize.getWidth()
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(7.5)
-  doc.setTextColor(0, 0, 0)
-  doc.text(`Account To : ${accountName || ''}`, LM + 2, y + 4)
-  doc.text(`Total OutStanding : ${outstanding || ''}`,
-    pw / 2 - 20, y + 4)
-  doc.text(`Credit Limit : ${creditLimit || '0'}`, pw - 50, y + 4)
-  doc.setDrawColor(180, 190, 220)
-  doc.line(LM, y + 6, pw - RM, y + 6)
-  return y + 8
-}
-
-// ── Product group header (like "1 OB252629480 10MM CLEAR...") ─
-const drawGroupHeader = (doc, num, code, desc, y) => {
-  const pw = doc.internal.pageSize.getWidth()
-  doc.setFillColor(240, 244, 255)
-  doc.rect(LM, y, pw - LM - RM, 6, 'F')
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(8)
-  doc.setTextColor(0, 0, 50)
-  doc.text(`${num})  ${desc || ''}`, LM + 2, y + 4.5)
-  doc.setDrawColor(180, 190, 220)
-  doc.line(LM, y + 6, pw - RM, y + 6)
-  return y + 6
-}
-
-// ── Table column definitions (Sapphire-exact) ─────────────────
-// Portrait A4 usable = 190mm
-// Sr | Actual W | Actual H | Chg W mm | Chg H mm | Qty |
-// Hole | Cutout | Area | Rate | [CEP] | Amount
-const buildCols = (hasCep) => {
-  if (hasCep) {
-    return [
-      { h: 'Sr.\nNo', x: LM, w: 8, a: 'c' },
-      { h: 'Description', x: 18, w: 52, a: 'l' },
-      { h: 'Actual W\n(inch)', x: 70, w: 20, a: 'r' },
-      { h: 'Actual H\n(inch)', x: 90, w: 20, a: 'r' },
-      { h: 'Qty', x: 110, w: 10, a: 'r' },
-      { h: 'Sqft', x: 120, w: 18, a: 'r' },
-      { h: 'Rft', x: 138, w: 16, a: 'r' },
-      { h: 'CEP\n(Rs.)', x: 154, w: 18, a: 'r' },
-      { h: 'Amount', x: 172, w: 26, a: 'r' },
-    ]
-  }
-  return [
-    { h: 'Sr.\nNo', x: LM, w: 8, a: 'c' },
-    { h: 'Description', x: 18, w: 56, a: 'l' },
-    { h: 'Actual W\n(inch)', x: 74, w: 22, a: 'r' },
-    { h: 'Actual H\n(inch)', x: 96, w: 22, a: 'r' },
-    { h: 'Qty', x: 118, w: 10, a: 'r' },
-    { h: 'Sqft', x: 128, w: 20, a: 'r' },
-    { h: 'Rft', x: 148, w: 18, a: 'r' },
-    { h: 'Amount', x: 166, w: 32, a: 'r' },
+const drawDocInfo = (doc, quotation, y, docTitle) => {
+  const boxH = 11
+  drawCard(doc, MARGIN.l, y, CONTENT_W, boxH, C.summaryBg, C.border, 1.5)
+  const items = [
+    { label: 'Document Type', value: docTitle },
+    { label: 'Quote / Ref No', value: quotation.quote_number || quotation.so_number || quotation.po_number || 'QT-NEW' },
+    { label: 'Date', value: quotation.quote_date || quotation.order_date || quotation.po_date || '' },
+    { label: 'Salesperson', value: quotation.salesperson || 'Admin' },
+    { label: 'Payment Terms', value: quotation.payment_terms || 'Immediate' },
   ]
+  const cellW = CONTENT_W / items.length
+  items.forEach((item, i) => {
+    const x = MARGIN.l + i * cellW
+    if (i > 0) drawLine(doc, x, y, x, y + boxH, C.border, 0.2)
+    setFont(doc, 6.5, 'normal', C.textLight)
+    drawText(doc, item.label, x + 3, y + 4)
+    setFont(doc, 7.5, 'bold', C.text)
+    drawText(doc, String(item.value || '').substring(0, 20), x + 3, y + 8)
+  })
+  return y + boxH + SP_16
 }
 
-// ── Draw table header row ─────────────────────────────────────
-const drawTH = (doc, y, cols) => {
-  const pw = doc.internal.pageSize.getWidth()
-  // Blue header like Sapphire
-  doc.setFillColor(220, 228, 250)
-  doc.rect(LM, y, pw - LM - RM, 11, 'F')
-  doc.setDrawColor(160, 175, 220)
-  doc.rect(LM, y, pw - LM - RM, 11, 'S')
-
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(7)
-  doc.setTextColor(0, 0, 50)
-
-  cols.forEach(c => {
-    const lines = c.h.split('\n')
-    const cx = c.a === 'r' ? c.x + c.w - 1 : c.a === 'c' ? c.x + c.w / 2 : c.x + 1
-    const al = c.a === 'r' ? 'right' : c.a === 'c' ? 'center' : 'left'
-    if (lines.length === 2) {
-      doc.text(lines[0], cx, y + 4, { align: al })
-      doc.text(lines[1], cx, y + 8.5, { align: al })
-    } else {
-      doc.text(lines[0], cx, y + 6.5, { align: al })
+const drawCustomerCard = (doc, cust, y) => {
+  const cardH = 34
+  const mid = PAGE_W / 2
+  const cardW = CONTENT_W / 2 - 2
+  
+  // Bill To
+  drawCard(doc, MARGIN.l, y, cardW, cardH, C.white, C.border, 2.0)
+  drawRect(doc, MARGIN.l + 0.3, y + 0.3, cardW - 0.6, 7, C.glassHeaderBg)
+  setFont(doc, 7.5, 'bold', C.glassHeader)
+  drawText(doc, 'BILL TO', MARGIN.l + 4, y + 5)
+  
+  // Ship To
+  drawCard(doc, mid + 2, y, cardW, cardH, C.white, C.border, 2.0)
+  drawRect(doc, mid + 2.3, y + 0.3, cardW - 0.6, 7, C.glassHeaderBg)
+  setFont(doc, 7.5, 'bold', C.glassHeader)
+  drawText(doc, 'SHIP TO', mid + 6, y + 5)
+  
+  const drawSide = (data, startX) => {
+    let ly = y + 11.5
+    setFont(doc, 8.5, 'bold', C.primaryMid)
+    drawText(doc, (data.name || '').substring(0, 32), startX + 4, ly)
+    ly += 5
+    setFont(doc, 7.5, 'normal', C.textMid)
+    if (data.address) {
+      const lines = doc.splitTextToSize(data.address, cardW - 8)
+      lines.slice(0, 2).forEach(l => {
+        drawText(doc, l, startX + 4, ly)
+        ly += 4
+      })
     }
-    // Column vertical dividers
-    doc.setDrawColor(160, 175, 220)
-    doc.line(c.x, y, c.x, y + 11)
-  })
-  // Last divider
-  const lastCol = cols[cols.length - 1]
-  doc.line(lastCol.x + lastCol.w, y, lastCol.x + lastCol.w, y + 11)
-  doc.setTextColor(0, 0, 0)
-  return y + 11
-}
-
-// ── Draw data row ─────────────────────────────────────────────
-const drawTR = (doc, y, cols, vals, isAlt) => {
-  const pw = doc.internal.pageSize.getWidth()
-  const rh = 6
-  if (isAlt) {
-    doc.setFillColor(250, 252, 255)
-    doc.rect(LM, y, pw - LM - RM, rh, 'F')
+    if (data.phone) {
+      drawText(doc, `Ph: ${data.phone}`, startX + 4, ly)
+      ly += 4
+    }
+    if (data.gstin) {
+      setFont(doc, 7, 'bold', C.textLight)
+      drawText(doc, `GSTIN: ${data.gstin}`, startX + 4, ly)
+    }
   }
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(7.5)
-  doc.setTextColor(10, 10, 40)
-
-  cols.forEach((c, i) => {
-    const v = String(vals[i] ?? '')
-    if (!v) return
-    const al = c.a === 'r' ? 'right' : c.a === 'c' ? 'center' : 'left'
-    const cx = c.a === 'r' ? c.x + c.w - 1 : c.a === 'c' ? c.x + c.w / 2 : c.x + 1
-    const mc = Math.max(3, Math.floor(c.w / 1.7))
-    try { doc.text(v.substring(0, mc), cx, y + 4, { align: al }) } catch { }
-    // Vertical divider
-    doc.setDrawColor(200, 210, 230)
-    doc.line(c.x, y, c.x, y + rh)
-  })
-  const lc = cols[cols.length - 1]
-  doc.line(lc.x + lc.w, y, lc.x + lc.w, y + rh)
-
-  doc.setDrawColor(210, 218, 235)
-  doc.line(LM, y + rh, pw - RM, y + rh)
-  return y + rh
+  
+  drawSide(cust, MARGIN.l)
+  drawSide(cust, mid + 2)
+  
+  return y + cardH + SP_16
 }
 
-// ── Draw sub-total row at end of table (Sapphire style) ───────
-const drawSubTotalRow = (doc, y, cols, qty, area, cep, amt, hasCep) => {
-  const pw = doc.internal.pageSize.getWidth()
-  doc.setFillColor(235, 240, 255)
-  doc.rect(LM, y, pw - LM - RM, 6.5, 'F')
-  doc.setDrawColor(180, 195, 230)
-  doc.rect(LM, y, pw - LM - RM, 6.5, 'S')
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(7.5)
-  doc.setTextColor(0, 0, 50)
+// Vendor card helper for PO
+const drawVendorCard = (doc, vend, y) => {
+  const cardH = 34
+  drawCard(doc, MARGIN.l, y, CONTENT_W, cardH, C.white, C.border, 2.0)
+  drawRect(doc, MARGIN.l + 0.3, y + 0.3, CONTENT_W - 0.6, 7, C.glassHeaderBg)
+  setFont(doc, 7.5, 'bold', C.glassHeader)
+  drawText(doc, 'VENDOR DETAILS', MARGIN.l + 4, y + 5)
+  
+  let ly = y + 11.5
+  setFont(doc, 8.5, 'bold', C.primaryMid)
+  drawText(doc, (vend.name || '').substring(0, 60), MARGIN.l + 4, ly)
+  ly += 5
+  setFont(doc, 7.5, 'normal', C.textMid)
+  if (vend.address) {
+    const lines = doc.splitTextToSize(vend.address, CONTENT_W - 8)
+    lines.slice(0, 2).forEach(l => {
+      drawText(doc, l, MARGIN.l + 4, ly)
+      ly += 4
+    })
+  }
+  if (vend.phone) {
+    drawText(doc, `Ph: ${vend.phone}`, MARGIN.l + 4, ly)
+    ly += 4
+  }
+  if (vend.gstin) {
+    setFont(doc, 7, 'bold', C.textLight)
+    drawText(doc, `GSTIN: ${vend.gstin}`, MARGIN.l + 4, ly)
+  }
+  return y + cardH + SP_16
+}
 
-  // Find cols by header keyword
+// ── Table Column Definitions ──────
+const COLS_CEP = [
+  { h: 'Sr', w: 8, a: 'c' },
+  { h: 'Actual W"', w: 24, a: 'c' },
+  { h: 'Actual H"', w: 24, a: 'c' },
+  { h: 'Charged Size', w: 32, a: 'c' },
+  { h: 'Qty', w: 8, a: 'c' },
+  { h: 'Sqft', w: 22, a: 'r' },
+  { h: 'Rft', w: 20, a: 'r' },
+  { h: 'CEP Rs.', w: 20, a: 'r' },
+  { h: 'Amount Rs.', w: 0, a: 'r' },
+]
+
+const COLS_NOCEP = [
+  { h: 'Sr', w: 8, a: 'c' },
+  { h: 'Actual W"', w: 28, a: 'c' },
+  { h: 'Actual H"', w: 28, a: 'c' },
+  { h: 'Charged Size', w: 38, a: 'c' },
+  { h: 'Qty', w: 8, a: 'c' },
+  { h: 'Sqft', w: 28, a: 'r' },
+  { h: 'Rft', w: 20, a: 'r' },
+  { h: 'Amount Rs.', w: 0, a: 'r' },
+]
+
+const buildCols = (hasCep) => {
+  const base = hasCep ? COLS_CEP : COLS_NOCEP
+  const fixed = base.slice(0, -1).reduce((s, c) => s + c.w, 0)
+  const cols = base.map(c => ({ ...c }))
+  cols[cols.length - 1].w = CONTENT_W - fixed
+  let x = MARGIN.l
+  cols.forEach(c => { c.x = x; x += c.w })
+  return cols
+}
+
+const drawTableHeader = (doc, cols, y) => {
+  const rowH = 8
+  drawRect(doc, MARGIN.l + 0.3, y, CONTENT_W - 0.6, rowH, C.glassHeader)
+  setFont(doc, 7.5, 'bold', C.white)
+  cols.forEach((c, i) => {
+    if (i > 0) drawLine(doc, c.x, y, c.x, y + rowH, [100, 130, 180], 0.2)
+    const isAmountCol = (i === cols.length - 1)
+    const cx = isAmountCol ? c.x + c.w - 5.0 : (c.a === 'r' ? c.x + c.w - 2.0 : c.a === 'c' ? c.x + c.w / 2 : c.x + 2.0)
+    const al = isAmountCol ? 'right' : (c.a === 'r' ? 'right' : c.a === 'c' ? 'center' : 'left')
+    drawText(doc, c.h, cx, y + 5.5, { align: al })
+  })
+  return y + rowH
+}
+
+const drawGroupBanner = (doc, groupNo, desc, isToughened, hasCep, y) => {
+  const bannerH = 8
+  drawRect(doc, MARGIN.l + 0.3, y, CONTENT_W - 0.6, bannerH, C.glassHeaderBg)
+  drawLine(doc, MARGIN.l + 0.3, y + bannerH, MARGIN.l + CONTENT_W - 0.3, y + bannerH, C.border, 0.25)
+  setFont(doc, 8.5, 'bold', C.glassHeader)
+  drawText(doc, `${groupNo}. ${desc}`, MARGIN.l + 4, y + 5.5)
+  
+  let bx = MARGIN.l + CONTENT_W - 4
+  if (hasCep) {
+    const bw = 12
+    drawCard(doc, bx - bw, y + 1.5, bw, 5, C.accent, null, 1)
+    setFont(doc, 6, 'bold', C.white)
+    drawText(doc, 'CEP', bx - bw / 2, y + 5, { align: 'center' })
+    bx -= bw + SP_8
+  }
+  if (isToughened) {
+    const bw = 22
+    drawCard(doc, bx - bw, y + 1.5, bw, 5, [230, 74, 25], null, 1)
+    setFont(doc, 6, 'bold', C.white)
+    drawText(doc, 'TOUGHENED', bx - bw / 2, y + 5, { align: 'center' })
+  }
+  return y + bannerH
+}
+
+const drawDataRow = (doc, cols, vals, isAlt, y) => {
+  const rowH = 6.5
+  if (isAlt) drawRect(doc, MARGIN.l + 0.3, y, CONTENT_W - 0.6, rowH, C.rowAlt)
+  setFont(doc, 7.5, 'normal', C.text)
+  cols.forEach((c, i) => {
+    if (i > 0) drawLine(doc, c.x, y, c.x, y + rowH, C.borderLight, 0.15)
+    const v = String(vals[i] ?? '')
+    const isAmountCol = (i === cols.length - 1)
+    const cx = isAmountCol ? c.x + c.w - 5.0 : (c.a === 'r' ? c.x + c.w - 2.0 : c.a === 'c' ? c.x + c.w / 2 : c.x + 2.0)
+    const al = isAmountCol ? 'right' : (c.a === 'r' ? 'right' : c.a === 'c' ? 'center' : 'left')
+    const maxLen = isAmountCol ? 24 : Math.max(5, Math.floor(c.w / 1.6))
+    if (v) drawText(doc, v.substring(0, maxLen), cx, y + 4.5, { align: al })
+  })
+  drawLine(doc, MARGIN.l + 0.3, y + rowH, MARGIN.l + CONTENT_W - 0.3, y + rowH, C.borderLight, 0.15)
+  return y + rowH
+}
+
+const drawGroupSubtotal = (doc, cols, qty, sqft, cep, amt, hasCep, y) => {
+  const rowH = 7.5
+  drawRect(doc, MARGIN.l + 0.3, y, CONTENT_W - 0.6, rowH, C.glassHeaderBg)
+  drawLine(doc, MARGIN.l + 0.3, y, MARGIN.l + CONTENT_W - 0.3, y, C.border, 0.3)
+  setFont(doc, 7.5, 'bold', C.glassHeader)
+  
   const qtyC = cols.find(c => c.h === 'Qty')
   const sqftC = cols.find(c => c.h === 'Sqft')
   const cepC = hasCep ? cols.find(c => c.h.includes('CEP')) : null
   const amtC = cols[cols.length - 1]
-
-  if (qtyC)
-    doc.text(String(qty), qtyC.x + qtyC.w - 1, y + 4.5, { align: 'right' })
-  if (sqftC)
-    doc.text(area.toFixed(3), sqftC.x + sqftC.w - 1, y + 4.5, { align: 'right' })
-  if (cepC && hasCep)
-    doc.text(fmtN(cep), cepC.x + cepC.w - 1, y + 4.5, { align: 'right' })
-  if (amtC)
-    doc.text(fmtN(amt), amtC.x + amtC.w - 1, y + 4.5, { align: 'right' })
-
-  doc.setTextColor(0, 0, 0)
-  return y + 6.5
+  
+  drawText(doc, 'Group Subtotal', MARGIN.l + 4, y + 5)
+  if (qtyC) drawText(doc, String(qty), qtyC.x + qtyC.w / 2, y + 5, { align: 'center' })
+  if (sqftC) drawText(doc, sqft.toFixed(3), sqftC.x + sqftC.w - 2.0, y + 5, { align: 'right' })
+  if (cepC && hasCep) drawText(doc, fmtR(cep), cepC.x + cepC.w - 2.0, y + 5, { align: 'right' })
+  if (amtC) drawText(doc, fmtR(amt), amtC.x + amtC.w - 5.0, y + 5, { align: 'right' })
+  return y + rowH
 }
 
-// ── HSN row ───────────────────────────────────────────────────
-const drawHSNRow = (doc, y, hsnCode) => {
-  const pw = doc.internal.pageSize.getWidth()
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(7.5)
-  doc.setTextColor(0, 0, 50)
-  doc.text(`HSN #:${hsnCode || '7007'}`, LM + 2, y + 4)
-  doc.setDrawColor(180, 195, 230)
-  doc.line(LM, y + 6, pw - RM, y + 6)
-  return y + 7
+// ── Glass Card Height Estimator ──
+const calculateGroupHeight = (group, hasCep) => {
+  let h = SP_8 // top card padding
+  h += 8 // group banner height
+  h += 8 // table header height
+  h += (group.sizes || []).length * 6.5 // size rows
+  
+  // inline processes if present
+  const sizeProcs = (group.sizes || []).flatMap(s => s.size_processes || []).filter(p => (p.amount || 0) > 0)
+  const grpProcs = (group.processes || []).filter(p => (p.amount || 0) > 0)
+  const allProcs = [...sizeProcs, ...grpProcs]
+  
+  if (allProcs.length > 0) {
+    h += 6.5 // header height
+    h += allProcs.length * 6.5 // row heights
+    h += SP_8 // inline spacer
+  }
+  
+  h += 7.5 // subtotal row
+  h += SP_8 // bottom card padding
+  return h
 }
 
-// ── Total Summery row (full width, bold) ──────────────────────
-const drawTotalSummery = (doc, y, totalQty, totalArea, totalAmt) => {
-  const pw = doc.internal.pageSize.getWidth()
-  doc.setFillColor(220, 228, 250)
-  doc.rect(LM, y, pw - LM - RM, 8, 'FD')
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(8)
-  doc.setTextColor(0, 0, 50)
-  doc.text('Total Summery', LM + 2, y + 5.5)
-  doc.text(String(totalQty), LM + 60, y + 5.5, { align: 'right' })
-  doc.text(totalArea.toFixed(4), LM + 120, y + 5.5, { align: 'right' })
-  doc.text(fmtN(totalAmt), pw - RM - 2, y + 5.5, { align: 'right' })
-  doc.setTextColor(0, 0, 0)
-  return y + 8
-}
-
-// ── Two-column bottom section (like Sapphire) ─────────────────
-// Left: payment/delivery info | Right: totals
-const drawBottomSection = (doc, leftItems, totalsRows, amtWords, y) => {
-  const pw = doc.internal.pageSize.getWidth()
-  const mid = pw / 2 - 5
-  const startY = y
-
-  // Left side content
-  let ly = startY + 4
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(7.5)
-  doc.setTextColor(0, 0, 0)
-  leftItems.forEach(item => {
-    if (!item) return
-    doc.setFont('helvetica', 'bold')
-    doc.text(item.label, LM + 2, ly)
-    doc.setFont('helvetica', 'normal')
-    doc.text(String(item.value || ''), LM + 2, ly + 3.5)
-    ly += 8
+// ── Draw Glass Card (Splits Dynamically across pages) ──
+const drawGroupCard = (doc, group, groupNo, hasCep, cols, startY, pageNum, quotation) => {
+  const sizes = group.sizes || []
+  const sizeProcs = sizes.flatMap(s => s.size_processes || []).filter(p => (p.amount || 0) > 0)
+  const grpProcs = (group.processes || []).filter(p => (p.amount || 0) > 0)
+  const allProcs = [...sizeProcs, ...grpProcs]
+  
+  const groupHeight = calculateGroupHeight(group, hasCep)
+  const remainingSpace = (PAGE_H - 18) - startY
+  const cleanPageSpace = (PAGE_H - 18) - (MARGIN.t + 18)
+  
+  let y = startY
+  // Push completely to the next page ONLY if it can fit there AND y leaves very little space (< 50mm)
+  if (groupHeight <= cleanPageSpace && groupHeight > remainingSpace && remainingSpace < 50) {
+    y = checkPageBreak(doc, y, 999, pageNum, quotation)
+  }
+  
+  let cardStartY = y
+  const headerHeight = SP_8 + 8 + 8 // padding + banner + header
+  
+  // If remaining space cannot even hold the header + 1 size row + padding, push before starting
+  if ((PAGE_H - 18) - y < headerHeight + 6.5 + SP_8) {
+    y = checkPageBreak(doc, y, 999, pageNum, quotation)
+    cardStartY = y
+  }
+  
+  let ly = y + SP_8
+  
+  // 1. Group Banner
+  ly = drawGroupBanner(doc, groupNo, group.description || `Group ${groupNo}`, group.is_toughened, group.cep, ly)
+  // 2. Table Header
+  ly = drawTableHeader(doc, cols, ly)
+  
+  let grpQty = 0, grpSqft = 0, grpCep = 0, grpAmt = 0
+  
+  // 3. Sizes list with loop split logic
+  sizes.forEach((size, si) => {
+    const w = size.width_inch || 0
+    const h = size.height_inch || 0
+    const qty = size.quantity || 1
+    const sqft = size.total_sqft || 0
+    const rft = parseFloat(((w + h) * 2 / 12 * qty).toFixed(3))
+    const cep = size.cep_charges || 0
+    const amt = size.subtotal || 0
+    
+    grpQty += qty; grpSqft += sqft; grpCep += cep; grpAmt += amt
+    
+    // Check if we need to split before drawing this row (row + padding + subtotal)
+    if ((PAGE_H - 18) - ly < 6.5 + SP_8 + 7.5) {
+      // Close current card box neatly on current page
+      drawCard(doc, MARGIN.l, cardStartY, CONTENT_W, ly - cardStartY, null, C.border, 2.0)
+      
+      // Force page break
+      y = checkPageBreak(doc, y, 999, pageNum, quotation)
+      cardStartY = y
+      ly = y + SP_8
+      
+      // Start a continuation card box
+      ly = drawGroupBanner(doc, groupNo, (group.description || `Group ${groupNo}`) + ' (Continued)', group.is_toughened, group.cep, ly)
+      ly = drawTableHeader(doc, cols, ly)
+    }
+    
+    const chargedW = size.charged_w_inch || 0
+    const chargedH = size.charged_h_inch || 0
+    const chargedSizeStr = (chargedW > 0 || chargedH > 0) ? `${chargedW}" x ${chargedH}"` : '-'
+    
+    const vals = [
+      String.fromCharCode(97 + si) + ')',
+      w > 0 ? toFraction(w) + '"' : '',
+      h > 0 ? toFraction(h) + '"' : '',
+      chargedSizeStr,
+      String(qty),
+      sqft.toFixed(3),
+      rft.toFixed(3),
+      ...(hasCep ? [cep > 0 ? fmtR(cep) : '-'] : []),
+      fmtR(amt)
+    ]
+    
+    ly = drawDataRow(doc, cols, vals, si % 2 === 1, ly)
   })
+  
+  // 4. Processes
+  if (allProcs.length > 0) {
+    const procsHeight = 6.5 + allProcs.length * 6.5 + SP_8 * 2
+    if ((PAGE_H - 18) - ly < procsHeight + 7.5) {
+      // Close current card
+      drawCard(doc, MARGIN.l, cardStartY, CONTENT_W, ly - cardStartY, null, C.border, 2.0)
+      
+      // Page break
+      y = checkPageBreak(doc, y, 999, pageNum, quotation)
+      cardStartY = y
+      ly = y + SP_8
+      
+      // Continuation banner
+      ly = drawGroupBanner(doc, groupNo, (group.description || `Group ${groupNo}`) + ' - Processes (Continued)', group.is_toughened, group.cep, ly)
+    }
+    
+    ly += SP_8
+    drawRect(doc, MARGIN.l + SP_8, ly, CONTENT_W - 2 * SP_8, 6.5, C.procHeader)
+    setFont(doc, 7, 'bold', C.white)
+    drawText(doc, 'GROUP & SIZE PROCESS CHARGES', MARGIN.l + SP_8 + 3, ly + 4.5)
+    ly += 6.5
+    
+    allProcs.forEach((p, pi) => {
+      if (pi % 2 === 1) {
+        drawRect(doc, MARGIN.l + SP_8, ly, CONTENT_W - 2 * SP_8, 6.5, C.rowAlt)
+      }
+      setFont(doc, 7, 'normal', C.text)
+      drawText(doc, (p.process_name || p.name || '-').substring(0, 45), MARGIN.l + SP_8 + 3, ly + 4.5)
+      
+      setFont(doc, 7, 'bold', C.text)
+      drawText(doc, `${p.qty_area || 0} x ${fmtR(p.rate || 0)} = ${fmtR(p.amount || 0)}`, MARGIN.l + CONTENT_W - SP_8 - 5.0, ly + 4.5, { align: 'right' })
+      drawLine(doc, MARGIN.l + SP_8, ly + 6.5, MARGIN.l + CONTENT_W - SP_8, ly + 6.5, C.borderLight, 0.15)
+      ly += 6.5
+    })
+    ly += SP_8
+  }
+  
+  // 5. Group Subtotal
+  ly = drawGroupSubtotal(doc, cols, grpQty, grpSqft, grpCep, grpAmt, hasCep, ly)
+  
+  // Close the final container box
+  drawCard(doc, MARGIN.l, cardStartY, CONTENT_W, ly - cardStartY, null, C.border, 2.0)
+  
+  return { endY: ly, grpQty, grpSqft, grpCep, grpAmt }
+}
 
-  // Right side: totals
-  let ry = startY + 2
-  const lx = mid + 8
-  const vx = pw - RM - 2
+// ── Total Summary Bar ──
+const drawTotalBar = (doc, totalQty, totalSqft, totalAmt, y) => {
+  const barH = 9
+  drawCard(doc, MARGIN.l, y, CONTENT_W, barH, C.primaryLight, C.primary, 1.5)
+  setFont(doc, 8, 'bold', C.primaryMid)
+  drawText(doc, 'GLASS TOTALS SUMMARY', MARGIN.l + 4, y + 6)
+  drawText(doc, `Qty: ${totalQty}`, MARGIN.l + 65, y + 6)
+  drawText(doc, `Area: ${totalSqft.toFixed(3)} Sqft`, MARGIN.l + 105, y + 6)
+  drawText(doc, `Glass Amount: ${fmtR(totalAmt)}`, MARGIN.l + CONTENT_W - 5.0, y + 6, { align: 'right' })
+  return y + barH
+}
 
-  // Vertical divider
-  doc.setDrawColor(180, 195, 230)
-  doc.line(mid + 4, startY, mid + 4, startY + 80)
+// ── Hardware / Labor / Wastage Card Drawing ──
+const calculateHardwareHeight = (items) => {
+  if (!items?.length) return 0
+  return SP_8 + 7 + 7 + items.length * 6.5 + 7.5 + SP_8 + SP_16
+}
 
+const drawHardwareCard = (doc, items, y) => {
+  const h = calculateHardwareHeight(items)
+  drawCard(doc, MARGIN.l, y, CONTENT_W, h - SP_16, C.white, C.border, 2.0)
+  
+  let ly = y + SP_8
+  drawRect(doc, MARGIN.l + 0.3, ly, CONTENT_W - 0.6, 7, C.hwHeaderBg)
+  setFont(doc, 8, 'bold', C.hwHeader)
+  drawText(doc, 'HARDWARE ITEMS', MARGIN.l + 4, ly + 5)
+  ly += 7
+  
+  const hcols = [
+    { l: 'Description', x: MARGIN.l + 4, w: CONTENT_W - 90, a: 'left' },
+    { l: 'Qty', x: MARGIN.l + CONTENT_W - 86, w: 12, a: 'c' },
+    { l: 'UOM', x: MARGIN.l + CONTENT_W - 74, w: 14, a: 'c' },
+    { l: 'Rate', x: MARGIN.l + CONTENT_W - 60, w: 25, a: 'r' },
+    { l: 'Amount', x: MARGIN.l + CONTENT_W - 35, w: 31, a: 'r' },
+  ]
+  
+  drawRect(doc, MARGIN.l + 0.3, ly, CONTENT_W - 0.6, 7, C.white)
+  drawLine(doc, MARGIN.l + 0.3, ly + 7, MARGIN.l + CONTENT_W - 0.3, ly + 7, C.border, 0.2)
+  setFont(doc, 7, 'bold', C.hwHeader)
+  hcols.forEach(c => {
+    const cx = c.l === 'Amount' ? MARGIN.l + CONTENT_W - 5.0 : (c.a === 'r' ? c.x + c.w : c.a === 'c' ? c.x + c.w / 2 : c.x)
+    drawText(doc, c.l, cx, ly + 5, { align: c.l === 'Amount' ? 'right' : (c.a === 'r' ? 'right' : c.a === 'c' ? 'center' : 'left') })
+  })
+  ly += 7
+  
+  items.forEach((item, i) => {
+    if (i % 2 === 1) {
+      drawRect(doc, MARGIN.l + 0.3, ly, CONTENT_W - 0.6, 6.5, C.rowAlt)
+    }
+    setFont(doc, 7.5, 'normal', C.text)
+    drawText(doc, (item.description || '-').substring(0, 48), MARGIN.l + 4, ly + 4.5)
+    drawText(doc, String(item.qty || 0), MARGIN.l + CONTENT_W - 86 + 6, ly + 4.5, { align: 'center' })
+    drawText(doc, (item.uom || 'Nos').substring(0, 6), MARGIN.l + CONTENT_W - 74 + 7, ly + 4.5, { align: 'center' })
+    drawText(doc, fmtR(item.rate || 0), MARGIN.l + CONTENT_W - 35, ly + 4.5, { align: 'right' })
+    drawText(doc, fmtR(item.amount || 0), MARGIN.l + CONTENT_W - 5.0, ly + 4.5, { align: 'right' })
+    drawLine(doc, MARGIN.l + 0.3, ly + 6.5, MARGIN.l + CONTENT_W - 0.3, ly + 6.5, C.borderLight, 0.15)
+    ly += 6.5
+  })
+  
+  const tot = items.reduce((s, item) => s + (item.amount || 0), 0)
+  drawRect(doc, MARGIN.l + 0.3, ly, CONTENT_W - 0.6, 7.5, C.hwHeaderBg)
+  drawLine(doc, MARGIN.l + 0.3, ly, MARGIN.l + CONTENT_W - 0.3, ly, C.border, 0.3)
+  setFont(doc, 7.5, 'bold', C.hwHeader)
+  drawText(doc, 'Hardware Items Total', MARGIN.l + 4, ly + 5.5)
+  drawText(doc, fmtR(tot), MARGIN.l + CONTENT_W - 5.0, ly + 5.5, { align: 'right' })
+  
+  return y + h
+}
+
+const calculateLaborHeight = (items) => {
+  if (!items?.length) return 0
+  return SP_8 + 7 + 7 + items.length * 6.5 + 7.5 + SP_8 + SP_16
+}
+
+const drawLaborCard = (doc, items, y) => {
+  const h = calculateLaborHeight(items)
+  drawCard(doc, MARGIN.l, y, CONTENT_W, h - SP_16, C.white, C.border, 2.0)
+  
+  let ly = y + SP_8
+  drawRect(doc, MARGIN.l + 0.3, ly, CONTENT_W - 0.6, 7, C.procHeaderBg)
+  setFont(doc, 8, 'bold', C.procHeader)
+  drawText(doc, 'LABOR & SERVICE CHARGES', MARGIN.l + 4, ly + 5)
+  ly += 7
+  
+  const hcols = [
+    { l: 'Description', x: MARGIN.l + 4, w: CONTENT_W - 90, a: 'left' },
+    { l: 'Qty', x: MARGIN.l + CONTENT_W - 86, w: 12, a: 'c' },
+    { l: 'UOM', x: MARGIN.l + CONTENT_W - 74, w: 14, a: 'c' },
+    { l: 'Rate', x: MARGIN.l + CONTENT_W - 60, w: 25, a: 'r' },
+    { l: 'Amount', x: MARGIN.l + CONTENT_W - 35, w: 31, a: 'r' },
+  ]
+  
+  drawRect(doc, MARGIN.l + 0.3, ly, CONTENT_W - 0.6, 7, C.white)
+  drawLine(doc, MARGIN.l + 0.3, ly + 7, MARGIN.l + CONTENT_W - 0.3, ly + 7, C.border, 0.2)
+  setFont(doc, 7, 'bold', C.procHeader)
+  hcols.forEach(c => {
+    const cx = c.l === 'Amount' ? MARGIN.l + CONTENT_W - 5.0 : (c.a === 'r' ? c.x + c.w : c.a === 'c' ? c.x + c.w / 2 : c.x)
+    drawText(doc, c.l, cx, ly + 5, { align: c.l === 'Amount' ? 'right' : (c.a === 'r' ? 'right' : c.a === 'c' ? 'center' : 'left') })
+  })
+  ly += 7
+  
+  items.forEach((item, i) => {
+    if (i % 2 === 1) {
+      drawRect(doc, MARGIN.l + 0.3, ly, CONTENT_W - 0.6, 6.5, C.rowAlt)
+    }
+    setFont(doc, 7.5, 'normal', C.text)
+    drawText(doc, (item.description || '-').substring(0, 48), MARGIN.l + 4, ly + 4.5)
+    drawText(doc, String(item.qty || 0), MARGIN.l + CONTENT_W - 86 + 6, ly + 4.5, { align: 'center' })
+    drawText(doc, (item.uom || 'Nos').substring(0, 6), MARGIN.l + CONTENT_W - 74 + 7, ly + 4.5, { align: 'center' })
+    drawText(doc, fmtR(item.rate || 0), MARGIN.l + CONTENT_W - 35, ly + 4.5, { align: 'right' })
+    drawText(doc, fmtR(item.amount || 0), MARGIN.l + CONTENT_W - 5.0, ly + 4.5, { align: 'right' })
+    drawLine(doc, MARGIN.l + 0.3, ly + 6.5, MARGIN.l + CONTENT_W - 0.3, ly + 6.5, C.borderLight, 0.15)
+    ly += 6.5
+  })
+  
+  const tot = items.reduce((s, item) => s + (item.amount || 0), 0)
+  drawRect(doc, MARGIN.l + 0.3, ly, CONTENT_W - 0.6, 7.5, C.procHeaderBg)
+  drawLine(doc, MARGIN.l + 0.3, ly, MARGIN.l + CONTENT_W - 0.3, ly, C.border, 0.3)
+  setFont(doc, 7.5, 'bold', C.procHeader)
+  drawText(doc, 'Labor Charges Total', MARGIN.l + 4, ly + 5.5)
+  drawText(doc, fmtR(tot), MARGIN.l + CONTENT_W - 5.0, ly + 5.5, { align: 'right' })
+  
+  return y + h
+}
+
+const calculateWastageHeight = (items) => {
+  if (!items?.length) return 0
+  return SP_8 + 7 + 7 + items.length * 6.5 + 7.5 + SP_8 + SP_16
+}
+
+const drawWastageCard = (doc, items, y) => {
+  const h = calculateWastageHeight(items)
+  drawCard(doc, MARGIN.l, y, CONTENT_W, h - SP_16, C.white, C.border, 2.0)
+  
+  let ly = y + SP_8
+  drawRect(doc, MARGIN.l + 0.3, ly, CONTENT_W - 0.6, 7, [254, 242, 242])
+  setFont(doc, 8, 'bold', [220, 38, 38])
+  drawText(doc, 'WASTAGE CHARGES', MARGIN.l + 4, ly + 5)
+  ly += 7
+  
+  const hcols = [
+    { l: 'Description', x: MARGIN.l + 4, w: CONTENT_W - 90, a: 'left' },
+    { l: 'Qty', x: MARGIN.l + CONTENT_W - 86, w: 12, a: 'c' },
+    { l: 'UOM', x: MARGIN.l + CONTENT_W - 74, w: 14, a: 'c' },
+    { l: 'Rate', x: MARGIN.l + CONTENT_W - 60, w: 25, a: 'r' },
+    { l: 'Amount', x: MARGIN.l + CONTENT_W - 35, w: 31, a: 'r' },
+  ]
+  
+  drawRect(doc, MARGIN.l + 0.3, ly, CONTENT_W - 0.6, 7, C.white)
+  drawLine(doc, MARGIN.l + 0.3, ly + 7, MARGIN.l + CONTENT_W - 0.3, ly + 7, C.border, 0.2)
+  setFont(doc, 7, 'bold', [220, 38, 38])
+  hcols.forEach(c => {
+    const cx = c.l === 'Amount' ? MARGIN.l + CONTENT_W - 5.0 : (c.a === 'r' ? c.x + c.w : c.a === 'c' ? c.x + c.w / 2 : c.x)
+    drawText(doc, c.l, cx, ly + 5, { align: c.l === 'Amount' ? 'right' : (c.a === 'r' ? 'right' : c.a === 'c' ? 'center' : 'left') })
+  })
+  ly += 7
+  
+  items.forEach((item, i) => {
+    if (i % 2 === 1) {
+      drawRect(doc, MARGIN.l + 0.3, ly, CONTENT_W - 0.6, 6.5, C.rowAlt)
+    }
+    setFont(doc, 7.5, 'normal', C.text)
+    drawText(doc, (item.description || '-').substring(0, 48), MARGIN.l + 4, ly + 4.5)
+    drawText(doc, String(item.qty || 0), MARGIN.l + CONTENT_W - 86 + 6, ly + 4.5, { align: 'center' })
+    drawText(doc, (item.uom || 'sqft').substring(0, 6), MARGIN.l + CONTENT_W - 74 + 7, ly + 4.5, { align: 'center' })
+    drawText(doc, fmtR(item.rate || 0), MARGIN.l + CONTENT_W - 35, ly + 4.5, { align: 'right' })
+    drawText(doc, fmtR(item.amount || 0), MARGIN.l + CONTENT_W - 5.0, ly + 4.5, { align: 'right' })
+    drawLine(doc, MARGIN.l + 0.3, ly + 6.5, MARGIN.l + CONTENT_W - 0.3, ly + 6.5, C.borderLight, 0.15)
+    ly += 6.5
+  })
+  
+  const tot = items.reduce((s, item) => s + (item.amount || 0), 0)
+  drawRect(doc, MARGIN.l + 0.3, ly, CONTENT_W - 0.6, 7.5, [254, 242, 242])
+  drawLine(doc, MARGIN.l + 0.3, ly, MARGIN.l + CONTENT_W - 0.3, ly, C.border, 0.3)
+  setFont(doc, 7.5, 'bold', [220, 38, 38])
+  drawText(doc, 'Wastage Charges Total', MARGIN.l + 4, ly + 5.5)
+  drawText(doc, fmtR(tot), MARGIN.l + CONTENT_W - 5.0, ly + 5.5, { align: 'right' })
+  
+  return y + h
+}
+
+// ── Financial Summary & Amount in Words Card (Perfect Side-by-Side) ──
+const calculateSummaryHeight = (totalsRows) => {
+  let h = SP_16 // top and bottom padding
+  totalsRows.forEach(r => {
+    if (r.divider) h += 4
+    else if (r.grand) h += 9
+    else h += 7
+  })
+  return h
+}
+
+const drawFinalSummaryBlock = (doc, totalsRows, amtWords, quotation, y) => {
+  const h = calculateSummaryHeight(totalsRows)
+  const mid = PAGE_W / 2
+  const colW = CONTENT_W / 2 - 2
+  
+  // --- Left Column Box (Details and Amount in Words) ---
+  drawCard(doc, MARGIN.l, y, colW, h, C.white, C.border, 2.0)
+  
+  let ly = y + SP_8 + 2
+  setFont(doc, 6.5, 'bold', C.textLight)
+  drawText(doc, 'PAYMENT TERMS', MARGIN.l + 5, ly)
+  setFont(doc, 7.5, 'bold', C.text)
+  drawText(doc, String(quotation.payment_terms || 'Immediate').substring(0, 30), MARGIN.l + 5, ly + 4)
+  
+  ly += 9.5
+  setFont(doc, 6.5, 'bold', C.textLight)
+  drawText(doc, 'VALIDITY PERIOD', MARGIN.l + 5, ly)
+  setFont(doc, 7.5, 'normal', C.text)
+  drawText(doc, '8 days from date of issue', MARGIN.l + 5, ly + 4)
+  
+  ly += 9.5
+  setFont(doc, 6.5, 'bold', C.textLight)
+  drawText(doc, 'HSN CODE / CLASSIFICATION', MARGIN.l + 5, ly)
+  setFont(doc, 7.5, 'normal', C.text)
+  drawText(doc, '7007 (Safety/Toughened Glass)', MARGIN.l + 5, ly + 4)
+  
+  // Amount in Words box placed at bottom of Left Card
+  const amtBoxH = 14
+  const amtBoxY = y + h - amtBoxH - SP_8
+  drawCard(doc, MARGIN.l + SP_8, amtBoxY, colW - 2 * SP_8, amtBoxH, C.summaryBg, C.borderLight, 1.5)
+  
+  setFont(doc, 7, 'bold', C.primaryMid)
+  drawText(doc, 'Amount in Words:', MARGIN.l + SP_8 + 4, amtBoxY + 4.5)
+  setFont(doc, 7, 'normal', C.text)
+  const wlines = doc.splitTextToSize(amtWords, colW - 2 * SP_8 - 8)
+  wlines.slice(0, 2).forEach((l, i) => {
+    drawText(doc, l, MARGIN.l + SP_8 + 4, amtBoxY + 8.5 + i * 3.5)
+  })
+  
+  // --- Right Column Box (Financial Summary Card) ---
+  drawCard(doc, mid + 2, y, colW, h, C.white, C.border, 2.0)
+  
+  let ry = y + SP_8
+  const rxLabel = mid + 6
+  const rxValue = mid + 2 + colW - 4
+  
   totalsRows.forEach(row => {
-    if (!row) return
     if (row.divider) {
-      doc.setDrawColor(180, 195, 230)
-      doc.line(lx - 2, ry + 2, vx, ry + 2)
-      ry += 5; return
+      drawLine(doc, rxLabel, ry + 1, rxValue, ry + 1, C.borderLight, 0.25)
+      ry += 4
+      return
     }
     if (row.grand) {
-      doc.setFillColor(26, 35, 126)
-      doc.rect(lx - 3, ry - 1, vx - lx + 6, 9, 'F')
-      doc.setFont('helvetica', 'bold')
-      doc.setFontSize(9)
-      doc.setTextColor(255, 255, 255)
-      doc.text(row.label, lx, ry + 6)
-      doc.text(fmtN(row.value), vx, ry + 6, { align: 'right' })
-      doc.setTextColor(0, 0, 0)
-      ry += 11; return
+      drawRect(doc, mid + 2.3, ry - 1, colW - 0.6, 8, C.grandBg)
+      setFont(doc, 8.5, 'bold', C.white)
+      drawText(doc, row.label, rxLabel, ry + 4.5)
+      drawText(doc, fmtR(row.value), rxValue, ry + 4.5, { align: 'right' })
+      ry += 8
+      return
     }
+    if (row.sub) {
+      drawRect(doc, mid + 2.3, ry - 1, colW - 0.6, 7, C.primaryLight)
+      setFont(doc, 7.5, 'bold', C.primaryMid)
+      drawText(doc, row.label, rxLabel, ry + 4)
+      drawText(doc, fmtR(row.value), rxValue, ry + 4, { align: 'right' })
+      ry += 7
+      return
+    }
+    
+    setFont(doc, 7.5, 'normal', C.text)
+    drawText(doc, row.label, rxLabel, ry + 4.5)
+    
     if (row.pct) {
-      doc.setFont('helvetica', 'normal')
-      doc.setFontSize(8)
-      doc.setTextColor(0, 0, 0)
-      doc.text(row.label, lx, ry + 4)
-      doc.text(`${row.pct} %`, lx + 45, ry + 4)
-      doc.text(fmtN(row.value), vx, ry + 4, { align: 'right' })
-    } else if (row.sub) {
-      doc.setFillColor(235, 241, 255)
-      doc.rect(lx - 3, ry - 1, vx - lx + 6, 8, 'F')
-      doc.setFont('helvetica', 'bold')
-      doc.setFontSize(8)
-      doc.setTextColor(26, 35, 126)
-      doc.text(row.label, lx, ry + 5)
-      doc.text(fmtN(row.value), vx, ry + 5, { align: 'right' })
-      doc.setTextColor(0, 0, 0)
-      ry += 9; return
-    } else {
-      doc.setFont('helvetica', 'normal')
-      doc.setFontSize(8)
-      doc.setTextColor(0, 0, 0)
-      doc.text(row.label, lx, ry + 4)
-      doc.text(fmtN(row.value), vx, ry + 4, { align: 'right' })
+      setFont(doc, 6.5, 'normal', C.textLight)
+      drawText(doc, `(${row.pct}%)`, rxLabel + 32, ry + 4.5)
     }
-    ry += 7
+    
+    setFont(doc, 7.5, row.bold ? 'bold' : 'normal', C.text)
+    drawText(doc, fmtR(row.value), rxValue, ry + 4.5, { align: 'right' })
+    drawLine(doc, mid + 2.3, ry + 6, mid + 2 + colW - 0.3, ry + 6, C.borderLight, 0.15)
+    ry += 6.5
   })
-
-  // Amount in words — below totals on right side
-  if (amtWords) {
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(7.5)
-    doc.setTextColor(0, 0, 0)
-    doc.text('Amt. in Words:', lx, ry + 4)
-    doc.setFont('helvetica', 'normal')
-    const wlines = doc.splitTextToSize(amtWords, vx - lx - 2)
-    wlines.slice(0, 2).forEach((l, i) =>
-      doc.text(l, lx, ry + 8 + i * 4)
-    )
-    ry += 16
-  }
-
-  return Math.max(ly, ry) + 4
+  
+  return y + h
 }
 
-// ── PI Remark row ─────────────────────────────────────────────
-const drawRemarkRow = (doc, remark, note, y) => {
-  const pw = doc.internal.pageSize.getWidth()
-  const mid = pw / 2
-  doc.setDrawColor(180, 195, 230)
-  doc.line(LM, y, pw - RM, y)
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(7.5)
-  doc.setTextColor(0, 0, 0)
-  doc.text('PI Remark:', LM + 2, y + 4)
-  doc.text('Gen. Note:', mid + 2, y + 4)
-  doc.setFont('helvetica', 'normal')
-  if (remark) doc.text(remark.substring(0, 40), LM + 22, y + 4)
-  if (note) doc.text(note.substring(0, 40), mid + 20, y + 4)
-  doc.line(LM, y + 6, pw - RM, y + 6)
-  return y + 8
-}
-
-// ── Terms & Conditions ────────────────────────────────────────
-const drawTerms = (doc, terms, y) => {
-  const pw = doc.internal.pageSize.getWidth()
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(7.5)
-  doc.setTextColor(0, 0, 0)
-  doc.text('Terms & Conditions :', LM + 2, y + 4)
-  y += 6
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(7)
+// ── Terms & Signature Section ──
+const drawTerms = (doc, y) => {
+  const terms = [
+    'Please double-check glass specifications, size, quantity, rates and taxes before confirming.',
+    'Goods sold cannot be exchanged or returned after confirmation.',
+    'Accepted tolerance: +/- 2mm in dimensions.',
+    'Delivery, unloading & hauling charges are extra and payable by buyer.',
+    'Delayed payment charges @ 2% per month after due date.',
+    'All disputes subject to Palghar jurisdiction.',
+  ]
+  setFont(doc, 7.5, 'bold', C.primaryMid)
+  drawText(doc, 'Terms & Conditions', MARGIN.l + 2, y)
+  y += 4.5
+  setFont(doc, 7, 'normal', C.textMid)
   terms.forEach((t, i) => {
-    const lines = doc.splitTextToSize(`${i + 1}. ${t}`, pw - LM - RM - 4)
-    lines.forEach(l => { doc.text(l, LM + 2, y); y += 3.5 })
+    const lines = doc.splitTextToSize(`${i + 1}. ${t}`, CONTENT_W - 4)
+    lines.forEach(l => { drawText(doc, l, MARGIN.l + 2, y); y += 3.2 })
   })
-  return y + 3
+  return y
 }
 
-// ── Page footer ───────────────────────────────────────────────
-const drawPageFooter = (doc, docNo, pageNum, totalPages) => {
-  const pw = doc.internal.pageSize.getWidth()
-  const ph = doc.internal.pageSize.getHeight()
-  doc.setDrawColor(180, 190, 220)
-  doc.line(LM, ph - 10, pw - RM, ph - 10)
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(7)
-  doc.setTextColor(80, 80, 100)
-  doc.text(`Proforma No : ${docNo}`, LM + 2, ph - 6)
-  doc.text(`Print DateTime : ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`, pw / 2, ph - 6, { align: 'center' })
-  doc.text(`Page ${pageNum} of ${totalPages}`, pw - RM - 2, ph - 6, { align: 'right' })
+const drawSignatureStrip = (doc, company, y) => {
+  const cardW = (CONTENT_W - SP_16) / 3
+  const cardH = 22
+  
+  const blocks = [
+    { label: 'Customer Acceptance', info: 'I/We accept specs & rates.', line: 'Signature & Stamp / Date' },
+    { label: 'Prepared By', info: 'Sales & Estimations Desk', line: 'Account Executive Signature' },
+    { label: `For ${company.name || 'ESSAR SONS'}`, info: 'Office Seal Area', line: 'Authorised Signatory' }
+  ]
+  
+  blocks.forEach((b, i) => {
+    const x = MARGIN.l + i * (cardW + SP_8)
+    drawCard(doc, x, y, cardW, cardH, C.white, C.border, 1.5)
+    
+    setFont(doc, 7, 'bold', C.primaryMid)
+    drawText(doc, b.label, x + 4, y + 4.5)
+    
+    setFont(doc, 6.5, 'normal', C.textLight)
+    drawText(doc, b.info, x + 4, y + 8.5)
+    
+    drawLine(doc, x + 4, y + 15.5, x + cardW - 4, y + 15.5, C.border, 0.25)
+    
+    setFont(doc, 6.5, 'normal', C.textLight)
+    drawText(doc, b.line, x + cardW / 2, y + 19.5, { align: 'center' })
+  })
+  
+  return y + cardH
 }
 
-// ════════════════════════════════════════════════════════════════
-// MAIN: QUOTATION / PROFORMA INVOICE PDF
-// ════════════════════════════════════════════════════════════════
+const drawFooter = (doc, quoteNo, pageNum, totalPages) => {
+  const y = PAGE_H - 18 // starts at 279 mm
+  drawRect(doc, MARGIN.l - 1.8, y, CONTENT_W + 3.6, 7.5, C.primary)
+  setFont(doc, 6.5, 'normal', [180, 190, 230])
+  drawText(doc, `Ref No: ${quoteNo || ''}`, MARGIN.l + 2, y + 4.8)
+  drawText(doc, `Confidential &bull; Computer Generated Document`, PAGE_W / 2, y + 4.8, { align: 'center' })
+  drawText(doc, `Page ${pageNum} of ${totalPages}`, PAGE_W - MARGIN.r - 4, y + 4.8, { align: 'right' })
+}
+
+// Page Break Manager with precise heights and page numbering pass
+const checkPageBreak = (doc, y, heightNeeded, pageNum, quotation) => {
+  const usablePageHeight = PAGE_H - 20
+  if (y + heightNeeded > usablePageHeight) {
+    doc.addPage()
+    pageNum.val++
+    drawBorder(doc)
+    
+    let ny = MARGIN.t + SP_8
+    setFont(doc, 9, 'bold', C.primary)
+    drawText(doc, getCompany(quotation.company_id).name || 'ESSAR SONS', MARGIN.l + 2, ny + 4)
+    setFont(doc, 7, 'normal', C.textLight)
+    drawText(doc, `Ref No: ${quotation.quote_number || quotation.so_number || quotation.po_number || ''}`, PAGE_W - MARGIN.r - 2, ny + 4, { align: 'right' })
+    drawLine(doc, MARGIN.l, ny + 7, MARGIN.l + CONTENT_W, ny + 7, C.border, 0.3)
+    
+    return ny + 10
+  }
+  return y
+}
+
+const addFootersAndPageNumbers = (doc, quoteNo) => {
+  const totalPages = doc.getNumberOfPages()
+  for (let i = 1; i <= totalPages; i++) {
+    doc.setPage(i)
+    drawFooter(doc, quoteNo, i, totalPages)
+  }
+}
+
+// ── Public Exported APIs ──────
+
 export const generateQuotationPDF = (quotation) => {
   try {
-    const {
-      hardware_items = [],
-      labor_items = [],
-    } = quotation
+    const { hardware_items = [], labor_items = [], wastage_items = [] } = quotation
     const doc = new jsPDF('p', 'mm', 'a4')
-    const pw = doc.internal.pageSize.getWidth()
-    const ph = doc.internal.pageSize.getHeight()
     const company = getCompany(quotation.company_id)
 
-    // Fetch customer
     let cust = {
       name: quotation.customer_name || '',
-      address: '', phone: '', gstin: '', state: ''
+      address: '', phone: quotation.customer_phone || '', gstin: quotation.customer_gstin || ''
     }
     try {
       const all = JSON.parse(localStorage.getItem('customers') || '[]')
@@ -569,465 +919,237 @@ export const generateQuotationPDF = (quotation) => {
         address: [c.address, c.city].filter(Boolean).join(', '),
         phone: c.phone || c.mobile || '',
         gstin: c.gstin || '',
-        state: c.state || 'Maharashtra',
       }
     } catch { }
 
-    drawBorder(doc)
-
-    // ── Header ──────────────────────────────────────────────
-    let y = drawCompanyHeader(doc, company)
-
-    // ── Doc info row ─────────────────────────────────────────
-    y = drawDocInfoRow(doc, [
-      { label: 'PROFORMA No :', value: quotation.quote_number, lw: 28 },
-      { label: 'Date :', value: quotation.quote_date, lw: 14 },
-      { label: 'Valid Until :', value: quotation.valid_until, lw: 22 },
-      { label: 'Salesperson :', value: quotation.salesperson, lw: 23 },
-    ], y)
-
-    y = drawDocInfoRow(doc, [
-      { label: 'Payment :', value: quotation.payment_terms, lw: 18 },
-      { label: 'Delivery Date :', value: '', lw: 24 },
-      { label: 'Prepared By :', value: quotation.salesperson || 'Admin', lw: 23 },
-      { label: 'Project :', value: '', lw: 15 },
-    ], y)
-
-    // ── Bill To / Ship To ────────────────────────────────────
-    y = drawBillShipTo(doc, cust, cust, y)
-
-    // ── Account row ──────────────────────────────────────────
-    y = drawAccountRow(doc, cust.name, '', '0', y)
-
-    // ── Build table data from groups ─────────────────────────
     const groups = quotation.groups || []
     const hasCep = groups.some(g => g.cep)
     const cols = buildCols(hasCep)
+    let pageNum = { val: 1, total: '?' }
 
-    let totalQty = 0
-    let totalArea = 0
-    let totalCep = 0
-    let grandGlass = 0
-    let procTotal = 0
+    // Page 1 Setup
+    drawBorder(doc)
+    let y = drawHeader(doc, company, 'PROFORMA INVOICE')
+    y = drawDocInfo(doc, quotation, y, 'PROFORMA INVOICE')
+    y = drawCustomerCard(doc, cust, y)
+
+    let totalQty = 0, totalSqft = 0, totalCep = 0, grandGlass = 0
     let groupNo = 0
 
-    // Collect all rows to render
-    const allRows = []
-
-    groups.forEach((group, gi) => {
+    groups.forEach((group) => {
       groupNo++
-      // Group header row (like "1 OB252629480 10MM CLEAR TGH...")
-      let desc = group.description || ''
-      if (group.is_toughened && !desc.toLowerCase().includes('toughen'))
-        desc += ' Toughen'
-      if (group.cep) desc += ' CEP'
-      allRows.push({ type: 'groupHeader', num: groupNo, desc })
-
-      // Count processes
-      let holes = 0, cutouts = 0
-        ; (group.processes || []).forEach(p => {
-          const pm = getPM(p.process_id)
-          if (pm?.process_type === 'hole') holes += Math.round(p.qty_area || 0)
-          if (pm?.process_type === 'cutout') cutouts += Math.round(p.qty_area || 0)
-          if (pm && pm.process_type !== 'polishing')
-            procTotal += parseFloat(p.amount || 0)
-        })
-
-      group.sizes?.forEach((size, si) => {
-        const w = size.width_inch || 0
-        const h = size.height_inch || 0
-        const qty = size.quantity || 1
-        const area = size.total_sqft || 0
-        const cep = size.cep_charges || 0
-        const amt = size.subtotal || 0
-
-        totalQty += qty
-        totalArea += area
-        totalCep += cep
-        grandGlass += amt
-
-        const sizeLabel = String.fromCharCode(97 + si) + ')'
-
-        const vals = [
-          sizeLabel,
-          si === 0 ? desc.substring(0, 28) : '',
-          w > 0 ? toFraction(w) + '"' : '',
-          h > 0 ? toFraction(h) + '"' : '',
-          String(qty),
-          area.toFixed(3),
-          parseFloat(((w + h) * 2 / 12 * qty).toFixed(3)).toString(),
-          ...(hasCep ? [cep > 0 ? fmtN(cep) : ''] : []),
-          fmtN(amt),
-        ]
-
-        allRows.push({
-          type: 'data',
-          vals: vals,
-          isAlt: si % 2 === 0
-        })
-      })
+      const res = drawGroupCard(doc, group, groupNo, hasCep, cols, y, pageNum, quotation)
+      totalQty += res.grpQty
+      totalSqft += res.grpSqft
+      totalCep += res.grpCep
+      grandGlass += res.grpAmt
+      y = res.endY + SP_16
     })
 
-    // ── Render table rows ─────────────────────────────────────
-    y = drawTH(doc, y, cols)
-    let pageNum = 1
+    // Glass total bar
+    y = checkPageBreak(doc, y, 9 + SP_16, pageNum, quotation)
+    y = drawTotalBar(doc, totalQty, totalSqft, grandGlass, y) + SP_16
 
-    allRows.forEach(row => {
-      if (y > ph - 90) {
-        drawPageFooter(doc, quotation.quote_number || 'QT', pageNum, '?')
-        doc.addPage()
-        pageNum++
-        drawBorder(doc)
-        y = drawCompanyHeader(doc, company)
-        y = drawTH(doc, y, cols)
-      }
-      if (row.type === 'groupHeader') {
-        y = drawGroupHeader(doc, row.num, '', row.desc, y)
-      } else {
-        y = drawTR(doc, y, cols, row.vals, row.isAlt)
-      }
-    })
-
-    // ── Sub-total row ─────────────────────────────────────────
-    y = drawSubTotalRow(doc, y, cols,
-      totalQty, totalArea, totalCep, grandGlass, hasCep)
-
-    // ── HSN row ───────────────────────────────────────────────
-    y = drawHSNRow(doc, y, '7007')
-
-    // ── Total Summery row ─────────────────────────────────────
-    y = drawTotalSummery(doc, y, totalQty, totalArea, grandGlass)
-
-    const margin = LM
-
-    // ── PROCESS CHARGES (FIX G: custom layout) ─────────────────────────
-    const allProcesses = (groups || []).flatMap(g => [
-      ...(g.processes || []),
-      ...(g.sizes || []).flatMap(s => s.size_processes || [])
-    ]).filter(p => (p.amount || 0) > 0)
-
-    if (allProcesses.length > 0) {
-      y += 6
-      if (y + 20 > ph - 20) { doc.addPage(); drawBorder(doc); y = 20 }
-
-      // Section header
-      doc.setFillColor(230, 230, 250)
-      doc.rect(LM, y, pw - LM - RM, 6, 'F')
-      doc.setFont('helvetica', 'bold')
-      doc.setFontSize(8)
-      doc.setTextColor(50, 50, 180)
-      doc.text('Process Charges', LM + 2, y + 4.5)
-      y += 6
-
-      // Column headers
-      const pcols = [
-        { label: 'Process', x: LM, w: 70, a: 'left' },
-        { label: 'Charge Type', x: LM + 70, w: 32, a: 'left' },
-        { label: 'Qty/Area', x: LM + 102, w: 24, a: 'right' },
-        { label: 'Rate', x: LM + 126, w: 26, a: 'right' },
-        { label: 'Amount', x: LM + 152, w: 36, a: 'right' },
-      ]
-      doc.setFillColor(220, 228, 250)
-      doc.rect(LM, y, pw - LM - RM, 7, 'F')
-      doc.setFont('helvetica', 'bold')
-      doc.setFontSize(7.5)
-      doc.setTextColor(0, 0, 60)
-      pcols.forEach(c => {
-        const cx = c.a === 'right' ? c.x + c.w - 1 : c.x + 1
-        doc.text(c.label, cx, y + 5, { align: c.a === 'right' ? 'right' : 'left' })
-      })
-      y += 7
-
-      // Rows
-      allProcesses.forEach((p, i) => {
-        if (y + 10 > ph - 20) { doc.addPage(); drawBorder(doc); y = 20 }
-        if (i % 2 === 0) {
-          doc.setFillColor(248, 250, 255)
-          doc.rect(LM, y, pw - LM - RM, 6, 'F')
-        }
-        doc.setFont('helvetica', 'normal')
-        doc.setFontSize(7.5)
-        doc.setTextColor(20, 20, 60)
-        const name = (p.process_name || p.name || '-').substring(0, 38)
-        const type = (p.charge_type || '-').substring(0, 16)
-        const qty = String(p.qty_area || 0)
-        const rate = 'Rs.' + Number(p.rate || 0).toFixed(2)
-        const amt = 'Rs.' + Number(p.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-        doc.text(name, LM + 1, y + 4)
-        doc.text(type, LM + 71, y + 4)
-        doc.text(qty, LM + 125, y + 4, { align: 'right' })
-        doc.text(rate, LM + 151, y + 4, { align: 'right' })
-        doc.text(amt, LM + 187, y + 4, { align: 'right' })
-        doc.setDrawColor(210, 218, 240)
-        doc.line(LM, y + 6, pw - RM, y + 6)
-        y += 6
-      })
-
-      // Process total row
-      const procTotalAmt = allProcesses.reduce((s, p) => s + (p.amount || 0), 0)
-      doc.setFillColor(235, 240, 255)
-      doc.rect(LM, y, pw - LM - RM, 7, 'F')
-      doc.setFont('helvetica', 'bold')
-      doc.setFontSize(8)
-      doc.setTextColor(0, 0, 100)
-      doc.text('Process Total', LM + 1, y + 5)
-      doc.text('Rs.' + procTotalAmt.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-        LM + 187, y + 5, { align: 'right' })
-      y += 7
+    // Hardware Card
+    if (hardware_items.length > 0) {
+      const hwHeight = calculateHardwareHeight(hardware_items)
+      y = checkPageBreak(doc, y, hwHeight, pageNum, quotation)
+      y = drawHardwareCard(doc, hardware_items, y) + SP_16
     }
 
-    // ── HARDWARE ITEMS (FIX H: autoTable with explicit width & Rs. format) ──
-    if (hardware_items?.length > 0) {
-      y += 6
-      if (y + 10 > ph - 20) { doc.addPage(); y = 20 }
-
-      doc.setFontSize(9)
-      doc.setFont('helvetica', 'bold')
-      doc.setTextColor(180, 100, 0)
-      doc.text('Hardware Items', margin, y)
-      y += 4
-
-      autoTable(doc, {
-        startY: y,
-        head: [['Description', 'Qty', 'UOM', 'Rate', 'Amount']],
-        body: hardware_items.map(h => [
-          h.description || '—',
-          String(h.qty || 0),
-          h.uom || '—',
-          'Rs.' + Number(h.rate || 0).toFixed(2),
-          'Rs.' + Number(h.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-        ]),
-        styles: { fontSize: 8, cellPadding: 2 },
-        headStyles: { fillColor: [180, 120, 0], textColor: 255, fontStyle: 'bold' },
-        columnStyles: {
-          0: { cellWidth: 80 },
-          1: { cellWidth: 14, halign: 'right' },
-          2: { cellWidth: 18 },
-          3: { cellWidth: 32, halign: 'right' },
-          4: { cellWidth: 46, halign: 'right' },
-        },
-        margin: { left: margin, right: margin },
-        didDrawPage: () => { drawBorder(doc) }
-      })
-      y = doc.lastAutoTable.finalY
+    // Labor Card
+    if (labor_items.length > 0) {
+      const lbHeight = calculateLaborHeight(labor_items)
+      y = checkPageBreak(doc, y, lbHeight, pageNum, quotation)
+      y = drawLaborCard(doc, labor_items, y) + SP_16
     }
 
-    // ── LABOR CHARGES (FIX H: autoTable with explicit width & Rs. format) ──
-    if (labor_items?.length > 0) {
-      y += 6
-      if (y + 10 > ph - 20) { doc.addPage(); y = 20 }
-
-      doc.setFontSize(9)
-      doc.setFont('helvetica', 'bold')
-      doc.setTextColor(100, 50, 180)
-      doc.text('Labor Charges', margin, y)
-      y += 4
-
-      autoTable(doc, {
-        startY: y,
-        head: [['Description', 'Qty', 'UOM', 'Rate', 'Amount']],
-        body: labor_items.map(l => [
-          l.description || '—',
-          String(l.qty || 0),
-          l.uom || '—',
-          'Rs.' + Number(l.rate || 0).toFixed(2),
-          'Rs.' + Number(l.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-        ]),
-        styles: { fontSize: 8, cellPadding: 2 },
-        headStyles: { fillColor: [100, 50, 180], textColor: 255, fontStyle: 'bold' },
-        columnStyles: {
-          0: { cellWidth: 80 },
-          1: { cellWidth: 14, halign: 'right' },
-          2: { cellWidth: 18 },
-          3: { cellWidth: 32, halign: 'right' },
-          4: { cellWidth: 46, halign: 'right' },
-        },
-        margin: { left: margin, right: margin },
-        didDrawPage: () => { drawBorder(doc) }
-      })
-      y = doc.lastAutoTable.finalY
+    // Wastage Card
+    if (wastage_items.length > 0) {
+      const wstHeight = calculateWastageHeight(wastage_items)
+      y = checkPageBreak(doc, y, wstHeight, pageNum, quotation)
+      y = drawWastageCard(doc, wastage_items, y) + SP_16
     }
 
-    y += 4
-
-    // ── Two-column bottom section ─────────────────────────────
+    // Processes block height calculations for processes
     const t = quotation.totals || {}
     const subI = t.subI || grandGlass || 0
-    const procTot = t.procTotal || procTotal || 0
-    const hwTot = t.hwTotal || quotation.hardware_items?.reduce((s, h) => s + (h.amount || 0), 0) || 0
-    const lbTot = t.lbTotal || quotation.labor_items?.reduce((s, l) => s + (l.amount || 0), 0) || 0
-    const dcChg = t.dcCharges || quotation.dc_charge || 0
-    const subII = t.subII || (subI + procTot + hwTot + lbTot + dcChg)
-    const disc = t.discountAmt || quotation.discount_amount || 0
+    const procTot = t.procTotal || 0
+    const hwTot = t.hwTotal || hardware_items.reduce((s, h) => s + (h.amount || 0), 0) || 0
+    const lbTot = t.lbTotal || labor_items.reduce((s, l) => s + (l.amount || 0), 0) || 0
+    const wstTot = t.wstTotal || wastage_items.reduce((s, w) => s + (w.amount || 0), 0) || 0
+    const dcChg = t.dcCharges || 0
+    const subII = t.subII || (subI + procTot + hwTot + lbTot + wstTot + dcChg)
+    const disc = t.discountAmt || 0
     const subIII = t.subIII || Math.max(0, subII - disc)
-    const cgst = t.cgst || quotation.cgst || 0
-    const sgst = t.sgst || quotation.sgst || 0
-    const igst = t.igst || quotation.igst || 0
-    const grand = t.grandTotal || quotation.total_amount ||
-      (subIII + cgst + sgst + igst)
+    const cgst = t.cgst || 0
+    const sgst = t.sgst || 0
+    const igst = t.igst || 0
+    const grand = t.grandTotal || quotation.total_amount || (subIII + cgst + sgst + igst)
     const roundOff = parseFloat((Math.round(grand) - grand).toFixed(2))
     const adv = quotation.advance_received || 0
     const bal = Math.round(grand) - adv
 
-    const leftItems = [
-      { label: 'Payment Term :', value: quotation.payment_terms || '' },
-      { label: 'Delivery Period :', value: quotation.delivery_date || '' },
-      { label: 'Validity :', value: '8 days from date of issue' },
-      { label: 'Note :', value: 'Unloading by Buyer' },
-    ]
-
     const totalsRows = [
-      { label: 'BASIC', value: subI },
-      procTot > 0
-        ? { label: 'DOCUMENTATION\nCHARGES', value: procTot }
-        : null,
-      hwTot > 0
-        ? { label: 'HARDWARE', value: hwTot }
-        : null,
-      lbTot > 0
-        ? { label: 'LABOR', value: lbTot }
-        : null,
-      dcChg > 0
-        ? { label: 'D/C CHARGES', value: dcChg }
-        : null,
-      (procTot > 0 || dcChg > 0 || hwTot > 0 || lbTot > 0)
-        ? { label: 'ASSESSABLE VALUE', value: subII, sub: true }
-        : null,
-      disc > 0
-        ? { label: 'DISCOUNT', value: disc }
-        : null,
+      { label: 'Glass Items Subtotal', value: subI },
+      procTot > 0 ? { label: 'Process Charges', value: procTot } : null,
+      hwTot > 0 ? { label: 'Hardware Accessories', value: hwTot } : null,
+      lbTot > 0 ? { label: 'Labor & Services', value: lbTot } : null,
+      wstTot > 0 ? { label: 'Wastage Charges', value: wstTot } : null,
+      dcChg > 0 ? { label: 'Delivery / Cartage', value: dcChg } : null,
+      (procTot > 0 || dcChg > 0 || hwTot > 0 || lbTot > 0 || wstTot > 0) ? { label: 'Total Taxable Value', value: subII, sub: true } : null,
+      disc > 0 ? { label: 'Discount Applied', value: disc } : null,
       { divider: true },
-      cgst > 0
-        ? { label: 'CGST', value: cgst, pct: '9.00' }
-        : null,
-      sgst > 0
-        ? { label: 'SGST', value: sgst, pct: '9.00' }
-        : null,
-      igst > 0
-        ? { label: 'IGST', value: igst, pct: '18.00' }
-        : null,
-      Math.abs(roundOff) > 0
-        ? { label: 'ROUND OFF', value: roundOff }
-        : null,
-      { label: 'Grand Total', value: Math.round(grand), grand: true },
-      adv > 0
-        ? { label: 'Advance Received', value: adv }
-        : null,
-      adv > 0
-        ? { label: 'Balance Due', value: bal, sub: true }
-        : null,
+      cgst > 0 ? { label: 'CGST', value: cgst, pct: '9.00' } : null,
+      sgst > 0 ? { label: 'SGST', value: sgst, pct: '9.00' } : null,
+      igst > 0 ? { label: 'IGST', value: igst, pct: '18.00' } : null,
+      Math.abs(roundOff) > 0.009 ? { label: 'Round Off', value: roundOff } : null,
+      { label: 'GRAND TOTAL', value: Math.round(grand), grand: true },
+      adv > 0 ? { label: 'Advance Received', value: adv } : null,
+      adv > 0 ? { label: 'Balance Due', value: bal, sub: true } : null,
     ].filter(Boolean)
 
-    y = drawBottomSection(doc, leftItems, totalsRows,
-      toWords(Math.round(grand)), y)
+    const summaryHeight = calculateSummaryHeight(totalsRows)
+    
+    // Check page break for summary block + signature strip + terms section
+    y = checkPageBreak(doc, y, summaryHeight + 22 + 28, pageNum, quotation)
+    
+    y = drawFinalSummaryBlock(doc, totalsRows, toWords(Math.round(grand)), quotation, y) + SP_16
+    
+    // Check page break for signature strip + terms
+    y = checkPageBreak(doc, y, 22 + 28, pageNum, quotation)
+    y = drawSignatureStrip(doc, company, y) + SP_16
+    
+    // Check page break for terms section
+    y = checkPageBreak(doc, y, 28, pageNum, quotation)
+    drawTerms(doc, y)
 
-    // ── PI Remark row ─────────────────────────────────────────
-    y = drawRemarkRow(doc, '', '', y)
-
-    // ── Terms & Conditions ────────────────────────────────────
-    y = drawTerms(doc, [
-      'Please double check Billing & Delivery Address, GST No., Glass Specifications, Size, Quantity, Rates & Taxes.',
-      'Goods sold cannot be exchanged or returned after confirmation.',
-      'Accepted tolerance: +/- 2mm in dimensions.',
-      'Delivery, unloading & hauling charges are extra and payable by buyer.',
-      'Delayed payment charges @ 2% per month after due date.',
-      'All disputes subject to Palghar jurisdiction.',
-    ], y)
-
-    // ── Page footer ───────────────────────────────────────────
-    drawPageFooter(doc, quotation.quote_number || 'QT', pageNum, pageNum)
+    // Complete footers rendering pass
+    addFootersAndPageNumbers(doc, quotation.quote_number || 'QT')
 
     doc.save(`${quotation.quote_number || 'QT'}_Essar.pdf`)
-
   } catch (e) {
     console.error('PDF error:', e)
     alert('PDF failed: ' + e.message)
   }
 }
 
-// ════════════════════════════════════════════════════════════════
-// SALES ORDER PDF (same structure, simpler)
-// ════════════════════════════════════════════════════════════════
+// ── Draw Sales Order Items Card (Splits dynamically) ──
+const drawSOItemsCard = (doc, lines, hasCep, cols, startY, pageNum, so) => {
+  let y = startY
+  let cardStartY = y
+  let ly = y + SP_8
+  
+  // Group Header
+  drawRect(doc, MARGIN.l + 0.3, ly, CONTENT_W - 0.6, 8, C.glassHeaderBg)
+  setFont(doc, 8.5, 'bold', C.glassHeader)
+  drawText(doc, 'ORDER LINE ITEMS', MARGIN.l + 4, ly + 5.5)
+  ly += 8
+
+  ly = drawTableHeader(doc, cols, ly)
+  
+  let tQty = 0, tArea = 0, tCep = 0, tAmt = 0
+  
+  lines.forEach((line, i) => {
+    const w = line.width_inch || (line.width_mm ? line.width_mm / 25.4 : 0)
+    const h = line.height_inch || (line.height_mm ? line.height_mm / 25.4 : 0)
+    const qty = line.quantity || 1
+    const area = line.total_sqft || 0
+    const cep = line.cep_charges || 0
+    const amt = line.subtotal || line.line_total || 0
+    tQty += qty; tArea += area; tCep += cep; tAmt += amt
+    
+    // Check page break before row
+    if ((PAGE_H - 18) - ly < 6.5 + SP_8 + 7.5) {
+      drawCard(doc, MARGIN.l, cardStartY, CONTENT_W, ly - cardStartY, null, C.border, 2.0)
+      y = checkPageBreak(doc, y, 999, pageNum, so)
+      cardStartY = y
+      ly = y + SP_8
+      
+      drawRect(doc, MARGIN.l + 0.3, ly, CONTENT_W - 0.6, 8, C.glassHeaderBg)
+      setFont(doc, 8.5, 'bold', C.glassHeader)
+      drawText(doc, 'ORDER LINE ITEMS (Continued)', MARGIN.l + 4, ly + 5.5)
+      ly += 8
+      ly = drawTableHeader(doc, cols, ly)
+    }
+    
+    const chargedW = line.charged_w_inch || w
+    const chargedH = line.charged_h_inch || h
+    const chargedSizeStr = `${chargedW}" x ${chargedH}"`
+
+    const vals = [
+      String(i + 1),
+      w > 0 ? toFraction(w) + '"' : '',
+      h > 0 ? toFraction(h) + '"' : '',
+      chargedSizeStr,
+      String(qty),
+      area.toFixed(3),
+      parseFloat(((w + h) * 2 / 12 * qty).toFixed(3)).toString(),
+      ...(hasCep ? [cep > 0 ? fmtR(cep) : '-'] : []),
+      fmtR(amt)
+    ]
+    ly = drawDataRow(doc, cols, vals, i % 2 === 1, ly)
+  })
+  
+  ly = drawGroupSubtotal(doc, cols, tQty, tArea, tCep, tAmt, hasCep, ly)
+  drawCard(doc, MARGIN.l, cardStartY, CONTENT_W, ly - cardStartY, null, C.border, 2.0)
+  
+  return { endY: ly, tQty, tArea, tAmt }
+}
+
 export const generateSOPDF = (so) => {
   try {
     const doc = new jsPDF('p', 'mm', 'a4')
-    const pw = doc.internal.pageSize.getWidth()
-    const ph = doc.internal.pageSize.getHeight()
-    const co = getCompany(so.company_id)
-
+    const company = getCompany(so.company_id)
     let cust = { name: so.customer_name || '', address: '', phone: '', gstin: '' }
     try {
       const all = JSON.parse(localStorage.getItem('customers') || '[]')
       const c = all.find(x => x.id === so.customer_id)
-      if (c) cust = {
-        name: c.name,
-        address: [c.address, c.city].filter(Boolean).join(', '),
-        phone: c.phone || '', gstin: c.gstin || ''
-      }
+      if (c) cust = { name: c.name, address: [c.address, c.city].filter(Boolean).join(', '), phone: c.phone || '', gstin: c.gstin || '' }
     } catch { }
-
-    drawBorder(doc)
-    let y = drawCompanyHeader(doc, co)
-    y = drawDocInfoRow(doc, [
-      { label: 'SO Number :', value: so.so_number, lw: 23 },
-      { label: 'Date :', value: so.order_date, lw: 14 },
-      { label: 'Delivery :', value: so.delivery_date || 'TBD', lw: 18 },
-      { label: 'Salesperson :', value: so.salesperson, lw: 23 },
-    ], y)
-    y = drawBillShipTo(doc, cust, cust, y)
-    y = drawAccountRow(doc, cust.name, '', '0', y)
 
     const hasCep = (so.lines || []).some(l => l.cep)
     const cols = buildCols(hasCep)
-    y = drawTH(doc, y, cols)
+    let pageNum = { val: 1, total: '?' }
 
-    let tQty = 0, tArea = 0, tCep = 0, tAmt = 0
-      ; (so.lines || []).forEach((line, i) => {
-        if (y > ph - 90) {
-          drawPageFooter(doc, so.so_number || 'SO', 1, 1)
-          doc.addPage(); drawBorder(doc)
-          y = drawCompanyHeader(doc, co)
-          y = drawTH(doc, y, cols)
-        }
-        const w = line.width_inch || (line.width_mm ? line.width_mm / 25.4 : 0)
-        const h = line.height_inch || (line.height_mm ? line.height_mm / 25.4 : 0)
-        const qty = line.quantity || 1
-        const area = line.total_sqft || 0
-        const cep = line.cep_charges || 0
-        const amt = line.subtotal || line.line_total || 0
-        tQty += qty; tArea += area; tCep += cep; tAmt += amt
-        const vals = [
-          String(i + 1),
-          (line.description || '').substring(0, 30),
-          w > 0 ? toFraction(w) + '"' : '',
-          h > 0 ? toFraction(h) + '"' : '',
-          String(line.quantity || 1),
-          Number(line.total_sqft || 0).toFixed(3),
-          ...(hasCep ? [line.cep_charges > 0 ? fmtN(line.cep_charges) : ''] : []),
-          fmtN(line.subtotal || line.line_total || 0),
-        ]
-        y = drawTR(doc, y, cols, vals, i % 2 === 0)
-      })
+    drawBorder(doc)
+    let y = drawHeader(doc, company, 'SALES ORDER')
+    y = drawDocInfo(doc, {
+      quote_number: so.so_number,
+      quote_date: so.order_date,
+      valid_until: so.delivery_date || 'TBD',
+      salesperson: so.salesperson,
+      payment_terms: so.payment_terms,
+      company_id: so.company_id
+    }, y, 'SALES ORDER')
+    y = drawCustomerCard(doc, cust, y)
 
-    y = drawSubTotalRow(doc, y, cols, tQty, tArea, tCep, tAmt, hasCep)
-    y = drawHSNRow(doc, y, '7007')
-    y = drawTotalSummery(doc, y, tQty, tArea, tAmt, cols)
+    // Render items card (using splits if needed)
+    const res = drawSOItemsCard(doc, so.lines || [], hasCep, cols, y, pageNum, so)
+    const tQty = res.tQty
+    const tArea = res.tArea
+    const tAmt = res.tAmt
+    y = res.endY + SP_16
 
+    y = checkPageBreak(doc, y, 9 + SP_16, pageNum, so)
+    y = drawTotalBar(doc, tQty, tArea, tAmt, y) + SP_16
+
+    // Summary block
     const grand = so.total_amount || 0
-    y = drawBottomSection(doc,
-      [
-        { label: 'Payment :', value: so.payment_terms || '' },
-        { label: 'Delivery :', value: so.delivery_date || 'TBD' },
-      ],
-      [
-        { label: 'BASIC', value: so.subtotal || 0 },
-        so.tax_amount > 0 ? { label: 'GST', value: so.tax_amount, pct: '18.00' } : null,
-        { label: 'Grand Total', value: grand, grand: true },
-      ].filter(Boolean),
-      toWords(Math.round(grand)), y
-    )
-    y = drawRemarkRow(doc, '', '', y)
-    drawPageFooter(doc, so.so_number || 'SO', 1, 1)
+    const totalsRows = [
+      { label: 'Items Subtotal', value: so.subtotal || 0 },
+      so.tax_amount > 0 ? { label: 'GST', value: so.tax_amount, pct: '18.00' } : null,
+      { label: 'GRAND TOTAL', value: grand, grand: true }
+    ].filter(Boolean)
+
+    const summaryHeight = calculateSummaryHeight(totalsRows)
+    y = checkPageBreak(doc, y, summaryHeight + 22 + 28, pageNum, so)
+
+    y = drawFinalSummaryBlock(doc, totalsRows, toWords(Math.round(grand)), { payment_terms: so.payment_terms }, y) + SP_16
+    y = drawSignatureStrip(doc, company, y) + SP_16
+    drawTerms(doc, y)
+
+    addFootersAndPageNumbers(doc, so.so_number || 'SO')
     doc.save(`${so.so_number || 'SO'}_Essar.pdf`)
   } catch (e) {
     console.error('SO PDF:', e)
@@ -1035,82 +1157,118 @@ export const generateSOPDF = (so) => {
   }
 }
 
-// ════════════════════════════════════════════════════════════════
-// PURCHASE ORDER PDF
-// ════════════════════════════════════════════════════════════════
+// ── Draw Purchase Order Items Card (Splits dynamically) ──
+const drawPOItemsCard = (doc, lines, cols, startY, pageNum, po) => {
+  let y = startY
+  let cardStartY = y
+  let ly = y + SP_8
+  
+  drawRect(doc, MARGIN.l + 0.3, ly, CONTENT_W - 0.6, 8, C.glassHeaderBg)
+  setFont(doc, 8.5, 'bold', C.glassHeader)
+  drawText(doc, 'PURCHASE ITEMS', MARGIN.l + 4, ly + 5.5)
+  ly += 8
+
+  ly = drawTableHeader(doc, cols, ly)
+  
+  let tQty = 0, tArea = 0, tAmt = 0
+  
+  lines.forEach((line, i) => {
+    const w = line.width_inch || (line.width_mm ? line.width_mm / 25.4 : 0)
+    const h = line.height_inch || (line.height_mm ? line.height_mm / 25.4 : 0)
+    const qty = line.quantity || 1
+    const area = line.charged_sqft || line.total_sqft || 0
+    const amt = line.subtotal || line.line_total || 0
+    tQty += qty; tArea += area; tAmt += amt
+    
+    // Check page break before row
+    if ((PAGE_H - 18) - ly < 6.5 + SP_8 + 7.5) {
+      drawCard(doc, MARGIN.l, cardStartY, CONTENT_W, ly - cardStartY, null, C.border, 2.0)
+      y = checkPageBreak(doc, y, 999, pageNum, po)
+      cardStartY = y
+      ly = y + SP_8
+      
+      drawRect(doc, MARGIN.l + 0.3, ly, CONTENT_W - 0.6, 8, C.glassHeaderBg)
+      setFont(doc, 8.5, 'bold', C.glassHeader)
+      drawText(doc, 'PURCHASE ITEMS (Continued)', MARGIN.l + 4, ly + 5.5)
+      ly += 8
+      ly = drawTableHeader(doc, cols, ly)
+    }
+    
+    const chargedW = line.charged_w_inch || w
+    const chargedH = line.charged_h_inch || h
+    const chargedSizeStr = `${chargedW}" x ${chargedH}"`
+
+    const vals = [
+      String(i + 1),
+      w > 0 ? toFraction(w) + '"' : '',
+      h > 0 ? toFraction(h) + '"' : '',
+      chargedSizeStr,
+      String(qty),
+      area.toFixed(3),
+      parseFloat(((w + h) * 2 / 12 * qty).toFixed(3)).toString(),
+      fmtR(amt)
+    ]
+    ly = drawDataRow(doc, cols, vals, i % 2 === 1, ly)
+  })
+  
+  ly = drawGroupSubtotal(doc, cols, tQty, tArea, 0, tAmt, false, ly)
+  drawCard(doc, MARGIN.l, cardStartY, CONTENT_W, ly - cardStartY, null, C.border, 2.0)
+  
+  return { endY: ly, tQty, tArea, tAmt }
+}
+
 export const generatePOPDF = (po) => {
   try {
     const doc = new jsPDF('p', 'mm', 'a4')
-    const pw = doc.internal.pageSize.getWidth()
-    const ph = doc.internal.pageSize.getHeight()
-    const co = getCompany(po.company_id)
-
+    const company = getCompany(po.company_id)
     let vend = { name: po.vendor_name || '', address: '', phone: '', gstin: '' }
     try {
       const all = JSON.parse(localStorage.getItem('vendors') || '[]')
       const v = all.find(x => x.id === po.vendor_id)
-      if (v) vend = {
-        name: v.name,
-        address: [v.address, v.city].filter(Boolean).join(', '),
-        phone: v.phone || '', gstin: v.gstin || ''
-      }
+      if (v) vend = { name: v.name, address: [v.address, v.city].filter(Boolean).join(', '), phone: v.phone || '', gstin: v.gstin || '' }
     } catch { }
 
-    drawBorder(doc)
-    let y = drawCompanyHeader(doc, co)
-    y = drawDocInfoRow(doc, [
-      { label: 'PO Number :', value: po.po_number, lw: 20 },
-      { label: 'Date :', value: po.po_date, lw: 14 },
-      { label: 'Expected :', value: po.expected_delivery || 'TBD', lw: 18 },
-      { label: 'Ref SO :', value: po.so_id || '', lw: 15 },
-    ], y)
-    y = drawBillShipTo(doc, vend, vend, y)
-    y = drawAccountRow(doc, vend.name, '', '0', y)
-
     const cols = buildCols(false)
-    y = drawTH(doc, y, cols)
+    let pageNum = { val: 1, total: '?' }
 
-    let tQty = 0, tArea = 0, tAmt = 0
-      ; (po.lines || []).forEach((line, i) => {
-        if (y > ph - 90) {
-          drawPageFooter(doc, po.po_number || 'PO', 1, 1)
-          doc.addPage(); drawBorder(doc)
-          y = drawCompanyHeader(doc, co)
-          y = drawTH(doc, y, cols)
-        }
-        const w = line.width_inch || (line.width_mm ? line.width_mm / 25.4 : 0)
-        const h = line.height_inch || (line.height_mm ? line.height_mm / 25.4 : 0)
-        const qty = line.quantity || 1
-        const area = line.charged_sqft || line.total_sqft || 0
-        const amt = line.subtotal || line.line_total || 0
-        tQty += qty; tArea += area; tAmt += amt
-        const vals = [
-          String(i + 1),
-          (line.description || '').substring(0, 30),
-          w > 0 ? toFraction(w) + '"' : '',
-          h > 0 ? toFraction(h) + '"' : '',
-          String(line.quantity || 1),
-          Number(line.charged_sqft || line.total_sqft || 0).toFixed(3),
-          fmtN(line.subtotal || line.line_total || 0),
-        ]
-        y = drawTR(doc, y, cols, vals, i % 2 === 0)
-      })
-    y = drawSubTotalRow(doc, y, cols, tQty, tArea, 0, tAmt, false)
-    y = drawHSNRow(doc, y, '7007')
-    y = drawTotalSummery(doc, y, tQty, tArea, tAmt, cols)
+    drawBorder(doc)
+    let y = drawHeader(doc, company, 'PURCHASE ORDER')
+    y = drawDocInfo(doc, {
+      quote_number: po.po_number,
+      quote_date: po.po_date,
+      valid_until: po.expected_delivery || 'TBD',
+      salesperson: '',
+      payment_terms: po.payment_terms,
+      company_id: po.company_id
+    }, y, 'PURCHASE ORDER')
+    y = drawVendorCard(doc, vend, y)
 
+    // Render items card (using splits if needed)
+    const res = drawPOItemsCard(doc, po.lines || [], cols, y, pageNum, po)
+    const tQty = res.tQty
+    const tArea = res.tArea
+    const tAmt = res.tAmt
+    y = res.endY + SP_16
+
+    y = checkPageBreak(doc, y, 9 + SP_16, pageNum, po)
+    y = drawTotalBar(doc, tQty, tArea, tAmt, y) + SP_16
+
+    // Summary block
     const grand = po.total_amount || 0
-    y = drawBottomSection(doc,
-      [{ label: 'Vendor :', value: vend.name }, { label: 'Payment :', value: po.payment_terms || '' }],
-      [
-        { label: 'BASIC', value: po.subtotal || 0 },
-        po.tax_amount > 0 ? { label: 'GST', value: po.tax_amount, pct: '18.00' } : null,
-        { label: 'Grand Total', value: grand, grand: true },
-      ].filter(Boolean),
-      toWords(Math.round(grand)), y
-    )
-    y = drawRemarkRow(doc, '', '', y)
-    drawPageFooter(doc, po.po_number || 'PO', 1, 1)
+    const totalsRows = [
+      { label: 'Items Subtotal', value: po.subtotal || 0 },
+      po.tax_amount > 0 ? { label: 'GST', value: po.tax_amount, pct: '18.00' } : null,
+      { label: 'GRAND TOTAL', value: grand, grand: true }
+    ].filter(Boolean)
+
+    const summaryHeight = calculateSummaryHeight(totalsRows)
+    y = checkPageBreak(doc, y, summaryHeight + 22 + 28, pageNum, po)
+
+    y = drawFinalSummaryBlock(doc, totalsRows, toWords(Math.round(grand)), { payment_terms: po.payment_terms }, y) + SP_16
+    y = drawSignatureStrip(doc, company, y) + SP_16
+    drawTerms(doc, y)
+
+    addFootersAndPageNumbers(doc, po.po_number || 'PO')
     doc.save(`${po.po_number || 'PO'}_Essar.pdf`)
   } catch (e) {
     console.error('PO PDF:', e)
