@@ -202,6 +202,7 @@ const SizeTable = ({
   updateSizeProcess,
   removeSizeProcess,
   addSizeProcess,
+  addSize,
   removeSize,
   setGroups
 }) => {
@@ -234,6 +235,20 @@ const SizeTable = ({
         <FractionInput value={v} onChange={val => updateSize(group.group_key, row.size_key, 'height_inch', val)} placeholder="48 1/2" />
       ) : (
         <InputNumber size="small" value={v ? parseFloat((v * 25.4).toFixed(2)) : null} min={0} style={{ width: '100%' }} onChange={val => updateSize(group.group_key, row.size_key, 'height_inch', val ? val / 25.4 : null)} />
+      )
+    },
+    {
+      title: 'Qty',
+      width: 70,
+      dataIndex: 'quantity',
+      render: (v, row) => (
+        <InputNumber 
+          size="small" 
+          value={v} 
+          min={1} 
+          style={{ width: '100%', borderRadius: 4 }} 
+          onChange={val => updateSize(group.group_key, row.size_key, 'quantity', val)} 
+        />
       )
     },
     {
@@ -283,20 +298,6 @@ const SizeTable = ({
               }) 
             } 
           }))} 
-        />
-      )
-    },
-    {
-      title: 'Qty',
-      width: 70,
-      dataIndex: 'quantity',
-      render: (v, row) => (
-        <InputNumber 
-          size="small" 
-          value={v} 
-          min={1} 
-          style={{ width: '100%', borderRadius: 4 }} 
-          onChange={val => updateSize(group.group_key, row.size_key, 'quantity', val)} 
         />
       )
     },
@@ -887,6 +888,7 @@ const GlassCard = ({
               updateSizeProcess={updateSizeProcess}
               removeSizeProcess={removeSizeProcess}
               addSizeProcess={addSizeProcess}
+              addSize={addSize}
               removeSize={removeSize}
               setGroups={setGroups}
             />

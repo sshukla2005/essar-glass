@@ -86,10 +86,21 @@ const FractionInput = ({ value, onChange, placeholder, style, size }) => {
     setIsFocused(false)
     const decimal = fromFraction(inputVal)
     if (decimal !== null) {
-      onChange && onChange(decimal)
+      // Only fire onChange if the value actually changed — clicking into
+      // the field and clicking back out without typing anything must be a
+      // no-op, not a silent re-commit of the existing value (which was
+      // triggering downstream rate-recalculation side effects on toughened
+      // glass groups even though nothing was edited).
+      const isUnchanged = value !== null && value !== undefined &&
+        Math.abs(decimal - parseFloat(value)) < 0.0001
+      if (!isUnchanged) {
+        onChange && onChange(decimal)
+      }
       setInputVal(toFraction(decimal))
     } else if (inputVal === '' || inputVal === null) {
-      onChange && onChange(null)
+      if (value !== null && value !== undefined) {
+        onChange && onChange(null)
+      }
       setInputVal('')
     } else {
       setInputVal(value !== null && value !== undefined ? toFraction(value) : '')

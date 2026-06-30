@@ -452,6 +452,53 @@ const QuotationForm = () => {
     return costPerSqft
   }
 
+  /**
+   * Single source of truth for "what does this glass actually cost per sqft,
+   * fully loaded" — base cost + toughening addon, with one consistent rule
+   * for whether the addon gets added on top:
+   *
+   *   - If `manual_cost_price` is NOT set: the base cost is derived (product /
+   *     matrix / 0.70-fallback) and the toughening addon is computed fresh and
+   *     added on top. This is the "system is pricing it for you" path.
+   *
+   *   - If `manual_cost_price` IS set: it is treated as the FULLY LOADED cost
+   *     already (this is what the Cost Analysis wizard now saves). The addon
+   *     is NOT added again on top of it — doing so would silently compound
+   *     the toughening charge every time this function runs.
+   *
+   * Returns { loadedCost, baseCost, addon, isManual } so callers can both
+   * get the one number they need (loadedCost) and show a breakdown without
+   * re-deriving any of this themselves.
+   */
+  const getGroupLoadedCostRate = (g, products) => {
+    const isManual = !!(g.manual_cost_price && g.manual_cost_price > 0)
+
+    if (isManual) {
+      // manual_cost_price already represents the loaded total — addon is
+      // informational only here (e.g. for a breakdown subtext), never re-applied.
+      return { loadedCost: g.manual_cost_price, baseCost: g.manual_cost_price, addon: 0, isManual: true }
+    }
+
+    const baseCost = getGroupBaseCostRate(g, products)
+    let addon = 0
+
+    if (g.is_toughened || g.glass_type === 'Toughened') {
+      try {
+        const pm = JSON.parse(localStorage.getItem('process_masters') || '[]')
+        const toughProc = pm.find(p => p.process_type === 'toughening' && p.is_active !== false)
+        if (toughProc && toughProc.rate > 0) {
+          const avgAddon = g.sizes && g.sizes.length > 0
+            ? g.sizes.reduce((s, sz) => s + (sz.tgh_rate_addon || 0), 0) / g.sizes.length
+            : 0
+          if (avgAddon > 0) addon = avgAddon
+        }
+      } catch { }
+    }
+
+    const loadedCost = parseFloat((baseCost + addon).toFixed(2))
+    return { loadedCost, baseCost, addon, isManual: false }
+  }
+
   const calcGroupSize = (group, size) => {
     const w_inch = size.width_inch || 0
     const h_inch = size.height_inch || 0
@@ -528,10 +575,14 @@ const QuotationForm = () => {
     }
 
     // ── COST SIDE ── (stable & immutable)
+    // If manual_cost_price is set, it's already the fully-loaded cost — do
+    // NOT add the toughening addon on top of it again (see getGroupLoadedCostRate).
+    // Only derive+add the addon when there's no manual override, i.e. the
+    // system is computing the cost for the user from product/matrix/fallback.
     let costPerSqft = getGroupBaseCostRate(group, products)
-    
-    // Add toughening cost addon if applicable
-    if (group.is_toughened || group.glass_type === 'Toughened') {
+    const hasManualCostPrice = !!(group.manual_cost_price && group.manual_cost_price > 0)
+
+    if (!hasManualCostPrice && (group.is_toughened || group.glass_type === 'Toughened')) {
       try {
         const pm = JSON.parse(localStorage.getItem('process_masters') || '[]')
         const toughProc = pm.find(p => p.process_type === 'toughening' && p.is_active !== false)
@@ -634,15 +685,30 @@ const QuotationForm = () => {
         }
         const cat = updated.glass_category
         const thick = updated.glass_thickness
+        // A rate counts as "user-protected" only if we're in Custom mode
+        // AND a real (non-zero) rate already exists — e.g. the user typed
+        // one earlier. A fresh group defaults to custom_costing: true with
+        // rate: 0, which must NOT be treated as something to protect —
+        // otherwise the rate field never gets populated on first selection.
+        const hasProtectedCustomRate = updated.custom_costing && (g.rate || 0) > 0
+
         if (cat && thick) {
           const baseRate = calcRateFromMatrix(cat, thick)
           updated.base_glass_rate = baseRate
-          updated.rate = baseRate
+          if (!hasProtectedCustomRate) {
+            updated.rate = baseRate
+          }
+          // else: Custom mode with an existing rate — leave updated.rate
+          // untouched, even though base_glass_rate keeps updating (needed
+          // for the "Base ₹X + Tgh addon" subtext under the Rate field).
         }
         // First pass — calculate sizes to get tgh_rate_addon
         updated.sizes = g.sizes.map(s => calcGroupSize(updated, s))
-        // If toughened — add avg tgh_rate_addon to rate
-        if (updated.is_toughened || updated.glass_type === 'Toughened') {
+        // Add the toughening addon on top of the rate — same protection
+        // rule as above: skip only if there's an existing custom rate to
+        // protect, otherwise a freshly-selected Toughened type would never
+        // get its addon applied.
+        if (!hasProtectedCustomRate && (updated.is_toughened || updated.glass_type === 'Toughened')) {
           const avgAddon = updated.sizes.length > 0
             ? updated.sizes.reduce((s, sz) => s + (sz.tgh_rate_addon || 0), 0) / updated.sizes.length
             : 0
@@ -668,7 +734,14 @@ const QuotationForm = () => {
         updated.sizes = g.sizes.map(s => calcGroupSize(updated, s))
       }
 
-      if (['rate', 'rate_rft', 'pricing_method', 'discount_pct', 'tax_rate'].includes(field)) {
+      if ([
+        'rate', 'rate_rft', 'pricing_method', 'discount_pct', 'tax_rate',
+        // Cost-side fields set via the Cost Analysis wizard — these never
+        // triggered recalculation before, leaving glass_cost/cost_amount/
+        // margin_amount/margin_pct stale on every size until some unrelated
+        // field (like rate) happened to be touched afterward.
+        'manual_cost_price', 'wizard_cost_ceil_w', 'wizard_cost_ceil_h', 'wizard_cep_cost_rate'
+      ].includes(field)) {
         updated.sizes = g.sizes.map(s => calcGroupSize(updated, s))
       }
 
@@ -739,8 +812,11 @@ const QuotationForm = () => {
       })
       let updatedGroup = { ...g, sizes: updatedSizes }
 
-      // Recalculate effective rate for toughened groups when sizes change
-      if (updatedGroup.is_toughened || updatedGroup.glass_type === 'Toughened') {
+      // Recalculate effective rate for toughened groups when sizes change —
+      // but ONLY in Auto costing mode. In Custom mode the user's typed rate
+      // is authoritative and must never be silently overwritten just because
+      // a size field (width/height/qty) was touched.
+      if (!updatedGroup.custom_costing && (updatedGroup.is_toughened || updatedGroup.glass_type === 'Toughened')) {
         const avgAddon = updatedSizes.length > 0
           ? updatedSizes.reduce((s, sz) => s + (sz.tgh_rate_addon || 0), 0) / updatedSizes.length
           : 0
@@ -1192,7 +1268,10 @@ const QuotationForm = () => {
     setWizardCostPrice(null)
     setCompWizard(null)
 
-  const costPerSqft = getGroupBaseCostRate(group, products)
+  // Seed with the FULLY LOADED cost (base + toughening addon if applicable),
+  // not just the base — this is what the InputNumber displays and edits,
+  // and what (Cost Price) × (Charged Sqft) must equal Total Glass Cost.
+  const { loadedCost: costPerSqft, baseCost: wizardBaseCost, addon: wizardCostAddon } = getGroupLoadedCostRate(group, products)
   setWizardCostPrice(costPerSqft)
 
     const CEP_COST_RATE = 5  // ₹5 per running foot (client confirmed)
@@ -1274,6 +1353,8 @@ const QuotationForm = () => {
     setCompWizard({
       product_name: group.description || 'Product',
       cost_price: costPerSqft,
+      cost_base: wizardBaseCost,
+      cost_addon: wizardCostAddon,
       selling_rate: group.rate,
       cep_on: group.cep,
       cep_cost_rate: group.wizard_cep_cost_rate || CEP_COST_RATE,
@@ -1320,25 +1401,9 @@ const QuotationForm = () => {
 
     // ── 1. Glass groups ──────────────────────────────────────────
     setGroups(prev => prev.map(g => {
-      // Resolve cost per sqft (excl. toughening)
-      const baseCostRate = getGroupBaseCostRate(g, products)
-
-      // Add toughening cost addon if applicable
-      let avgTghCostAddon = 0
-      if (g.is_toughened || g.glass_type === 'Toughened') {
-        try {
-          const pm = JSON.parse(localStorage.getItem('process_masters') || '[]')
-          const toughProc = pm.find(p => p.process_type === 'toughening' && p.is_active !== false)
-          if (toughProc && toughProc.rate > 0) {
-            avgTghCostAddon = g.sizes.length > 0
-              ? g.sizes.reduce((s, sz) => s + (sz.tgh_rate_addon || 0), 0) / g.sizes.length
-              : 0
-          }
-        } catch { }
-      }
-
-      // Compute total glass cost rate including toughening
-      const totalGlassCostRate = baseCostRate + avgTghCostAddon
+      // Resolve fully-loaded cost per sqft (base + toughening addon, with
+      // the addon skipped if manual_cost_price already represents the loaded total)
+      const { loadedCost: totalGlassCostRate, baseCost: baseCostRate } = getGroupLoadedCostRate(g, products)
 
       // Read sizes directly to compute total glass cost with toughening addon
       const totalGlassCost = g.sizes.reduce((sum, sz) => sum + (sz.glass_cost || 0), 0)
@@ -1378,7 +1443,10 @@ const QuotationForm = () => {
         rate: newRate,
         custom_costing: true,
         target_margin: null, // clear target_margin override
-        manual_cost_price: baseCostRate,
+        // Save the FULLY LOADED cost (totalGlassCostRate = base + addon),
+        // not just the base — manual_cost_price always means "loaded total"
+        // from here on, consistent with the wizard's Save buttons.
+        manual_cost_price: totalGlassCostRate,
         processes: updatedProcesses,
         sizes: updatedSizesWithProcs
       }
@@ -1929,15 +1997,21 @@ const QuotationForm = () => {
         {compWizard && (<>
           <Row gutter={16} style={{ marginBottom: 16 }}>
             <Col span={12}><Card size="small" style={{ background: '#f0fdf4', borderColor: '#86efac' }}><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><Text type="secondary">Selling Rate (Current)</Text><Tag color="green" style={{ fontSize: 10, margin: 0 }}>LOCKED</Tag></div><div style={{ fontSize: 20, fontWeight: 700, color: '#16a34a' }}>₹{compWizard.selling_rate}/sqft</div><Text type="secondary" style={{ fontSize: 10, display: 'block', marginTop: 2 }}>Cost ceiling changes do NOT affect this</Text></Card></Col>
-            <Col span={12}><Card size="small" style={{ background: '#fff7ed', borderColor: '#fed7aa' }}><Text type="secondary">Cost Price (editable)</Text><div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+            <Col span={12}><Card size="small" style={{ background: '#fff7ed', borderColor: '#fed7aa' }}><Text type="secondary">Cost Price (editable, fully loaded)</Text><div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
               <InputNumber value={wizardCostPrice !== null && wizardCostPrice !== undefined ? wizardCostPrice : compWizard.cost_price} min={0} prefix="₹" addonAfter="/sqft" style={{ width: '100%' }}
                 onChange={val => {
                   setWizardCostPrice(val); const newCost = val || 0
                   const newRows = compWizard.rows.map(r => { const glass_cost = parseFloat(((r.cost_charged_w && r.cost_charged_h ? (r.cost_charged_w * r.cost_charged_h * r.quantity) / 144 : parseFloat(r.charged_sqft)) * newCost).toFixed(2)); const cost_amount = parseFloat((glass_cost + (r.cep_cost || 0) + (r.proc_cost || 0)).toFixed(2)); const margin_amount = parseFloat((r.selling_amount - cost_amount).toFixed(2)); const margin_pct = r.selling_amount > 0 ? parseFloat(((margin_amount / r.selling_amount) * 100).toFixed(2)) : 100; return { ...r, glass_cost, cost_amount, margin_amount, margin_pct } })
                   const totalCost = newRows.reduce((s, r) => s + r.cost_amount, 0); const totalCepCost = newRows.reduce((s, r) => s + (r.cep_cost || 0), 0); const totalMargin = compWizard.totalSelling - totalCost; const totalMarginPct = compWizard.totalSelling > 0 ? parseFloat(((totalMargin / compWizard.totalSelling) * 100).toFixed(2)) : 100
-                  setCompWizard(prev => ({ ...prev, rows: newRows, totalCost, totalCepCost, totalMargin, totalMarginPct }))
+                  setCompWizard(prev => ({ ...prev, rows: newRows, totalCost, totalCepCost, totalMargin, totalMarginPct, cost_base_overridden: true }))
                 }} />
-            </div><Text type="secondary" style={{ fontSize: 11, display: 'block', marginTop: 4 }}>Edit to recalculate margin live</Text></Card></Col>
+            </div>
+            {compWizard.cost_addon > 0 && !compWizard.cost_base_overridden && (
+              <Text type="secondary" style={{ fontSize: 11, display: 'block', marginTop: 4, color: '#9a3412' }}>
+                Base ₹{compWizard.cost_base.toFixed(2)} + Tgh addon ₹{compWizard.cost_addon.toFixed(2)} = ₹{(compWizard.cost_base + compWizard.cost_addon).toFixed(2)}/sqft
+              </Text>
+            )}
+            <Text type="secondary" style={{ fontSize: 11, display: 'block', marginTop: 4 }}>Edit to recalculate margin live</Text></Card></Col>
           </Row>
 
           {compWizard.cep_on && (
@@ -2346,20 +2420,9 @@ const QuotationForm = () => {
                 groups.forEach((group, gi) => {
                   const sell = group.sizes?.reduce((s, x) => s + (x.subtotal || 0), 0) || 0
 
-                  // Cost price lookup logic
-                  let costPerSqft = getGroupBaseCostRate(group, products)
-                  if (group.is_toughened || group.glass_type === 'Toughened') {
-                    try {
-                      const tghPm = JSON.parse(localStorage.getItem('process_masters') || '[]')
-                      const toughProc = tghPm.find(p => p.process_type === 'toughening' && p.is_active !== false)
-                      if (toughProc && toughProc.rate > 0) {
-                        const avgAddon = group.sizes.length > 0
-                          ? group.sizes.reduce((s, sz) => s + (sz.tgh_rate_addon || 0), 0) / group.sizes.length
-                          : 0
-                        if (avgAddon > 0) costPerSqft = parseFloat((costPerSqft + avgAddon).toFixed(2))
-                      }
-                    } catch { }
-                  }
+                  // Cost price lookup logic — fully loaded (base + addon, or
+                  // manual_cost_price as-is if it's already the loaded total)
+                  let costPerSqft = getGroupLoadedCostRate(group, products).loadedCost
 
                   const cost = group.sizes?.reduce((s, sz) => {
                     const w = sz.width_inch || 0
