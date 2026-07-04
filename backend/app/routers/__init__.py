@@ -63,6 +63,9 @@ def make_crud_router(
         if search and hasattr(model, "name"):
             q = q.filter(model.name.ilike(f"%{search}%"))
 
+        # Sort customers alphabetically by name, everything else by id desc
+        if hasattr(model, 'name') and model.__tablename__ == 'customers':
+            return paginate(q.order_by(model.name.asc()), page, page_size)
         return paginate(q.order_by(model.id.desc()), page, page_size)
 
     @router.get("/dropdown")

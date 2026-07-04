@@ -50,7 +50,7 @@ const SizeProcessList = ({
           value={val || undefined}
           style={{ width: '100%' }}
           options={processMasters
-            .filter(p => ['hole', 'cutout', 'forma', 'farma'].includes(p.process_type))
+            .filter(p => ['hole', 'cutout', 'farma', 'beveling'].includes(p.process_type))
             .map(p => ({ value: p.id, label: p.name }))}
           onChange={newVal => updateSizeProcess(groupKey, size.size_key, proc.sproc_key, 'process_id', newVal)}
         />
@@ -856,21 +856,23 @@ const GlassCard = ({
                     value={group.cep_polish_rate || 15} 
                     style={{ width: 110 }} 
                     options={[
-                      { value: 7, label: '₹7/rft' }, 
+                      { value: 7,  label: '₹7/rft' }, 
                       { value: 10, label: '₹10/rft' }, 
                       { value: 15, label: '₹15/rft' }, 
-                      { value: 'custom', label: 'Custom' }
+                      { value: 'custom', label: 'Custom ₹/rft' },
+                      { value: 'custom_mm', label: 'Custom ₹/mm' },
                     ]} 
                     onChange={val => updateGroup(group.group_key, 'cep_polish_rate', val)} 
                   />
                 )}
-                {group.cep && group.cep_polish_rate === 'custom' && (
+                {group.cep && (group.cep_polish_rate === 'custom' || group.cep_polish_rate === 'custom_mm') && (
                   <InputNumber 
                     size="small" 
-                    value={group.cep_polish_rate_custom ?? 15} 
+                    value={group.cep_polish_rate_custom ?? 0} 
                     min={0} 
                     prefix="₹" 
-                    style={{ width: 90, borderRadius: 6 }} 
+                    addonAfter={group.cep_polish_rate === 'custom_mm' ? '/mm' : '/rft'}
+                    style={{ width: 120, borderRadius: 6 }} 
                     onChange={val => updateGroup(group.group_key, 'cep_polish_rate_custom', val)} 
                   />
                 )}
@@ -920,7 +922,7 @@ const GlassCard = ({
                     placeholder="Select process" 
                     value={proc.process_id} 
                     style={{ width: '100%', borderRadius: 6 }}
-                    options={processMasters.filter(p => ['hole','cutout','farma','forma'].includes(p.process_type)).map(p => ({ value: p.id, label: p.name }))}
+                    options={processMasters.filter(p => ['hole','cutout','farma','beveling'].includes(p.process_type)).map(p => ({ value: p.id, label: p.name }))}
                     onChange={val => updateGroupProcess(group.group_key, proc.proc_key, 'process_id', val)} 
                   />
                 </Col>

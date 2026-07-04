@@ -840,7 +840,7 @@ const SalesOrderForm = () => {
               if (field === 'process_id') {
                 const pm = processMasters
                   .filter(x =>
-                    ['hole', 'cutout', 'forma', 'farma'].includes(x.process_type)
+                    ['hole', 'cutout', 'farma', 'beveling'].includes(x.process_type)
                   )
                   .find(x => x.id === value)
                 if (pm) {
@@ -1934,7 +1934,7 @@ const SalesOrderForm = () => {
                             style={{ width: '100%' }}
                             options={processMasters
                               .filter(p =>
-                                ['hole', 'cutout', 'forma', 'farma']
+                                ['hole', 'cutout', 'farma', 'beveling']
                                   .includes(p.process_type)
                               )
                               .map(p => ({ value: p.id, label: p.name }))
@@ -2192,7 +2192,7 @@ const SalesOrderForm = () => {
                         style={{ width: '100%' }}
                         options={processMasters
                           .filter(p =>
-                            ['hole', 'cutout', 'farma', 'forma'].includes(p.process_type)
+                            ['hole', 'cutout', 'farma', 'beveling'].includes(p.process_type)
                           )
                           .map(p => ({
                             value: p.id,

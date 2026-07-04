@@ -8,15 +8,17 @@ import { processMasterApi } from '../../api'
 const { TextArea } = Input
 
 const PROCESS_TYPES = [
-  { value: 'cutting', label: 'Cutting' },
+  { value: 'cutting',   label: 'Cutting' },
   { value: 'polishing', label: 'Polishing' },
-  { value: 'hole', label: 'Hole Drilling' },
-  { value: 'cutout', label: 'Cutout' },
+  { value: 'beveling',  label: 'Beveling' },
+  { value: 'hole',      label: 'Hole Drilling' },
+  { value: 'cutout',    label: 'Cutout' },
+  { value: 'farma',     label: 'Farma / Shape Cut' },
   { value: 'fabrication', label: 'Fabrication' },
-  { value: 'toughening', label: 'Toughening' },
-  { value: 'handling', label: 'Handling' },
-  { value: 'delivery', label: 'Delivery' },
-  { value: 'other', label: 'Other' },
+  { value: 'toughening',  label: 'Toughening' },
+  { value: 'handling',    label: 'Handling' },
+  { value: 'delivery',    label: 'Delivery' },
+  { value: 'other',       label: 'Other' },
 ]
 
 const CHARGE_TYPES = [
