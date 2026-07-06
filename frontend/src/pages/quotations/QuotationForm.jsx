@@ -78,6 +78,7 @@ const CEILING_OPTIONS = [
   { value: 3, label: '3" (Tight)' },
   { value: 6, label: '6" (Standard)' },
   { value: 'plus30mm', label: '+30mm' },
+  { value: 'custom', label: 'Custom mm' },
 ]
 
 const parseGlassDescription = (name, dropdownConfig) => {
@@ -222,8 +223,12 @@ const emptyGroup = () => ({
   ceiling_inches: 6,
   ceiling_w_inches: 6,
   ceiling_h_inches: 6,
+  ceiling_w_custom_mm: 30,
+  ceiling_h_custom_mm: 30,
   wizard_cost_ceil_w: 3,
   wizard_cost_ceil_h: 3,
+  wizard_cost_ceil_w_custom_mm: 30,
+  wizard_cost_ceil_h_custom_mm: 30,
   wizard_cep_cost_rate: 5,
   is_toughened: false,
   base_glass_rate: 0,
@@ -378,6 +383,8 @@ const QuotationForm = () => {
           ceiling_inches: line.ceiling_inches || 6,
           ceiling_w_inches: line.ceiling_w_inches || line.ceiling_inches || 6,
           ceiling_h_inches: line.ceiling_h_inches || line.ceiling_inches || 6,
+          ceiling_w_custom_mm: line.ceiling_w_custom_mm || 30,
+          ceiling_h_custom_mm: line.ceiling_h_custom_mm || 30,
           is_toughened: line.is_toughened || false,
           base_glass_rate: line.base_glass_rate || 0,
           manual_cost_price: line.manual_cost_price || null,
@@ -396,6 +403,8 @@ const QuotationForm = () => {
           cep_rft_multiplier: line.cep_rft_multiplier || null,
           wizard_cost_ceil_w: line.wizard_cost_ceil_w || 3,
           wizard_cost_ceil_h: line.wizard_cost_ceil_h || 3,
+          wizard_cost_ceil_w_custom_mm: line.wizard_cost_ceil_w_custom_mm || 30,
+          wizard_cost_ceil_h_custom_mm: line.wizard_cost_ceil_h_custom_mm || 30,
           wizard_cep_cost_rate: line.wizard_cep_cost_rate || 5,
 
           sizes: [],
@@ -556,10 +565,18 @@ const QuotationForm = () => {
 
     const ceilFnW = (x) => {
       if (ceilW === 'plus30mm') return x + (30 / 25.4)
+      if (ceilW === 'custom') {
+        const customMm = group.ceiling_w_custom_mm || 30
+        return x + (customMm / 25.4)
+      }
       return Math.ceil(x / ceilW) * ceilW
     }
     const ceilFnH = (x) => {
       if (ceilH === 'plus30mm') return x + (30 / 25.4)
+      if (ceilH === 'custom') {
+        const customMm = group.ceiling_h_custom_mm || 30
+        return x + (customMm / 25.4)
+      }
       return Math.ceil(x / ceilH) * ceilH
     }
     // Keep ceilFn for backward compat (uses W ceiling)
@@ -655,12 +672,15 @@ const QuotationForm = () => {
 
     const cost_ceil_w = group.wizard_cost_ceil_w || 3
     const cost_ceil_h = group.wizard_cost_ceil_h || 3
-    const costCeilFn = (x, c) => {
+    const costCeilFn = (x, c, customMm) => {
       if (c === 'plus30mm') return x + (30 / 25.4)
+      if (c === 'custom') return x + ((customMm || 30) / 25.4)
       return Math.ceil(x / c) * c
     }
-    const cost_charged_w = parseFloat(costCeilFn(w_inch, cost_ceil_w).toFixed(4))
-    const cost_charged_h = parseFloat(costCeilFn(h_inch, cost_ceil_h).toFixed(4))
+    const cost_ceil_w_custom_mm = group.wizard_cost_ceil_w_custom_mm || 30
+    const cost_ceil_h_custom_mm = group.wizard_cost_ceil_h_custom_mm || 30
+    const cost_charged_w = parseFloat(costCeilFn(w_inch, cost_ceil_w, cost_ceil_w_custom_mm).toFixed(4))
+    const cost_charged_h = parseFloat(costCeilFn(h_inch, cost_ceil_h, cost_ceil_h_custom_mm).toFixed(4))
     const cost_charged_sqft = (cost_charged_w * cost_charged_h * qty) / 144
     const glass_cost = parseFloat((cost_charged_sqft * costPerSqft).toFixed(2))
 
@@ -783,7 +803,12 @@ const QuotationForm = () => {
       if (field === 'ceiling_inches') {
         updated.sizes = g.sizes.map(s => calcGroupSize(updated, s))
       }
-      if (field === 'ceiling_w_inches' || field === 'ceiling_h_inches') {
+      if (
+        field === 'ceiling_w_inches' ||
+        field === 'ceiling_h_inches' ||
+        field === 'ceiling_w_custom_mm' ||
+        field === 'ceiling_h_custom_mm'
+      ) {
         updated.sizes = g.sizes.map(s => calcGroupSize(updated, s))
       }
 
@@ -797,7 +822,8 @@ const QuotationForm = () => {
         // triggered recalculation before, leaving glass_cost/cost_amount/
         // margin_amount/margin_pct stale on every size until some unrelated
         // field (like rate) happened to be touched afterward.
-        'manual_cost_price', 'wizard_cost_ceil_w', 'wizard_cost_ceil_h', 'wizard_cep_cost_rate'
+        'manual_cost_price', 'wizard_cost_ceil_w', 'wizard_cost_ceil_h', 'wizard_cep_cost_rate',
+        'wizard_cost_ceil_w_custom_mm', 'wizard_cost_ceil_h_custom_mm'
       ].includes(field)) {
         updated.sizes = g.sizes.map(s => calcGroupSize(updated, s))
       }
@@ -1165,6 +1191,8 @@ const QuotationForm = () => {
         ceiling_inches: g.ceiling_inches,
         ceiling_w_inches: g.ceiling_w_inches ?? g.ceiling_inches ?? 6,
         ceiling_h_inches: g.ceiling_h_inches ?? g.ceiling_inches ?? 6,
+        ceiling_w_custom_mm: g.ceiling_w_custom_mm ?? 30,
+        ceiling_h_custom_mm: g.ceiling_h_custom_mm ?? 30,
         is_toughened: g.is_toughened,
         product_id: g.product_id,
         description: g.description,
@@ -1173,6 +1201,8 @@ const QuotationForm = () => {
         manual_cost_price: g.manual_cost_price || null,
         wizard_cost_ceil_w: g.wizard_cost_ceil_w ?? 3,
         wizard_cost_ceil_h: g.wizard_cost_ceil_h ?? 3,
+        wizard_cost_ceil_w_custom_mm: g.wizard_cost_ceil_w_custom_mm ?? 30,
+        wizard_cost_ceil_h_custom_mm: g.wizard_cost_ceil_h_custom_mm ?? 30,
         wizard_cep_cost_rate: g.wizard_cep_cost_rate ?? 5,
         rate_rft: g.rate_rft,
         cep: g.cep,
@@ -2160,25 +2190,69 @@ const QuotationForm = () => {
 
           <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '8px 14px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
             <Text style={{ fontSize: 12, fontWeight: 600, color: '#374151' }}>Cost Ceiling:</Text>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
               <Text style={{ fontSize: 12, color: '#6b7280' }}>W:</Text>
-              <Select size="small" value={compWizard.cost_ceil_w} style={{ width: 130 }} options={[{ value: 3, label: '3" (Tight)' }, { value: 6, label: '6" (Standard)' }, { value: 'plus30mm', label: '+30mm' }]}
+              <Select size="small" value={compWizard.cost_ceil_w} style={{ width: 140 }}
+                options={[{ value: 3, label: '3" (Tight)' }, { value: 6, label: '6" (Standard)' }, { value: 'plus30mm', label: '+30mm' }, { value: 'custom', label: 'Custom mm' }]}
                 onChange={val => {
-                  const effectiveCostPrice = wizardCostPrice ?? compWizard?.cost_price ?? 0; const costCeilFn = (x, c) => c === 'plus30mm' ? x + (30 / 25.4) : Math.ceil(x / c) * c
+                  const effectiveCostPrice = wizardCostPrice ?? compWizard?.cost_price ?? 0
+                  const customMm = compWizard.cost_ceil_w_custom_mm || 30
+                  const costCeilFn = (x, c) => c === 'plus30mm' ? x + (30 / 25.4) : c === 'custom' ? x + (customMm / 25.4) : Math.ceil(x / c) * c
                   const newRows = compWizard.rows.map(row => { const cost_charged_w = parseFloat(costCeilFn(row._w_raw || 0, val).toFixed(4)); const cost_charged_h = row.cost_charged_h || 0; const qty = row.quantity || 1; const charged_sqft = (cost_charged_w * cost_charged_h * qty) / 144; const glass_cost = parseFloat((charged_sqft * effectiveCostPrice).toFixed(2)); const cep_cost = parseFloat((parseFloat(row.actual_rft) * (compWizard.cep_cost_rate || 5)).toFixed(2)); const cost_amount = parseFloat((glass_cost + cep_cost + (row.proc_cost || 0)).toFixed(2)); const margin_amount = parseFloat((row.selling_amount - cost_amount).toFixed(2)); const margin_pct = cost_amount > 0 ? parseFloat(((margin_amount / cost_amount) * 100).toFixed(2)) : 100; return { ...row, cost_ceil_w: val, cost_charged_w, charged_sqft: charged_sqft.toFixed(3), glass_cost, cep_cost, cost_amount, margin_amount, margin_pct } })
                   const totalCost = newRows.reduce((s, r) => s + r.cost_amount, 0); const totalCepCost = newRows.reduce((s, r) => s + (r.cep_cost || 0), 0); const totalMargin = compWizard.totalSelling - totalCost; const totalMarginPct = totalCost > 0 ? parseFloat(((totalMargin / totalCost) * 100).toFixed(2)) : 100
-                  setCompWizard(prev => ({ ...prev, rows: newRows, totalCost, totalCepCost, totalMargin, totalMarginPct, cost_ceil_w: val })); if (compWizard.group_key) updateGroup(compWizard.group_key, 'wizard_cost_ceil_w', val)
+                  setCompWizard(prev => ({ ...prev, rows: newRows, totalCost, totalCepCost, totalMargin, totalMarginPct, cost_ceil_w: val }))
+                  if (compWizard.group_key) updateGroup(compWizard.group_key, 'wizard_cost_ceil_w', val)
                 }} />
+              {compWizard.cost_ceil_w === 'custom' && (
+                <InputNumber
+                  size="small"
+                  value={compWizard.cost_ceil_w_custom_mm ?? 30}
+                  min={1} max={500}
+                  addonAfter="mm"
+                  style={{ width: 110 }}
+                  onChange={val => {
+                    const mm = val || 30
+                    const effectiveCostPrice = wizardCostPrice ?? compWizard?.cost_price ?? 0
+                    const costCeilFn = (x) => x + (mm / 25.4)
+                    const newRows = compWizard.rows.map(row => { const cost_charged_w = parseFloat(costCeilFn(row._w_raw || 0).toFixed(4)); const cost_charged_h = row.cost_charged_h || 0; const qty = row.quantity || 1; const charged_sqft = (cost_charged_w * cost_charged_h * qty) / 144; const glass_cost = parseFloat((charged_sqft * effectiveCostPrice).toFixed(2)); const cep_cost = parseFloat((parseFloat(row.actual_rft) * (compWizard.cep_cost_rate || 5)).toFixed(2)); const cost_amount = parseFloat((glass_cost + cep_cost + (row.proc_cost || 0)).toFixed(2)); const margin_amount = parseFloat((row.selling_amount - cost_amount).toFixed(2)); const margin_pct = cost_amount > 0 ? parseFloat(((margin_amount / cost_amount) * 100).toFixed(2)) : 100; return { ...row, cost_charged_w, charged_sqft: charged_sqft.toFixed(3), glass_cost, cep_cost, cost_amount, margin_amount, margin_pct } })
+                    const totalCost = newRows.reduce((s, r) => s + r.cost_amount, 0); const totalCepCost = newRows.reduce((s, r) => s + (r.cep_cost || 0), 0); const totalMargin = compWizard.totalSelling - totalCost; const totalMarginPct = totalCost > 0 ? parseFloat(((totalMargin / totalCost) * 100).toFixed(2)) : 100
+                    setCompWizard(prev => ({ ...prev, rows: newRows, totalCost, totalCepCost, totalMargin, totalMarginPct, cost_ceil_w_custom_mm: mm }))
+                    if (compWizard.group_key) updateGroup(compWizard.group_key, 'wizard_cost_ceil_w_custom_mm', mm)
+                  }}
+                />
+              )}
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
               <Text style={{ fontSize: 12, color: '#6b7280' }}>H:</Text>
-              <Select size="small" value={compWizard.cost_ceil_h} style={{ width: 130 }} options={[{ value: 3, label: '3" (Tight)' }, { value: 6, label: '6" (Standard)' }, { value: 'plus30mm', label: '+30mm' }]}
+              <Select size="small" value={compWizard.cost_ceil_h} style={{ width: 140 }}
+                options={[{ value: 3, label: '3" (Tight)' }, { value: 6, label: '6" (Standard)' }, { value: 'plus30mm', label: '+30mm' }, { value: 'custom', label: 'Custom mm' }]}
                 onChange={val => {
-                  const effectiveCostPrice = wizardCostPrice ?? compWizard?.cost_price ?? 0; const costCeilFn = (x, c) => c === 'plus30mm' ? x + (30 / 25.4) : Math.ceil(x / c) * c
+                  const effectiveCostPrice = wizardCostPrice ?? compWizard?.cost_price ?? 0
+                  const customMm = compWizard.cost_ceil_h_custom_mm || 30
+                  const costCeilFn = (x, c) => c === 'plus30mm' ? x + (30 / 25.4) : c === 'custom' ? x + (customMm / 25.4) : Math.ceil(x / c) * c
                   const newRows = compWizard.rows.map(row => { const cost_charged_w = row.cost_charged_w || 0; const cost_charged_h = parseFloat(costCeilFn(row._h_raw || 0, val).toFixed(4)); const qty = row.quantity || 1; const charged_sqft = (cost_charged_w * cost_charged_h * qty) / 144; const glass_cost = parseFloat((charged_sqft * effectiveCostPrice).toFixed(2)); const cep_cost = parseFloat((parseFloat(row.actual_rft) * (compWizard.cep_cost_rate || 5)).toFixed(2)); const cost_amount = parseFloat((glass_cost + cep_cost + (row.proc_cost || 0)).toFixed(2)); const margin_amount = parseFloat((row.selling_amount - cost_amount).toFixed(2)); const margin_pct = cost_amount > 0 ? parseFloat(((margin_amount / cost_amount) * 100).toFixed(2)) : 100; return { ...row, cost_ceil_h: val, cost_charged_h, charged_sqft: charged_sqft.toFixed(3), glass_cost, cep_cost, cost_amount, margin_amount, margin_pct } })
                   const totalCost = newRows.reduce((s, r) => s + r.cost_amount, 0); const totalCepCost = newRows.reduce((s, r) => s + (r.cep_cost || 0), 0); const totalMargin = compWizard.totalSelling - totalCost; const totalMarginPct = totalCost > 0 ? parseFloat(((totalMargin / totalCost) * 100).toFixed(2)) : 100
-                  setCompWizard(prev => ({ ...prev, rows: newRows, totalCost, totalCepCost, totalMargin, totalMarginPct, cost_ceil_h: val })); if (compWizard.group_key) updateGroup(compWizard.group_key, 'wizard_cost_ceil_h', val)
+                  setCompWizard(prev => ({ ...prev, rows: newRows, totalCost, totalCepCost, totalMargin, totalMarginPct, cost_ceil_h: val }))
+                  if (compWizard.group_key) updateGroup(compWizard.group_key, 'wizard_cost_ceil_h', val)
                 }} />
+              {compWizard.cost_ceil_h === 'custom' && (
+                <InputNumber
+                  size="small"
+                  value={compWizard.cost_ceil_h_custom_mm ?? 30}
+                  min={1} max={500}
+                  addonAfter="mm"
+                  style={{ width: 110 }}
+                  onChange={val => {
+                    const mm = val || 30
+                    const effectiveCostPrice = wizardCostPrice ?? compWizard?.cost_price ?? 0
+                    const costCeilFn = (x) => x + (mm / 25.4)
+                    const newRows = compWizard.rows.map(row => { const cost_charged_w = row.cost_charged_w || 0; const cost_charged_h = parseFloat(costCeilFn(row._h_raw || 0).toFixed(4)); const qty = row.quantity || 1; const charged_sqft = (cost_charged_w * cost_charged_h * qty) / 144; const glass_cost = parseFloat((charged_sqft * effectiveCostPrice).toFixed(2)); const cep_cost = parseFloat((parseFloat(row.actual_rft) * (compWizard.cep_cost_rate || 5)).toFixed(2)); const cost_amount = parseFloat((glass_cost + cep_cost + (row.proc_cost || 0)).toFixed(2)); const margin_amount = parseFloat((row.selling_amount - cost_amount).toFixed(2)); const margin_pct = cost_amount > 0 ? parseFloat(((margin_amount / cost_amount) * 100).toFixed(2)) : 100; return { ...row, cost_charged_h, charged_sqft: charged_sqft.toFixed(3), glass_cost, cep_cost, cost_amount, margin_amount, margin_pct } })
+                    const totalCost = newRows.reduce((s, r) => s + r.cost_amount, 0); const totalCepCost = newRows.reduce((s, r) => s + (r.cep_cost || 0), 0); const totalMargin = compWizard.totalSelling - totalCost; const totalMarginPct = totalCost > 0 ? parseFloat(((totalMargin / totalCost) * 100).toFixed(2)) : 100
+                    setCompWizard(prev => ({ ...prev, rows: newRows, totalCost, totalCepCost, totalMargin, totalMarginPct, cost_ceil_h_custom_mm: mm }))
+                    if (compWizard.group_key) updateGroup(compWizard.group_key, 'wizard_cost_ceil_h_custom_mm', mm)
+                  }}
+                />
+              )}
             </div>
           </div>
 

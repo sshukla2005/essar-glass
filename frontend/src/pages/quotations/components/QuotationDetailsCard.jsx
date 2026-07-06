@@ -175,7 +175,9 @@ const QuotationDetailsCard = forwardRef(({
               <Select 
                 showSearch 
                 placeholder="Select customer" 
-                options={customers.map(c => ({ value: c.id, label: c.name }))}
+                options={[...customers]
+                  .sort((a, b) => (a.name || '').toLowerCase().localeCompare((b.name || '').toLowerCase()))
+                  .map(c => ({ value: c.id, label: c.name }))}
                 filterOption={(i, o) => o.label.toLowerCase().includes(i.toLowerCase())} 
                 onChange={handleCustomerChange}
                 size="large"

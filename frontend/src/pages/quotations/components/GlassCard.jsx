@@ -783,7 +783,7 @@ const GlassCard = ({
               </div>
             </Col>
 
-            <Col xs={12} sm={6} md={2}>
+            <Col xs={12} sm={6} md={3}>
               <Text style={{ fontSize: 10, color: '#64748B', display: 'block', marginBottom: 4, textTransform: 'uppercase', fontWeight: 600 }}>W Ceiling</Text>
               <Select 
                 size="small" 
@@ -792,9 +792,20 @@ const GlassCard = ({
                 options={CEILING_OPTIONS} 
                 onChange={val => updateGroup(group.group_key, 'ceiling_w_inches', val)} 
               />
+              {group.ceiling_w_inches === 'custom' && (
+                <InputNumber
+                  size="small"
+                  value={group.ceiling_w_custom_mm ?? 30}
+                  min={1}
+                  max={500}
+                  addonAfter="mm"
+                  style={{ width: '100%', marginTop: 6, borderRadius: 6 }}
+                  onChange={val => updateGroup(group.group_key, 'ceiling_w_custom_mm', val || 30)}
+                />
+              )}
             </Col>
 
-            <Col xs={12} sm={6} md={2}>
+            <Col xs={12} sm={6} md={3}>
               <Text style={{ fontSize: 10, color: '#64748B', display: 'block', marginBottom: 4, textTransform: 'uppercase', fontWeight: 600 }}>H Ceiling</Text>
               <Select 
                 size="small" 
@@ -803,6 +814,17 @@ const GlassCard = ({
                 options={CEILING_OPTIONS} 
                 onChange={val => updateGroup(group.group_key, 'ceiling_h_inches', val)} 
               />
+              {group.ceiling_h_inches === 'custom' && (
+                <InputNumber
+                  size="small"
+                  value={group.ceiling_h_custom_mm ?? 30}
+                  min={1}
+                  max={500}
+                  addonAfter="mm"
+                  style={{ width: '100%', marginTop: 6, borderRadius: 6 }}
+                  onChange={val => updateGroup(group.group_key, 'ceiling_h_custom_mm', val || 30)}
+                />
+              )}
             </Col>
           </Row>
 
