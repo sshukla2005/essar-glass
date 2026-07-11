@@ -380,7 +380,7 @@ const SalesOrderForm = () => {
           wizard_cost_ceil_h: line.wizard_cost_ceil_h || 3,
           wizard_cost_ceil_w_custom_mm: line.wizard_cost_ceil_w_custom_mm || 30,
           wizard_cost_ceil_h_custom_mm: line.wizard_cost_ceil_h_custom_mm || 30,
-          wizard_cep_cost_rate: line.wizard_cep_cost_rate || 5,
+          wizard_cep_cost_rate: line.wizard_cep_cost_rate ?? 5,
           ceiling_w_custom_mm: line.ceiling_w_custom_mm || 30,
           ceiling_h_custom_mm: line.ceiling_h_custom_mm || 30,
           cep_polish_rate: line.cep_polish_rate || 15,
@@ -888,6 +888,7 @@ const SalesOrderForm = () => {
             if (saved?.manual_cost_price) g.manual_cost_price = saved.manual_cost_price
             if (saved?.wizard_cost_ceil_w) g.wizard_cost_ceil_w = saved.wizard_cost_ceil_w
             if (saved?.wizard_cost_ceil_h) g.wizard_cost_ceil_h = saved.wizard_cost_ceil_h
+            if (saved?.wizard_cep_cost_rate != null) g.wizard_cep_cost_rate = saved.wizard_cep_cost_rate
             if (saved?.target_margin) g.target_margin = saved.target_margin
           })
         }
@@ -1041,10 +1042,11 @@ const SalesOrderForm = () => {
       // Glass cost = charged sqft × cost price
       const glass_cost = parseFloat((charged_sqft * costPerSqft).toFixed(2))
 
-      // CEP cost = actual running ft × ₹5 (inch to inch, no ceiling)
+      // CEP cost = actual running ft × rate (inch to inch, no ceiling)
       const actual_rft = parseFloat(((w + h) * 2 / 12 * qty).toFixed(4))
+      const wizardCepRate = (typeof group.wizard_cep_cost_rate === 'number' && group.wizard_cep_cost_rate >= 0) ? group.wizard_cep_cost_rate : CEP_COST_RATE
       const cep_cost = group.cep
-        ? parseFloat((actual_rft * CEP_COST_RATE).toFixed(2))
+        ? parseFloat((actual_rft * wizardCepRate).toFixed(2))
         : 0
 
       // Total cost = glass cost + CEP cost
@@ -1097,7 +1099,7 @@ const SalesOrderForm = () => {
       cost_price: costPerSqft,
       selling_rate: group.rate,
       cep_on: group.cep,
-      cep_cost_rate: CEP_COST_RATE,
+      cep_cost_rate: (typeof group.wizard_cep_cost_rate === 'number' && group.wizard_cep_cost_rate >= 0) ? group.wizard_cep_cost_rate : CEP_COST_RATE,
       rows,
       glassSellingTotal,
       totalProcSelling,

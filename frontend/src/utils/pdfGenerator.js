@@ -439,11 +439,10 @@ const getColsConfig = (hasCep) => {
       { id: 'chg_w', h: 'WIDTH', w: 17, parent: 'Charge Size-Inch' },
       { id: 'chg_h', h: 'HEIGHT', w: 17, parent: 'Charge Size-Inch' },
       { id: 'qty', h: 'Qty', w: 10, a: 'c' },
-      { id: 'sqft', h: 'Sqft', w: 16, a: 'r' },
-      { id: 'rft', h: 'Rft', w: 16, a: 'r' },
+      { id: 'sqft', h: 'Sqft', w: 20, a: 'r' },
       { id: 'cep', h: 'CEP Rs.', w: 18, a: 'r' },
-      { id: 'rate', h: 'Rate', w: 18, a: 'r' },
-      { id: 'amount', h: 'Amount Rs.', w: 36, a: 'r' },
+      { id: 'rate', h: 'Rate', w: 22, a: 'r' },
+      { id: 'amount', h: 'Amount Rs.', w: 44, a: 'r' },
     ]
   } else {
     return [
@@ -453,10 +452,9 @@ const getColsConfig = (hasCep) => {
       { id: 'chg_w', h: 'WIDTH', w: 17, parent: 'Charge Size-Inch' },
       { id: 'chg_h', h: 'HEIGHT', w: 17, parent: 'Charge Size-Inch' },
       { id: 'qty', h: 'Qty', w: 10, a: 'c' },
-      { id: 'sqft', h: 'Sqft', w: 20, a: 'r' },
-      { id: 'rft', h: 'Rft', w: 20, a: 'r' },
-      { id: 'rate', h: 'Rate', w: 18, a: 'r' },
-      { id: 'amount', h: 'Amount Rs.', w: 46, a: 'r' },
+      { id: 'sqft', h: 'Sqft', w: 24, a: 'r' },
+      { id: 'rate', h: 'Rate', w: 24, a: 'r' },
+      { id: 'amount', h: 'Amount Rs.', w: 56, a: 'r' },
     ]
   }
 }
@@ -746,7 +744,6 @@ const drawGroupCard = (doc, group, groupNo, hasCep, cols, startY, pageNum, quota
       chargedH > 0 ? toFraction(chargedH) : '',
       String(qty),
       sqft.toFixed(3),
-      rft.toFixed(3),
       ...(hasCep ? [cep > 0 ? fmtN(cep) : '-'] : []),
       fmtN(rate),
       fmtN(amt)
@@ -1525,7 +1522,6 @@ const drawSOItemsCard = (doc, lines, hasCep, cols, startY, pageNum, so) => {
       chargedH > 0 ? toFraction(chargedH) : '',
       String(qty),
       area.toFixed(3),
-      rft.toFixed(3),
       ...(hasCep ? [cep > 0 ? fmtN(cep) : '-'] : []),
       fmtN(rate),
       fmtN(amt)
@@ -1603,7 +1599,6 @@ const drawSOGroupCard = (doc, group, groupNo, hasCep, cols, startY, pageNum, so)
       chargedH > 0 ? toFraction(chargedH) : '',
       String(qty),
       sqft.toFixed(3),
-      rft.toFixed(3),
       ...(hasCep ? [cep > 0 ? fmtN(cep) : '-'] : []),
       fmtN(rate),
       fmtN(amt)
@@ -1873,7 +1868,6 @@ const drawPOItemsCard = (doc, lines, cols, startY, pageNum, po) => {
       chargedH > 0 ? toFraction(chargedH) : '',
       String(qty),
       area.toFixed(3),
-      rft.toFixed(3),
       fmtN(rate),
       fmtN(amt)
     ]

@@ -193,7 +193,7 @@ export const calcGroupSize = (group, size, products) => {
   const glass_cost = parseFloat((cost_charged_sqft * costPerSqft).toFixed(2))
 
   const CEP_COST_RATE = 5
-  const initCepRate = (typeof group.wizard_cep_cost_rate === 'number' && group.wizard_cep_cost_rate > 0)
+  const initCepRate = (typeof group.wizard_cep_cost_rate === 'number' && group.wizard_cep_cost_rate >= 0)
     ? group.wizard_cep_cost_rate
     : CEP_COST_RATE
   const cep_cost = group.cep
