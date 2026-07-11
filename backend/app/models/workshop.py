@@ -21,6 +21,9 @@ class WorkshopOrder(Base, TimestampMixin, SoftDeleteMixin):
     so_number      = Column(String(20),  nullable=True)
     customer_name  = Column(String(200), nullable=True)
     jobwork_vendor = Column(String(200), nullable=True)
+    # Artwork Panel Mapper — panel rectangles (JSON) + annotated master image (base64)
+    artwork_panels = Column(JSON,        nullable=True)
+    artwork_image  = Column(Text,        nullable=True)
     company_id   = Column(Integer, ForeignKey("companies.id"),
                           nullable=True, index=True)
 

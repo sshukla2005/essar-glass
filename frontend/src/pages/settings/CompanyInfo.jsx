@@ -40,6 +40,11 @@ const CompanyInfo = () => {
         address: companyData.address || '',
         phone: companyData.phone || '',
         email: companyData.email || '',
+        bank_ac_name: companyData.bank_ac_name || '',
+        bank_name: companyData.bank_name || '',
+        bank_branch: companyData.bank_branch || '',
+        bank_ac_no: companyData.bank_ac_no || '',
+        bank_ifsc: companyData.bank_ifsc || '',
       })
       if (companyData.logo) setLogoPreview(companyData.logo)
     }
@@ -58,6 +63,7 @@ const CompanyInfo = () => {
   const handleSave = async () => {
     try {
       const values = await form.validateFields()
+      if (values.bank_ifsc) values.bank_ifsc = values.bank_ifsc.toUpperCase()
       await saveMutation.mutateAsync(values)
     } catch {}
   }
@@ -219,6 +225,34 @@ const CompanyInfo = () => {
             <Col span={12}>
               <Form.Item name="email" label="Email">
                 <Input placeholder="info@company.com" type="email" />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Divider orientation="left">Bank Details</Divider>
+          <Row gutter={16}>
+            <Col span={8}>
+              <Form.Item name="bank_ac_name" label="A/C Name">
+                <Input placeholder="A/C Holder Name" />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="bank_name" label="Bank Name">
+                <Input placeholder="e.g., HDFC Bank Ltd" />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="bank_branch" label="Branch">
+                <Input placeholder="e.g., Virar West" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="bank_ac_no" label="A/C Number">
+                <Input placeholder="A/C Number" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="bank_ifsc" label="IFSC Code">
+                <Input placeholder="IFSC Code" style={{ textTransform: 'uppercase' }} />
               </Form.Item>
             </Col>
           </Row>

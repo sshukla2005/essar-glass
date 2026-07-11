@@ -35,36 +35,50 @@ const classifyGlass = (thickness) => {
 
 
 
-const StatCard = ({ title, value, percentage, isUp, textUp, textDown }) => (
-  <Card
-    style={{
-      borderRadius: 24,
-      boxShadow: '0 8px 24px rgba(0,0,0,0.04)',
-      border: '1px solid #dbeafe',
-      backgroundColor: '#f0f7ff',
-      transition: 'transform 0.2s, box-shadow 0.2s'
-    }}
-    hoverable
-    bodyStyle={{ padding: '28px' }}
-  >
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
-      <Text type="secondary" style={{ fontSize: 14, fontWeight: 500, color: '#8c8c8c' }}>{title}</Text>
-      <Tag style={{ borderRadius: 10, padding: '2px 10px', border: '1px solid #f0f0f0', backgroundColor: '#fff', color: '#595959', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
-        {isUp ? <RiseOutlined style={{ fontSize: 12 }} /> : <FallOutlined style={{ fontSize: 12 }} />} {percentage}
-      </Tag>
-    </div>
-    <div style={{ marginBottom: 20 }}>
-      <Title level={2} style={{ margin: 0, fontWeight: 700, color: '#1f1f1f', fontSize: 32 }}>{value}</Title>
-    </div>
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-      <Text style={{ fontWeight: 600, fontSize: 14, color: '#262626' }}>{textUp}</Text>
-      {isUp ? <RiseOutlined style={{ color: '#262626', fontSize: 14 }}/> : <FallOutlined style={{ color: '#262626', fontSize: 14 }} />}
-    </div>
-    <div>
-      <Text type="secondary" style={{ fontSize: 13, color: '#8c8c8c' }}>{textDown}</Text>
-    </div>
-  </Card>
-)
+const StatCard = ({ title, value, percentage, isUp, textUp, textDown, onClick }) => {
+  const handleKeyDown = (e) => {
+    if (onClick && (e.key === 'Enter' || e.key === ' ')) {
+      e.preventDefault()
+      onClick(e)
+    }
+  }
+
+  return (
+    <Card
+      style={{
+        borderRadius: 24,
+        boxShadow: '0 8px 24px rgba(0,0,0,0.04)',
+        border: '1px solid #dbeafe',
+        backgroundColor: '#f0f7ff',
+        transition: 'transform 0.2s, box-shadow 0.2s',
+        cursor: onClick ? 'pointer' : 'default'
+      }}
+      hoverable
+      bodyStyle={{ padding: '28px' }}
+      onClick={onClick}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={onClick ? handleKeyDown : undefined}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
+        <Text type="secondary" style={{ fontSize: 14, fontWeight: 500, color: '#8c8c8c' }}>{title}</Text>
+        <Tag style={{ borderRadius: 10, padding: '2px 10px', border: '1px solid #f0f0f0', backgroundColor: '#fff', color: '#595959', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
+          {isUp ? <RiseOutlined style={{ fontSize: 12 }} /> : <FallOutlined style={{ fontSize: 12 }} />} {percentage}
+        </Tag>
+      </div>
+      <div style={{ marginBottom: 20 }}>
+        <Title level={2} style={{ margin: 0, fontWeight: 700, color: '#1f1f1f', fontSize: 32 }}>{value}</Title>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+        <Text style={{ fontWeight: 600, fontSize: 14, color: '#262626' }}>{textUp}</Text>
+        {isUp ? <RiseOutlined style={{ color: '#262626', fontSize: 14 }}/> : <FallOutlined style={{ color: '#262626', fontSize: 14 }} />}
+      </div>
+      <div>
+        <Text type="secondary" style={{ fontSize: 13, color: '#8c8c8c' }}>{textDown}</Text>
+      </div>
+    </Card>
+  )
+}
 
 const Dashboard = () => {
   const [timeRange, setTimeRange] = useState('yearly')
@@ -162,6 +176,7 @@ const Dashboard = () => {
         const cust = customers.find(c => c.id === i.customer_id)
         return {
           key: i.id,
+          id: i.id,
           status: i.status || 'draft',
           customer: cust?.name || 'Customer',
           amount: i.total_amount || 0,
@@ -277,6 +292,7 @@ const Dashboard = () => {
             isUp={stats.totalQuotes > 0}
             textUp={stats.totalQuotes > 0 ? "Active quotations" : "No quotations yet"}
             textDown={`${stats.pendingQuotes} awaiting confirmation`}
+            onClick={() => navigate('/quotations')}
           />
         </Col>
         <Col xs={24} sm={12} xl={6}>
@@ -287,6 +303,7 @@ const Dashboard = () => {
             isUp={stats.activeSOs > 0}
             textUp={stats.activeSOs > 0 ? "Orders in production" : "No active orders"}
             textDown={`${stats.readySOs} orders ready to dispatch`}
+            onClick={() => navigate('/sales-orders')}
           />
         </Col>
         <Col xs={24} sm={12} xl={6}>
@@ -297,6 +314,7 @@ const Dashboard = () => {
             isUp={stats.dispatchReady > 0}
             textUp={stats.dispatchReady > 0 ? "Ready for delivery" : "No orders ready"}
             textDown={`${stats.awaitingDispatch} delivery challans pending`}
+            onClick={() => navigate('/sales-orders?status=ready')}
           />
         </Col>
         <Col xs={24} sm={12} xl={6}>
@@ -307,6 +325,7 @@ const Dashboard = () => {
             isUp={stats.totalRevenue > 0}
             textUp={stats.totalRevenue > 0 ? "From paid invoices" : "No revenue yet"}
             textDown={`${formatINR(stats.pendingRevenue)} pending collection`}
+            onClick={() => navigate('/invoices')}
           />
         </Col>
       </Row>
@@ -372,6 +391,15 @@ const Dashboard = () => {
               size="small"
               dataSource={stats.recentInvoices}
               locale={{ emptyText: 'No invoices yet — create your first invoice!' }}
+              onRow={(record) => {
+                if (record.id) {
+                  return {
+                    style: { cursor: 'pointer' },
+                    onClick: () => navigate(`/invoices/${record.id}/edit`)
+                  }
+                }
+                return {}
+              }}
               columns={[
                 { title: 'Status', dataIndex: 'status', render: s => <Tag color={s==='paid'?'green':s==='sent'?'blue':s==='cancelled'?'red':'default'} style={{borderRadius: 6}}>{s?.toUpperCase()}</Tag> },
                 { title: 'Customer', dataIndex: 'customer', render: c => <Text strong style={{fontSize: 13}}>{c}</Text> },

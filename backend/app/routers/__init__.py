@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from typing import Optional
 from app.database import get_db
 from app.deps import get_current_user
-from app.utils.helpers import apply_company_filter, paginate, get_next_code
+from app.utils.helpers import apply_company_filter, paginate, get_next_code, serialize_row, stash_extra_fields
 
 
 def make_crud_router(
@@ -77,7 +77,7 @@ def make_crud_router(
         q = apply_company_filter(q, model, user)
         if hasattr(model, "is_active"):
             q = q.filter(model.is_active == True)
-        return q.order_by(model.id).all()
+        return [serialize_row(o) for o in q.order_by(model.id).all()]
 
     @router.get("/{item_id}")
     def get_item(
@@ -88,7 +88,7 @@ def make_crud_router(
         item = db.query(model).filter(model.id == item_id).first()
         if not item:
             raise HTTPException(status_code=404, detail="Not found")
-        return item
+        return serialize_row(item)
 
     @router.post("/", status_code=201)
     def create_item(
@@ -135,15 +135,15 @@ def make_crud_router(
             from app.services.auth_service import hash_password
             obj_data['password'] = hash_password(obj_data['password'])
 
-        valid_columns = {c.key for c in model.__table__.columns}
-        obj_data = {k: v for k, v in obj_data.items()
-                    if k in valid_columns}
+        # Unknown fields → extra_data JSON (if the model has it) instead of
+        # silently dropping them. Kills the silent data-loss bug class.
+        obj_data = stash_extra_fields(model, obj_data)
 
         item = model(**obj_data)
         db.add(item)
         db.commit()
         db.refresh(item)
-        return item
+        return serialize_row(item)
 
     @router.put("/{item_id}")
     def update_item(
@@ -183,14 +183,19 @@ def make_crud_router(
             from app.services.auth_service import hash_password
             update_data['password'] = hash_password(update_data['password'])
 
-        valid_columns = {c.key for c in model.__table__.columns}
+        update_data = stash_extra_fields(model, update_data)
+        # Merge with existing extra_data so partial updates never wipe
+        # previously stashed fields
+        if 'extra_data' in update_data:
+            existing = dict(getattr(item, 'extra_data', None) or {})
+            existing.update(update_data['extra_data'] or {})
+            update_data['extra_data'] = existing
         for k, v in update_data.items():
-            if k in valid_columns:
-                setattr(item, k, v)
+            setattr(item, k, v)
 
         db.commit()
         db.refresh(item)
-        return item
+        return serialize_row(item)
 
     @router.patch("/{item_id}/status")
     def change_status(
@@ -206,7 +211,7 @@ def make_crud_router(
             item.status = data.get("status")
         db.commit()
         db.refresh(item)
-        return item
+        return serialize_row(item)
 
     @router.patch("/{item_id}/archive")
     def archive_item(

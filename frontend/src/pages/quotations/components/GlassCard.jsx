@@ -13,7 +13,8 @@ import {
   Table, 
   Form, 
   Input, 
-  Space 
+  Space,
+  Divider
 } from 'antd'
 import { 
   DeleteOutlined, 
@@ -21,7 +22,9 @@ import {
   PlusOutlined, 
   CloseCircleOutlined,
   ThunderboltOutlined,
-  SettingOutlined
+  SettingOutlined,
+  PictureOutlined,
+  CloseOutlined
 } from '@ant-design/icons'
 import FractionInput, { toFraction } from './FractionInput'
 
@@ -876,7 +879,7 @@ const GlassCard = ({
                   <Select 
                     size="small" 
                     value={group.cep_polish_rate || 15} 
-                    style={{ width: 110 }} 
+                    style={{ width: 132 }} 
                     options={[
                       { value: 7,  label: '₹7/rft' }, 
                       { value: 10, label: '₹10/rft' }, 
@@ -888,19 +891,113 @@ const GlassCard = ({
                   />
                 )}
                 {group.cep && (group.cep_polish_rate === 'custom' || group.cep_polish_rate === 'custom_mm') && (
-                  <InputNumber 
-                    size="small" 
-                    value={group.cep_polish_rate_custom ?? 0} 
-                    min={0} 
-                    prefix="₹" 
-                    addonAfter={group.cep_polish_rate === 'custom_mm' ? '/mm' : '/rft'}
-                    style={{ width: 120, borderRadius: 6 }} 
-                    onChange={val => updateGroup(group.group_key, 'cep_polish_rate_custom', val)} 
-                  />
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    <InputNumber 
+                      size="small" 
+                      value={group.cep_polish_rate_custom ?? null} 
+                      placeholder="0"
+                      min={0} 
+                      prefix="₹" 
+                      addonAfter={group.cep_polish_rate === 'custom_mm' ? '/mm' : '/rft'}
+                      style={{ width: 120, borderRadius: 6 }} 
+                      onChange={val => updateGroup(group.group_key, 'cep_polish_rate_custom', val)} 
+                    />
+                    <Text style={{ fontSize: 9, color: '#94a3b8', lineHeight: '11px' }}>
+                      {group.cep_polish_rate === 'custom_mm' ? 'per mm perimeter' : 'per running foot'}
+                    </Text>
+                  </div>
                 )}
               </div>
             </Col>
           </Row>
+
+          {/* ── Artwork Section ── */}
+          {(() => {
+            const artworkMaster = (() => {
+              try { return JSON.parse(localStorage.getItem('artwork_master') || '[]') } catch { return [] }
+            })()
+            return (
+              <div style={{ marginBottom: 16, background: '#fafbff', border: '1px dashed #c7d2fe', borderRadius: 8, padding: '10px 14px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <PictureOutlined style={{ color: '#6366f1', fontSize: 14 }} />
+                  <Text style={{ fontSize: 11, fontWeight: 600, color: '#6366f1', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    Artwork / Design
+                  </Text>
+
+                  {/* Select from master */}
+                  <Select
+                    size="small"
+                    placeholder="Select from Artwork Master"
+                    allowClear
+                    showSearch
+                    style={{ width: 220 }}
+                    value={group.artwork_master_id || undefined}
+                    options={artworkMaster.map(a => ({ value: a.id, label: a.name }))}
+                    filterOption={(input, option) => option.label.toLowerCase().includes(input.toLowerCase())}
+                    onChange={val => {
+                      const artwork = artworkMaster.find(a => a.id === val)
+                      updateGroup(group.group_key, 'artwork_master_id', val || null)
+                      updateGroup(group.group_key, 'artwork_name', artwork?.name || null)
+                      updateGroup(group.group_key, 'artwork_file_data', artwork?.file_data || null)
+                    }}
+                  />
+
+                  <Text style={{ fontSize: 11, color: '#94a3b8' }}>or</Text>
+
+                  {/* Upload directly */}
+                  <label style={{ cursor: 'pointer' }}>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      style={{ display: 'none' }}
+                      onChange={e => {
+                        const file = e.target.files[0]
+                        if (!file) return
+                        const reader = new FileReader()
+                        reader.onload = ev => {
+                          updateGroup(group.group_key, 'artwork_master_id', null)
+                          updateGroup(group.group_key, 'artwork_name', file.name)
+                          updateGroup(group.group_key, 'artwork_file_data', ev.target.result)
+                        }
+                        reader.readAsDataURL(file)
+                        e.target.value = ''
+                      }}
+                    />
+                    <Button size="small" icon={<PlusOutlined />} style={{ borderColor: '#6366f1', color: '#6366f1' }}>
+                      Upload Image
+                    </Button>
+                  </label>
+
+                  {/* Show attached artwork name + clear button */}
+                  {group.artwork_file_data && (
+                    <Tag
+                      color="purple"
+                      closable
+                      onClose={() => {
+                        updateGroup(group.group_key, 'artwork_master_id', null)
+                        updateGroup(group.group_key, 'artwork_name', null)
+                        updateGroup(group.group_key, 'artwork_file_data', null)
+                      }}
+                      style={{ fontSize: 11 }}
+                    >
+                      🖼 {group.artwork_name || 'Artwork attached'}
+                    </Tag>
+                  )}
+                </div>
+
+                {/* Thumbnail preview */}
+                {group.artwork_file_data && (
+                  <div style={{ marginTop: 8 }}>
+                    <img
+                      src={group.artwork_file_data}
+                      alt="artwork preview"
+                      style={{ maxHeight: 80, maxWidth: 200, objectFit: 'contain', borderRadius: 4, border: '1px solid #e2e8f0' }}
+                    />
+                  </div>
+                )}
+              </div>
+            )
+          })()}
 
           {/* Sizes Table */}
           <div style={{ marginBottom: 16 }}>

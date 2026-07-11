@@ -27,5 +27,13 @@ class Invoice(Base, TimestampMixin, SoftDeleteMixin):
     tax_amount       = Column(Float,       default=0)
     total_amount     = Column(Float,       default=0)
     advance_received = Column(Float,       default=0)
+    # Fields the frontend saves/reads — were being silently stripped
+    gst_mode         = Column(String(20),  default="cgst_sgst")
+    discount_amount  = Column(Float,       default=0)
+    dc_charges       = Column(Float,       default=0)
+    amount_paid      = Column(Float,       default=0)
+    balance_due      = Column(Float,       default=0)
+    customer_notes   = Column(Text,        nullable=True)
+    notes            = Column(Text,        nullable=True)
     company_id       = Column(Integer, ForeignKey("companies.id"),
                               nullable=True, index=True)

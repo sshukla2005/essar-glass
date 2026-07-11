@@ -88,8 +88,15 @@ const TougheningForm = () => {
       form.setFieldsValue({ wo_id: woId, wo_number: wo.wo_number })
       const cepLines = (wo.lines || []).filter(l =>
         l.is_toughened ||
-        l.processes?.toughening ||
-        l.glass_type === 'Toughened'
+        l.glass_type === 'Toughened' ||
+        (Array.isArray(l.processes) && l.processes.some(p =>
+          p.process_type === 'toughening' ||
+          (p.process_name || '').toLowerCase().includes('toughen')
+        )) ||
+        (Array.isArray(l.size_processes) && l.size_processes.some(p =>
+          p.process_type === 'toughening' ||
+          (p.process_name || '').toLowerCase().includes('toughen')
+        ))
       )
       if (cepLines.length) {
         setItems(cepLines.map((l, i) => calcTghLine({
@@ -182,7 +189,9 @@ const TougheningForm = () => {
       } else {
         values.vendor_name = vendor?.name || record?.vendor_name || ''
       }
-      values.items = items.map(({ key, ...rest }) => rest)
+      // Model column is `lines`, not `items` — sending `items` gets silently
+      // stripped by the backend's valid_columns filter, losing all line data.
+      values.lines = items.map(({ key, ...rest }) => rest)
       values.total_sqmt = totals.total_sqmt
       values.total_amount = totals.total_amount
       await saveMutation.mutateAsync(values)
@@ -195,8 +204,11 @@ const TougheningForm = () => {
     const woWithCep = workshopOrders.filter(wo =>
       wo.lines?.some(l =>
         l.is_toughened ||
-        l.processes?.toughening ||
-        l.glass_type === 'Toughened'
+        l.glass_type === 'Toughened' ||
+        (Array.isArray(l.processes) && l.processes.some(p =>
+          p.process_type === 'toughening' ||
+          (p.process_name || '').toLowerCase().includes('toughen')
+        ))
       )
     )
     setSelectedWoItems(woWithCep)
@@ -206,8 +218,11 @@ const TougheningForm = () => {
   const handleSelectWO = (wo) => {
     const cepLines = (wo.lines || []).filter(l =>
       l.is_toughened ||
-      l.processes?.toughening ||
-      l.glass_type === 'Toughened'
+      l.glass_type === 'Toughened' ||
+      (Array.isArray(l.processes) && l.processes.some(p =>
+        p.process_type === 'toughening' ||
+        (p.process_name || '').toLowerCase().includes('toughen')
+      ))
     )
     const newItems = cepLines.map((l, i) => calcTghLine({
       ...l,
@@ -346,7 +361,7 @@ const TougheningForm = () => {
                 <Row justify="space-between" align="middle">
                   <Col>
                     <Text strong>{wo.wo_number}</Text> — <Text type="secondary">SO: {wo.so_number}</Text>
-                    <br /><Text type="secondary" style={{ fontSize: 11 }}>{wo.customer_name} | {wo.lines?.filter(l => l.processes?.toughening || l.cep).length} CEP items</Text>
+                    <br /><Text type="secondary" style={{ fontSize: 11 }}>{wo.customer_name} | {wo.lines?.filter(l => l.is_toughened || l.glass_type === 'Toughened' || l.cep || (Array.isArray(l.processes) && l.processes.some(p => p.process_type === 'toughening' || (p.process_name || '').toLowerCase().includes('toughen')))).length} CEP items</Text>
                   </Col>
                   <Col><Tag color={wo.status === 'in_progress' ? 'processing' : 'default'}>{wo.status}</Tag></Col>
                 </Row>

@@ -47,6 +47,10 @@ const MasterList = ({
   const [search,    setSearch]    = useState('')
   const [isActive,  setIsActive]  = useState(undefined) // undefined = show all
 
+  React.useEffect(() => {
+    setPage(1)
+  }, [JSON.stringify(apiFilters)])
+
   // ── Fetch data ────────────────────────────────────────────────────────────
   const { data, isLoading, isFetching } = useQuery({
     queryKey: [queryKey, page, pageSize, search, isActive, extraFilters, apiFilters],

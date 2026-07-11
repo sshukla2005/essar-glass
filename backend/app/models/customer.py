@@ -1,5 +1,5 @@
 from sqlalchemy import (Column, Integer, String, Boolean,
-                        Float, ForeignKey, Text)
+                        Float, ForeignKey, Text, JSON)
 from app.database import Base
 from app.models.base import TimestampMixin, SoftDeleteMixin
 
@@ -23,5 +23,6 @@ class Customer(Base, TimestampMixin, SoftDeleteMixin):
     payment_terms   = Column(String(50),  nullable=True)
     credit_limit    = Column(Float,       default=0)
     salesperson     = Column(String(200), nullable=True)
+    extra_data      = Column(JSON, nullable=True)  # catch-all for form fields without dedicated columns
     company_id      = Column(Integer, ForeignKey("companies.id"),
                              nullable=True, index=True)

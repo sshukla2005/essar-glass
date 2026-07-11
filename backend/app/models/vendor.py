@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, Float, ForeignKey, Text
+from sqlalchemy import Column, Integer, String, Boolean, Float, ForeignKey, Text, JSON
 from app.database import Base
 from app.models.base import TimestampMixin, SoftDeleteMixin
 
@@ -16,5 +16,6 @@ class Vendor(Base, TimestampMixin, SoftDeleteMixin):
     email         = Column(String(200), nullable=True)
     payment_terms = Column(String(50),  nullable=True)
     lead_time     = Column(Integer,     default=7)
+    extra_data    = Column(JSON, nullable=True)
     company_id    = Column(Integer, ForeignKey("companies.id"),
                            nullable=True, index=True)

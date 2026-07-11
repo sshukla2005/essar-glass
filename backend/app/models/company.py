@@ -20,4 +20,9 @@ class Company(Base, TimestampMixin, SoftDeleteMixin):
     website    = Column(String(200), nullable=True)
     pan_number = Column(String(20),  nullable=True)
     logo       = Column(Text, nullable=True)  # base64 data URL
+    bank_ac_name = Column(String(200), nullable=True)
+    bank_name    = Column(String(200), nullable=True)
+    bank_branch  = Column(String(200), nullable=True)
+    bank_ac_no   = Column(String(50),  nullable=True)
+    bank_ifsc    = Column(String(20),  nullable=True)
 

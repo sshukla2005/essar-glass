@@ -18,5 +18,6 @@ class DeliveryChallan(Base, TimestampMixin, SoftDeleteMixin):
     transporter     = Column(String(200), nullable=True)
     status          = Column(String(30),  default="draft", index=True)
     lines           = Column(JSON,        nullable=True)
+    extra_data      = Column(JSON, nullable=True)
     company_id      = Column(Integer, ForeignKey("companies.id"),
                              nullable=True, index=True)

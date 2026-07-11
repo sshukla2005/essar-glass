@@ -103,6 +103,7 @@ const CompanyForm = () => {
       if (values.code)  values.code  = values.code.toUpperCase()
       if (values.gstin) values.gstin = values.gstin.toUpperCase()
       if (values.pan)   values.pan   = values.pan.toUpperCase()
+      if (values.bank_ifsc) values.bank_ifsc = values.bank_ifsc.toUpperCase()
       const res = await saveMutation.mutateAsync(values)
       if (andNew) {
         form.resetFields()
@@ -297,6 +298,36 @@ const CompanyForm = () => {
           <Col span={6}><Form.Item name="mobile"  label="Mobile"> <Input placeholder="+91 9XXXXXXXXX" /></Form.Item></Col>
           <Col span={7}><Form.Item name="email"   label="Email">  <Input placeholder="info@company.com" type="email" /></Form.Item></Col>
           <Col span={5}><Form.Item name="website" label="Website"><Input placeholder="https://..." /></Form.Item></Col>
+        </Row>
+
+        {/* ── Bank Details ──────────────────────────────────────────────── */}
+        <Divider orientation="left">Bank Details</Divider>
+        <Row gutter={16}>
+          <Col span={8}>
+            <Form.Item name="bank_ac_name" label="A/C Name">
+              <Input placeholder="A/C Holder Name" />
+            </Form.Item>
+          </Col>
+          <Col span={8}>
+            <Form.Item name="bank_name" label="Bank Name">
+              <Input placeholder="e.g., HDFC Bank Ltd" />
+            </Form.Item>
+          </Col>
+          <Col span={8}>
+            <Form.Item name="bank_branch" label="Branch">
+              <Input placeholder="e.g., Virar West" />
+            </Form.Item>
+          </Col>
+          <Col span={12}>
+            <Form.Item name="bank_ac_no" label="A/C Number">
+              <Input placeholder="A/C Number" />
+            </Form.Item>
+          </Col>
+          <Col span={12}>
+            <Form.Item name="bank_ifsc" label="IFSC Code">
+              <Input placeholder="IFSC Code" style={{ textTransform: 'uppercase' }} />
+            </Form.Item>
+          </Col>
         </Row>
 
         {/* ── Financial Config ──────────────────────────────────────────── */}

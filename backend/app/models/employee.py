@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, Date, ForeignKey
+from sqlalchemy import Column, Integer, String, Boolean, Date, ForeignKey, JSON
 from app.database import Base
 from app.models.base import TimestampMixin, SoftDeleteMixin
 
@@ -13,5 +13,6 @@ class Employee(Base, TimestampMixin, SoftDeleteMixin):
     work_email    = Column(String(200), nullable=True)
     work_phone    = Column(String(20),  nullable=True)
     joining_date  = Column(Date,        nullable=True)
+    extra_data    = Column(JSON, nullable=True)
     company_id    = Column(Integer, ForeignKey("companies.id"),
                            nullable=True, index=True)

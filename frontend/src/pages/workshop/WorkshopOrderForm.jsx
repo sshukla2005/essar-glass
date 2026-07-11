@@ -141,7 +141,8 @@ const WorkshopOrderForm = () => {
           act_h_mm: l.act_h_mm || (l.act_h_in ? Math.round(l.act_h_in * 25.4) : null),
           has_process: Boolean(l.has_process),
           process_label: l.process_label || rebuiltLabel,
-          artwork_file: l.artwork_file || null,
+          artwork_file_data: l.artwork_file_data || l.artwork_file || null,
+          artwork_file_name: l.artwork_file_name || null,
           remark: l.remark || '',
           is_toughened: Boolean(l.is_toughened),
           cep: Boolean(l.cep)
@@ -208,7 +209,9 @@ const WorkshopOrderForm = () => {
             cep: group.cep || false,
             group_processes: groupProcesses,
             size_processes: sizeProcesses,
-            artwork_file: null,
+            artwork_file_data: group.artwork_file_data || null,
+            artwork_master_id: group.artwork_master_id || null,
+            artwork_name: group.artwork_name || null,
             remark: '',
           }
         })
@@ -252,7 +255,9 @@ const WorkshopOrderForm = () => {
         cep: line.cep || false,
         group_processes: groupProcs,
         size_processes: sizeProcs,
-        artwork_file: null,
+        artwork_file_data: line.artwork_file_data || null,
+        artwork_master_id: line.artwork_master_id || null,
+        artwork_name: line.artwork_name || null,
         remark: '',
       }
     })

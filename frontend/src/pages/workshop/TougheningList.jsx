@@ -10,7 +10,7 @@ const columns = [
   { title: 'Vendor', dataIndex: 'vendor_name', width: 200 },
   { title: 'WO #', dataIndex: 'wo_number', width: 120 },
   { title: 'Sent Date', dataIndex: 'sent_date', width: 120 },
-  { title: 'Items', dataIndex: 'items', width: 80, render: v => v?.length || 0 },
+  { title: 'Items', dataIndex: 'lines', width: 80, render: v => v?.length || 0 },
   { title: 'Total Sqmt', dataIndex: 'total_sqmt', width: 120, render: v => v ? v.toFixed(4) : '—' },
   { title: 'Amount', dataIndex: 'total_amount', width: 120, render: v => `₹ ${Number(v || 0).toLocaleString('en-IN')}` },
   { title: 'Status', dataIndex: 'status', width: 120, render: v => <Tag color={STATUS_COLORS[v] || 'default'}>{(v || 'draft').toUpperCase()}</Tag> },

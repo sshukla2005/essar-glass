@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, Float, ForeignKey, Text
+from sqlalchemy import Column, Integer, String, Boolean, Float, ForeignKey, Text, JSON
 from app.database import Base
 from app.models.base import TimestampMixin, SoftDeleteMixin
 
@@ -18,5 +18,6 @@ class Product(Base, TimestampMixin, SoftDeleteMixin):
     on_hand_qty    = Column(Float,       default=0)
     min_qty        = Column(Float,       default=0)
     max_qty        = Column(Float,       nullable=True)
+    extra_data     = Column(JSON, nullable=True)
     company_id     = Column(Integer, ForeignKey("companies.id"),
                             nullable=True, index=True)

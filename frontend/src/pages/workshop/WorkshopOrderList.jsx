@@ -53,7 +53,7 @@ const WorkshopOrderList = () => {
       search,
       is_active: isActive,
     }).then(r => r.data),
-    keepPreviousData: true,
+    placeholderData: (prev) => prev,
   })
 
   const { data: vendorsData } = useQuery({
@@ -782,8 +782,10 @@ const WorkshopOrderList = () => {
                   await tougheningBatchApi.create({
                     vendor_name: batchVendor,
                     wo_ids: selectedWoIds,
-                    lines: batchLines,
-                    items: tghItems,
+                    // Persist the ENRICHED array (charged dims, sqmt, tgh_rate,
+                    // amounts) as `lines` — the model's actual column. The old
+                    // `items` key was silently stripped by the backend.
+                    lines: tghItems,
                     status: 'sent',
                     batch_date: dayjs().format('YYYY-MM-DD'),
                     total_pieces: batchLines.reduce((s, l) => s + (l.qty || 1), 0),

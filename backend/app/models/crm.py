@@ -1,5 +1,5 @@
 from sqlalchemy import (Column, Integer, String, Boolean,
-                        Float, ForeignKey, Text, DateTime)
+                        Float, ForeignKey, Text, DateTime, JSON)
 from sqlalchemy.sql import func
 from app.database import Base
 from app.models.base import TimestampMixin, SoftDeleteMixin
@@ -38,5 +38,6 @@ class CRMLead(Base, TimestampMixin, SoftDeleteMixin):
     expected_closing  = Column(String(20),  nullable=True)
     lost_reason       = Column(Text,        nullable=True)
     lead_type         = Column(String(20),  default="opportunity")
+    extra_data        = Column(JSON, nullable=True)
     company_id        = Column(Integer, ForeignKey("companies.id"),
                                nullable=True, index=True)

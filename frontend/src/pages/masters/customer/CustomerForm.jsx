@@ -166,7 +166,7 @@ const CustomerForm = () => {
               </Col>
             )}
             <Col span={8}>
-              <Form.Item name="pan" label="PAN">
+              <Form.Item name="pan_number" label="PAN">
                 <Input placeholder="AAAAA0000A" maxLength={10} style={{ textTransform: 'uppercase' }} />
               </Form.Item>
             </Col>
