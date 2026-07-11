@@ -11,6 +11,7 @@ import {
   getGroupBaseCostRate as sharedGetGroupBaseCostRate,
   getGroupLoadedCostRate as sharedGetGroupLoadedCostRate,
   calcGroupSize as sharedCalcGroupSize,
+  getAutoChargedDim,
 } from '../../utils/quotationCalc'
 import CompanySelector from '../../components/common/CompanySelector'
 
@@ -402,6 +403,8 @@ const SalesOrderForm = () => {
         charged_sqft: line.charged_sqft || 0,
         charged_w_inch: line.charged_w_inch || 0,
         charged_h_inch: line.charged_h_inch || 0,
+        _charged_w_manual: line._charged_w_manual || false,
+        _charged_h_manual: line._charged_h_manual || false,
         cep_rft: line.cep_rft || 0,
         cep_charges: line.cep_charges || 0,
         tgh_sqmt: line.tgh_sqmt || 0,
@@ -813,6 +816,8 @@ const SalesOrderForm = () => {
         charged_sqft: s.charged_sqft,
         charged_w_inch: s.charged_w_inch,
         charged_h_inch: s.charged_h_inch,
+        _charged_w_manual: s._charged_w_manual || false,
+        _charged_h_manual: s._charged_h_manual || false,
         cep_rft: s.cep_rft,
         cep_charges: s.cep_charges,
         tgh_sqmt: s.tgh_sqmt,
@@ -860,7 +865,17 @@ const SalesOrderForm = () => {
           }))
         }))
         mappedGroups.forEach(g => {
-          g.sizes = g.sizes.map(s => calcGroupSize(g, s))
+          g.sizes = g.sizes.map(s => {
+            const autoW = parseFloat(getAutoChargedDim(g, s.width_inch || 0, 'w').toFixed(4))
+            const autoH = parseFloat(getAutoChargedDim(g, s.height_inch || 0, 'h').toFixed(4))
+            if (!s._charged_w_manual && s.charged_w_inch > 0 && Math.abs(s.charged_w_inch - autoW) > 0.01) {
+              s._charged_w_manual = true
+            }
+            if (!s._charged_h_manual && s.charged_h_inch > 0 && Math.abs(s.charged_h_inch - autoH) > 0.01) {
+              s._charged_h_manual = true
+            }
+            return calcGroupSize(g, s)
+          })
         })
         setGroups(mappedGroups)
       } else if (record.lines?.length) {
@@ -877,7 +892,17 @@ const SalesOrderForm = () => {
           })
         }
         reconstructed.forEach(g => {
-          g.sizes = g.sizes.map(s => calcGroupSize(g, s))
+          g.sizes = g.sizes.map(s => {
+            const autoW = parseFloat(getAutoChargedDim(g, s.width_inch || 0, 'w').toFixed(4))
+            const autoH = parseFloat(getAutoChargedDim(g, s.height_inch || 0, 'h').toFixed(4))
+            if (!s._charged_w_manual && s.charged_w_inch > 0 && Math.abs(s.charged_w_inch - autoW) > 0.01) {
+              s._charged_w_manual = true
+            }
+            if (!s._charged_h_manual && s.charged_h_inch > 0 && Math.abs(s.charged_h_inch - autoH) > 0.01) {
+              s._charged_h_manual = true
+            }
+            return calcGroupSize(g, s)
+          })
         })
         setGroups(reconstructed)
       }

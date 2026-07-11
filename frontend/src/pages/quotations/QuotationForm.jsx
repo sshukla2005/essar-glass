@@ -12,6 +12,7 @@ import {
   getGroupBaseCostRate as sharedGetGroupBaseCostRate,
   getGroupLoadedCostRate as sharedGetGroupLoadedCostRate,
   calcGroupSize as sharedCalcGroupSize,
+  getAutoChargedDim,
 } from '../../utils/quotationCalc'
 import CompanySelector from '../../components/common/CompanySelector'
 
@@ -436,6 +437,8 @@ const QuotationForm = () => {
         charged_sqft: line.charged_sqft || 0,
         charged_w_inch: line.charged_w_inch || 0,
         charged_h_inch: line.charged_h_inch || 0,
+        _charged_w_manual: line._charged_w_manual || false,
+        _charged_h_manual: line._charged_h_manual || false,
         cep_rft: line.cep_rft || 0,
         cep_charges: line.cep_charges || 0,
         tgh_sqmt: line.tgh_sqmt || 0,
@@ -477,7 +480,17 @@ const QuotationForm = () => {
           })
         }
         reconstructed.forEach(g => {
-          g.sizes = g.sizes.map(s => calcGroupSize(g, s))
+          g.sizes = g.sizes.map(s => {
+            const autoW = parseFloat(getAutoChargedDim(g, s.width_inch || 0, 'w').toFixed(4))
+            const autoH = parseFloat(getAutoChargedDim(g, s.height_inch || 0, 'h').toFixed(4))
+            if (!s._charged_w_manual && s.charged_w_inch > 0 && Math.abs(s.charged_w_inch - autoW) > 0.01) {
+              s._charged_w_manual = true
+            }
+            if (!s._charged_h_manual && s.charged_h_inch > 0 && Math.abs(s.charged_h_inch - autoH) > 0.01) {
+              s._charged_h_manual = true
+            }
+            return calcGroupSize(g, s)
+          })
         })
         setGroups(reconstructed)
       }
@@ -993,6 +1006,8 @@ const QuotationForm = () => {
         charged_sqft: s.charged_sqft,
         charged_w_inch: s.charged_w_inch,
         charged_h_inch: s.charged_h_inch,
+        _charged_w_manual: s._charged_w_manual || false,
+        _charged_h_manual: s._charged_h_manual || false,
         cep_rft: s.cep_rft,
         cep_charges: s.cep_charges,
         tgh_sqmt: s.tgh_sqmt,
@@ -1447,7 +1462,9 @@ const QuotationForm = () => {
     if (gstMode === 'igst') gstAmt = parseFloat((subBeforeGst * 0.18).toFixed(2))
     else if (gstMode === 'cgst_sgst') gstAmt = parseFloat((subBeforeGst * 0.18).toFixed(2))
     const totalSelling = parseFloat((subBeforeGst + gstAmt).toFixed(2))
-    const totalCost = parseFloat((glassTotalCost + hwCost + lbCost + wstCost + dcCost).toFixed(2))
+    const costBeforeGst = glassTotalCost + hwCost + lbCost + wstCost + dcCost
+    const costGst = gstMode === 'none' ? 0 : parseFloat((costBeforeGst * 0.18).toFixed(2))
+    const totalCost = parseFloat((costBeforeGst + costGst).toFixed(2))
 
     // Margin excludes DC and GST
     const sellableTotal = glassSellingTotal + hwSell + lbSell + wstSell
@@ -1459,7 +1476,7 @@ const QuotationForm = () => {
     setGlobalComparison({
       allRows, totalSelling, totalCost, totalMargin, totalMarginPct,
       glassSellingTotal, glassCostTotal, glassCepTotal, glassProcTotal, glassTotalCost,
-      hwSell, hwCost, lbSell, lbCost, wstSell, wstCost, dcSell, dcCost, gstAmt
+      hwSell, hwCost, lbSell, lbCost, wstSell, wstCost, dcSell, dcCost, gstAmt, costGst
     })
   }
 

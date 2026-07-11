@@ -27,6 +27,7 @@ import {
   CloseOutlined
 } from '@ant-design/icons'
 import FractionInput, { toFraction } from './FractionInput'
+import { calcGroupSize, getAutoChargedDim } from '../../../utils/quotationCalc'
 
 const { Text } = Typography
 
@@ -207,7 +208,8 @@ const SizeTable = ({
   addSizeProcess,
   addSize,
   removeSize,
-  setGroups
+  setGroups,
+  products
 }) => {
   const columns = [
     {
@@ -258,51 +260,77 @@ const SizeTable = ({
       title: 'Charged W',
       width: 90,
       dataIndex: 'charged_w_inch',
-      render: (v, row) => (
-        <InputNumber 
-          size="small" 
-          value={v ? parseFloat(v.toFixed(3)) : null} 
-          min={0} 
-          step={0.5} 
-          style={{ width: '100%', borderColor: '#f59e0b', borderRadius: 4 }}
-          onChange={val => setGroups(prev => prev.map(g => { 
-            if (g.group_key !== group.group_key) return g; 
-            return { 
-              ...g, 
-              sizes: g.sizes.map(s => { 
-                if (s.size_key !== row.size_key) return s; 
-                const cW = val || 0, cH = s.charged_h_inch || 0, qty = s.quantity || 1, cs = parseFloat(((cW * cH * qty) / 144).toFixed(4)), eff = g.pricing_method === 'per_rft' ? s.running_ft : g.pricing_method === 'per_piece' ? qty : cs, sub = parseFloat((eff * (g.rate || 0) * (1 - (g.discount_pct || 0) / 100) + (s.cep_charges || 0)).toFixed(2)); 
-                return { ...s, charged_w_inch: val, charged_sqft: cs, subtotal: sub } 
-              }) 
-            } 
-          }))} 
-        />
-      )
+      render: (v, row) => {
+        const isManual = !!row._charged_w_manual;
+        const input = (
+          <InputNumber 
+            size="small" 
+            value={v ? parseFloat(v.toFixed(3)) : null} 
+            min={0} 
+            step={0.5} 
+            style={{ width: '100%', borderColor: isManual ? '#f59e0b' : undefined, borderRadius: 4 }}
+            onChange={val => setGroups(prev => prev.map(g => { 
+              if (g.group_key !== group.group_key) return g; 
+              return { 
+                ...g, 
+                sizes: g.sizes.map(s => { 
+                  if (s.size_key !== row.size_key) return s; 
+                  const isManualVal = val !== null && val !== undefined;
+                  const updatedSize = {
+                    ...s,
+                    charged_w_inch: val,
+                    _charged_w_manual: isManualVal
+                  };
+                  return calcGroupSize(g, updatedSize, products);
+                }) 
+              } 
+            }))} 
+          />
+        );
+        return isManual ? (
+          <Tooltip title="Manual override — clear to restore auto">
+            {input}
+          </Tooltip>
+        ) : input;
+      }
     },
     {
       title: 'Charged H',
       width: 90,
       dataIndex: 'charged_h_inch',
-      render: (v, row) => (
-        <InputNumber 
-          size="small" 
-          value={v ? parseFloat(v.toFixed(3)) : null} 
-          min={0} 
-          step={0.5} 
-          style={{ width: '100%', borderColor: '#f59e0b', borderRadius: 4 }}
-          onChange={val => setGroups(prev => prev.map(g => { 
-            if (g.group_key !== group.group_key) return g; 
-            return { 
-              ...g, 
-              sizes: g.sizes.map(s => { 
-                if (s.size_key !== row.size_key) return s; 
-                const cW = s.charged_w_inch || 0, cH = val || 0, qty = s.quantity || 1, cs = parseFloat(((cW * cH * qty) / 144).toFixed(4)), eff = g.pricing_method === 'per_rft' ? s.running_ft : g.pricing_method === 'per_piece' ? qty : cs, sub = parseFloat((eff * (g.rate || 0) * (1 - (g.discount_pct || 0) / 100) + (s.cep_charges || 0)).toFixed(2)); 
-                return { ...s, charged_h_inch: val, charged_sqft: cs, subtotal: sub } 
-              }) 
-            } 
-          }))} 
-        />
-      )
+      render: (v, row) => {
+        const isManual = !!row._charged_h_manual;
+        const input = (
+          <InputNumber 
+            size="small" 
+            value={v ? parseFloat(v.toFixed(3)) : null} 
+            min={0} 
+            step={0.5} 
+            style={{ width: '100%', borderColor: isManual ? '#f59e0b' : undefined, borderRadius: 4 }}
+            onChange={val => setGroups(prev => prev.map(g => { 
+              if (g.group_key !== group.group_key) return g; 
+              return { 
+                ...g, 
+                sizes: g.sizes.map(s => { 
+                  if (s.size_key !== row.size_key) return s; 
+                  const isManualVal = val !== null && val !== undefined;
+                  const updatedSize = {
+                    ...s,
+                    charged_h_inch: val,
+                    _charged_h_manual: isManualVal
+                  };
+                  return calcGroupSize(g, updatedSize, products);
+                }) 
+              } 
+            }))} 
+          />
+        );
+        return isManual ? (
+          <Tooltip title="Manual override — clear to restore auto">
+            {input}
+          </Tooltip>
+        ) : input;
+      }
     },
     {
       title: 'Sqft',
@@ -1012,6 +1040,7 @@ const GlassCard = ({
               addSize={addSize}
               removeSize={removeSize}
               setGroups={setGroups}
+              products={products}
             />
           </div>
 

@@ -70,37 +70,35 @@ export const getGroupLoadedCostRate = (g, products) => {
   return { loadedCost, baseCost, addon, isManual: false }
 }
 
+export const getAutoChargedDim = (group, sizeVal, dimension) => {
+  const isW = dimension === 'w';
+  const ceilVal = isW 
+    ? (group.ceiling_w_inches ?? group.ceiling_inches ?? 6)
+    : (group.ceiling_h_inches ?? group.ceiling_inches ?? 6);
+  
+  const customMm = isW
+    ? (group.ceiling_w_custom_mm || 30)
+    : (group.ceiling_h_custom_mm || 30);
+
+  if (ceilVal === 'plus30mm') return sizeVal + (30 / 25.4);
+  if (ceilVal === 'custom') return sizeVal + (customMm / 25.4);
+  return Math.ceil(sizeVal / ceilVal) * ceilVal;
+}
+
 export const calcGroupSize = (group, size, products) => {
   const w_inch = size.width_inch || 0
   const h_inch = size.height_inch || 0
   const qty = size.quantity || 1
 
-  // Separate ceiling for W and H
-  const ceilW = group.ceiling_w_inches ?? group.ceiling_inches ?? 6
-  const ceilH = group.ceiling_h_inches ?? group.ceiling_inches ?? 6
+  const auto_w = parseFloat(getAutoChargedDim(group, w_inch, 'w').toFixed(4))
+  const auto_h = parseFloat(getAutoChargedDim(group, h_inch, 'h').toFixed(4))
+  const charged_w_inch = (size?._charged_w_manual && size?.charged_w_inch > 0) ? size.charged_w_inch : auto_w
+  const charged_h_inch = (size?._charged_h_manual && size?.charged_h_inch > 0) ? size.charged_h_inch : auto_h
 
-  const ceilFnW = (x) => {
-    if (ceilW === 'plus30mm') return x + (30 / 25.4)
-    if (ceilW === 'custom') {
-      const customMm = group.ceiling_w_custom_mm || 30
-      return x + (customMm / 25.4)
-    }
-    return Math.ceil(x / ceilW) * ceilW
-  }
-  const ceilFnH = (x) => {
-    if (ceilH === 'plus30mm') return x + (30 / 25.4)
-    if (ceilH === 'custom') {
-      const customMm = group.ceiling_h_custom_mm || 30
-      return x + (customMm / 25.4)
-    }
-    return Math.ceil(x / ceilH) * ceilH
-  }
-  const area_sqft_pc = (ceilFnW(w_inch) * ceilFnH(h_inch)) / 144
+  const area_sqft_pc = (charged_w_inch * charged_h_inch) / 144
   const total_sqft = area_sqft_pc * qty
   const running_ft = (w_inch + h_inch) * 2 * qty / 12
-  const charged_w_inch = parseFloat(ceilFnW(w_inch).toFixed(4))
-  const charged_h_inch = parseFloat(ceilFnH(h_inch).toFixed(4))
-  const charged_sqft = (charged_w_inch * charged_h_inch * qty) / 144
+  const charged_sqft = area_sqft_pc * qty
   const getCepMultiplier = () => {
     if (group.cep_rft_multiplier) return group.cep_rft_multiplier
     try {
