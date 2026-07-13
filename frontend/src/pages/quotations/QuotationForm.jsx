@@ -669,6 +669,13 @@ const QuotationForm = () => {
       const updatedSizes = g.sizes.map(s => {
         if (s.size_key !== skey) return s
         const updated = { ...s, [field]: value }
+        // Client rule: a manually-typed Charged W/H stays only until the
+        // corresponding ACTUAL dimension changes — then the auto ceiling
+        // logic takes over again. (e.g. Actual W 57 1/2" with 6" ceiling,
+        // manually charged 65 — change Actual W to 33 1/8" → Charged W must
+        // recompute to 36, not stay 65.)
+        if (field === 'width_inch') updated._charged_w_manual = false
+        if (field === 'height_inch') updated._charged_h_manual = false
         return calcGroupSize(g, updated)
       })
       let updatedGroup = { ...g, sizes: updatedSizes }
@@ -2533,15 +2540,7 @@ const QuotationForm = () => {
               <Divider style={{ margin: '8px 0' }} />
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontWeight: 700, fontSize: 13 }}>
                 <span style={{ flex: 1 }}>
-                  Grand Total (incl. GST) &nbsp;
-                  <span style={{
-                    color: globalComparison.totalMarginPct >= 20 ? '#16a34a' :
-                           globalComparison.totalMarginPct >= 10 ? '#f59e0b' : '#dc2626',
-                    fontSize: 11,
-                    fontWeight: 'normal'
-                  }}>
-                    (Margin: ₹{Number(globalComparison.totalMargin).toLocaleString('en-IN', { minimumFractionDigits: 2 })} | {globalComparison.totalMarginPct}%)
-                  </span>
+                  Grand Total (incl. GST)
                 </span>
                 <span style={{ color: '#16a34a', minWidth: 90, textAlign: 'right' }}>₹{Number(globalComparison.totalSelling).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                 <span style={{ color: '#dc2626', minWidth: 90, textAlign: 'right' }}>₹{Number(globalComparison.totalCost).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>

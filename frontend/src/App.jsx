@@ -133,6 +133,20 @@ const App = () => {
     const token = localStorage.getItem('auth_token')
     if (token) {
       settingsApi.migrateFromLocalStorage()
+      // Mirror process masters (backend = source of truth) into localStorage.
+      // The shared calc engine (quotationCalc.js) reads toughening/process
+      // rates from localStorage — without this mirror, a fresh machine or
+      // cleared browser computes toughened quotations with a ZERO addon.
+      import('./api').then(({ processMasterApi }) => {
+        processMasterApi.dropdown()
+          .then(r => {
+            const list = Array.isArray(r.data) ? r.data : (r.data?.items || [])
+            if (Array.isArray(list) && list.length) {
+              localStorage.setItem('process_masters', JSON.stringify(list))
+            }
+          })
+          .catch(() => {})
+      })
     }
   }, [])
 

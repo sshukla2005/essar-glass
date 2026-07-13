@@ -1,6 +1,6 @@
 import { jsPDF } from 'jspdf'
 import html2canvas from 'html2canvas'
-import { customerApi } from '../api'
+import { customerApi, vendorApi } from '../api'
 
 // ── Date formatter ──────────────────────
 const formatDate = (d) => {
@@ -1308,16 +1308,30 @@ export const generateQuotationPDF = async (quotation) => {
       name: quotation.customer_name || '',
       address: '', phone: quotation.customer_phone || '', gstin: quotation.customer_gstin || ''
     }
-    try {
-      const all = JSON.parse(localStorage.getItem('customers') || '[]')
-      const c = all.find(x => x.id === quotation.customer_id)
-      if (c) cust = {
-        name: c.name,
-        address: [c.address, c.city].filter(Boolean).join(', '),
-        phone: c.phone || c.mobile || '',
-        gstin: c.gstin || '',
+    if (quotation.customer_id) {
+      try {
+        const res = await customerApi.get(quotation.customer_id)
+        const c = res.data || res
+        if (c) cust = {
+          name: c.name || quotation.customer_name || '',
+          address: [c.address, c.city, c.state, c.pincode].filter(Boolean).join(', '),
+          phone: c.phone || c.mobile || quotation.customer_phone || '',
+          gstin: c.gstin || quotation.customer_gstin || '',
+        }
+      } catch (err) {
+        // Backend unreachable — legacy localStorage cache as fallback
+        try {
+          const all = JSON.parse(localStorage.getItem('customers') || '[]')
+          const c = all.find(x => x.id === quotation.customer_id)
+          if (c) cust = {
+            name: c.name,
+            address: [c.address, c.city].filter(Boolean).join(', '),
+            phone: c.phone || c.mobile || '',
+            gstin: c.gstin || '',
+          }
+        } catch { }
       }
-    } catch { }
+    }
 
     const groups = quotation.groups || []
     const hasCep = groups.some(g => g.cep)
@@ -1881,16 +1895,24 @@ const drawPOItemsCard = (doc, lines, cols, startY, pageNum, po) => {
   return { endY: ly, tQty, tArea, tAmt }
 }
 
-export const generatePOPDF = (po) => {
+export const generatePOPDF = async (po) => {
   try {
     const doc = new jsPDF('p', 'mm', 'a4')
     const company = getCompany(po.company_id)
     let vend = { name: po.vendor_name || '', address: '', phone: '', gstin: '' }
-    try {
-      const all = JSON.parse(localStorage.getItem('vendors') || '[]')
-      const v = all.find(x => x.id === po.vendor_id)
-      if (v) vend = { name: v.name, address: [v.address, v.city].filter(Boolean).join(', '), phone: v.phone || '', gstin: v.gstin || '' }
-    } catch { }
+    if (po.vendor_id) {
+      try {
+        const res = await vendorApi.get(po.vendor_id)
+        const v = res.data || res
+        if (v) vend = { name: v.name || po.vendor_name || '', address: [v.address, v.city, v.state, v.pincode].filter(Boolean).join(', '), phone: v.phone || v.mobile || '', gstin: v.gstin || '' }
+      } catch (err) {
+        try {
+          const all = JSON.parse(localStorage.getItem('vendors') || '[]')
+          const v = all.find(x => x.id === po.vendor_id)
+          if (v) vend = { name: v.name, address: [v.address, v.city].filter(Boolean).join(', '), phone: v.phone || '', gstin: v.gstin || '' }
+        } catch { }
+      }
+    }
 
     const cols = buildCols(false)
     let pageNum = { val: 1, total: '?' }
