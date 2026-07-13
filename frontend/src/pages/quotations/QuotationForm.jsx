@@ -1463,13 +1463,25 @@ const QuotationForm = () => {
     const lbCost = laborItems.reduce((s, l) => s + (l.cost_amount || (l.qty || 0) * (l.cost_rate || 0)), 0)
     const wstSell = wastageItems.reduce((s, w) => s + (w.amount || 0), 0)
     const wstCost = wastageItems.reduce((s, w) => s + (w.cost_amount || (w.qty || 0) * (w.cost_rate || 0)), 0)
+    // Process SELLING — group + size processes. These rows are displayed in the
+    // breakdown and their COSTS are already in totals, but their selling was
+    // never added to the Grand Total (bug: GT showed 19,460 instead of 20,690).
+    const procSellTotal = groups.reduce((s, g) =>
+      s + (g.processes || []).reduce((ss, p) => ss + (p.amount || 0), 0)
+      + g.sizes.reduce((ss, sz) =>
+        ss + (sz.size_processes || []).reduce((sss, sp) => sss + (sp.amount || 0), 0), 0), 0)
+    // Group process COST (est @70% when no cost_rate) — displayed as rows but
+    // was missing from grand total cost (glassProcTotal covers size procs only)
+    const groupProcCost = groups.reduce((s, g) =>
+      s + (g.processes || []).reduce((ss, p) =>
+        ss + (p.qty_area || 0) * (p.cost_rate ?? ((p.rate || 0) * 0.70)), 0), 0)
     const dcSell = parseFloat(dcCharges || 0)
-    const subBeforeGst = glassSellingTotal + hwSell + lbSell + wstSell + dcSell
+    const subBeforeGst = glassSellingTotal + procSellTotal + hwSell + lbSell + wstSell + dcSell
     let gstAmt = 0
     if (gstMode === 'igst') gstAmt = parseFloat((subBeforeGst * 0.18).toFixed(2))
     else if (gstMode === 'cgst_sgst') gstAmt = parseFloat((subBeforeGst * 0.18).toFixed(2))
     const totalSelling = parseFloat((subBeforeGst + gstAmt).toFixed(2))
-    const costBeforeGst = glassTotalCost + hwCost + lbCost + wstCost + dcCost
+    const costBeforeGst = glassTotalCost + groupProcCost + hwCost + lbCost + wstCost + dcCost
     // GST on cost ONLY when a GST mode is actually selected — same whitelist
     // as the selling side. (The Summary "None" button sets gstMode='off', so
     // the old `!== 'none'` check wrongly applied 18% even with GST off.)
@@ -1478,8 +1490,8 @@ const QuotationForm = () => {
     const totalCost = parseFloat((costBeforeGst + costGst).toFixed(2))
 
     // Margin excludes DC and GST
-    const sellableTotal = glassSellingTotal + hwSell + lbSell + wstSell
-    const sellableCost = glassTotalCost + hwCost + lbCost + wstCost
+    const sellableTotal = glassSellingTotal + procSellTotal + hwSell + lbSell + wstSell
+    const sellableCost = glassTotalCost + groupProcCost + hwCost + lbCost + wstCost
     const totalMargin = parseFloat((sellableTotal - sellableCost).toFixed(2))
     const totalMarginPct = sellableCost > 0
       ? parseFloat(((totalMargin / sellableCost) * 100).toFixed(2)) : 100
