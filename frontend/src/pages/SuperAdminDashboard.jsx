@@ -27,7 +27,7 @@ const { Title, Text } = Typography
 
 const SuperAdminDashboard = () => {
   const navigate = useNavigate()
-  const { user, logout } = useAuth()
+  const { user, logout, setActiveCompany } = useAuth()
   const [activeTab, setActiveTab] = useState('overview')
 
   const { data: companiesData } = useQuery({
@@ -216,7 +216,13 @@ const SuperAdminDashboard = () => {
         {companyMetrics.map(company => (
           <Col key={company.id} xs={24} sm={12} xl={6}>
             <Card hoverable style={{ borderRadius: 16, border: `2px solid ${company.color}`, background: 'rgba(255,255,255,0.03)', cursor: 'pointer' }}
-              onClick={() => navigate('/', { state: { company_id: company.id } })}>
+              onClick={() => {
+                // Dashboard se company chuni → globally active karo, taaki
+                // header "Viewing" + naye documents ka Company field dono
+                // isi company pe set ho
+                setActiveCompany(company.id)
+                navigate('/', { state: { company_id: company.id } })
+              }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
                 <div style={{ width: 42, height: 42, borderRadius: 10, background: company.color, display: 'flex', alignItems: 'center', justifyContent: 'center', color: company.accent, fontWeight: 900, fontSize: 14 }}>
                   {company.short_name.slice(0,2)}

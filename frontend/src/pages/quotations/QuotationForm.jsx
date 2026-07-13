@@ -1470,7 +1470,11 @@ const QuotationForm = () => {
     else if (gstMode === 'cgst_sgst') gstAmt = parseFloat((subBeforeGst * 0.18).toFixed(2))
     const totalSelling = parseFloat((subBeforeGst + gstAmt).toFixed(2))
     const costBeforeGst = glassTotalCost + hwCost + lbCost + wstCost + dcCost
-    const costGst = gstMode === 'none' ? 0 : parseFloat((costBeforeGst * 0.18).toFixed(2))
+    // GST on cost ONLY when a GST mode is actually selected — same whitelist
+    // as the selling side. (The Summary "None" button sets gstMode='off', so
+    // the old `!== 'none'` check wrongly applied 18% even with GST off.)
+    const costGst = (gstMode === 'igst' || gstMode === 'cgst_sgst')
+      ? parseFloat((costBeforeGst * 0.18).toFixed(2)) : 0
     const totalCost = parseFloat((costBeforeGst + costGst).toFixed(2))
 
     // Margin excludes DC and GST
@@ -1483,7 +1487,8 @@ const QuotationForm = () => {
     setGlobalComparison({
       allRows, totalSelling, totalCost, totalMargin, totalMarginPct,
       glassSellingTotal, glassCostTotal, glassCepTotal, glassProcTotal, glassTotalCost,
-      hwSell, hwCost, lbSell, lbCost, wstSell, wstCost, dcSell, dcCost, gstAmt, costGst
+      hwSell, hwCost, lbSell, lbCost, wstSell, wstCost, dcSell, dcCost, gstAmt, costGst,
+      costBeforeGst
     })
   }
 
@@ -2562,8 +2567,10 @@ const QuotationForm = () => {
               const wstSell = wastageItems.reduce((s, w) => s + (w.amount || 0), 0)
               const totalSellBeforeGst = glassSell + procSell + hwSell + lbSell + wstSell
 
-              // Cost (same as totals useMemo, without GST)
-              const trueCost = globalComparison.totalCost - (totals.dcCost || 0)  // excl DC cost from margin
+              // Cost (same as totals useMemo, without GST) — use the pre-GST
+              // cost so "True Margin (excl. GST)" is genuinely GST-free on
+              // both sides, matching its label
+              const trueCost = (globalComparison.costBeforeGst ?? globalComparison.totalCost) - (totals.dcCost || 0)
               const trueMarginAmt = totalSellBeforeGst - trueCost
               const truePct = trueCost > 0
                 ? parseFloat(((trueMarginAmt / trueCost) * 100).toFixed(2))

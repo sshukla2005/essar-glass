@@ -7,7 +7,7 @@ import { useAuth } from '../../hooks/useAuth'
 // For regular users, auto-fills their company silently
 
 const CompanySelector = ({ form, required = true }) => {
-  const { user, isSuperAdmin } = useAuth()
+  const { user, isSuperAdmin, activeCompanyId } = useAuth()
 
   const companies = React.useMemo(() => {
     try {
@@ -20,6 +20,13 @@ const CompanySelector = ({ form, required = true }) => {
   React.useEffect(() => {
     if (!isSuperAdmin && user?.company_id) {
       form.setFieldValue('company_id', user.company_id)
+    }
+    // Superadmin: agar header "Viewing" selector mein specific company chuni hai
+    // (e.g. Essar Sons), to naye documents mein Company field auto-fill ho.
+    // Sirf tab set karo jab field khali ho — edit mode mein record ki company
+    // ko overwrite nahi karna.
+    if (isSuperAdmin && activeCompanyId && !form.getFieldValue('company_id')) {
+      form.setFieldValue('company_id', Number(activeCompanyId))
     }
   }, [])
 

@@ -66,6 +66,10 @@ const QuotationDetailsCard = forwardRef(({
       message.warning('Please enter a customer name')
       return
     }
+    if (!custPhone.trim()) {
+      message.warning('Phone number is required')
+      return
+    }
     setCustAdding(true)
     try {
       const phone = custPhone.trim()
@@ -175,9 +179,22 @@ const QuotationDetailsCard = forwardRef(({
               <Select 
                 showSearch 
                 placeholder="Select customer" 
-                options={[...customers]
-                  .sort((a, b) => (a.name || '').toLowerCase().localeCompare((b.name || '').toLowerCase()))
-                  .map(c => ({ value: c.id, label: c.name }))}
+                options={(() => {
+                  const sorted = [...customers].sort((a, b) => (a.name || '').toLowerCase().localeCompare((b.name || '').toLowerCase()))
+                  const nameCount = {}
+                  sorted.forEach(c => {
+                    const k = (c.name || '').trim().toLowerCase()
+                    nameCount[k] = (nameCount[k] || 0) + 1
+                  })
+                  // Same naam wale customers ko phone se bifurcate karo:
+                  // "Prakash Khude (98XXXXXXXX)" — sirf duplicates pe bracket
+                  return sorted.map(c => {
+                    const k = (c.name || '').trim().toLowerCase()
+                    const dup = nameCount[k] > 1
+                    const ph = c.phone || c.mobile
+                    return { value: c.id, label: dup && ph ? `${c.name} (${ph})` : c.name }
+                  })
+                })()}
                 filterOption={(i, o) => o.label.toLowerCase().includes(i.toLowerCase())} 
                 onChange={handleCustomerChange}
                 size="large"
@@ -226,7 +243,7 @@ const QuotationDetailsCard = forwardRef(({
                 </div>
                 <div>
                   <div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>
-                    Phone Number <span style={{ color: '#94a3b8' }}>(used to detect duplicates)</span>
+                    Phone Number <span style={{ color: '#ef4444' }}>*</span> <span style={{ color: '#94a3b8' }}>(used to detect duplicates)</span>
                   </div>
                   <Input
                     placeholder="+91 XXXXX XXXXX"
