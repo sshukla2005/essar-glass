@@ -321,6 +321,13 @@ const QuotationForm = () => {
   const [globalComparison, setGlobalComparison] = useState(null)
   const [marginTarget, setMarginTarget] = useState(null)
 
+  // ── Unsaved-changes guard ──────────────────────────────────────
+  const [isDirty, setIsDirty] = useState(false)
+  const [leavePrompt, setLeavePrompt] = useState(null) // pending navigation path
+  // hydratedRef prevents programmatic state population (loading a record) from
+  // triggering the dirty flag. Set to true only AFTER the hydration settles.
+  const hydratedRef = useRef(false)
+
   const fileInputRef = useRef(null)
   const detailsCardRef = useRef(null)
 
@@ -376,6 +383,14 @@ const QuotationForm = () => {
       form.setFieldValue('dc_charges', 0)
       form.setFieldValue('discount_amount', 0)
       form.setFieldValue('advance_received', 0)
+    }
+  }, [])
+
+  // For new quotations there is no async record load, so mark hydrated
+  // immediately on mount so that any user edit marks dirty straight away.
+  useEffect(() => {
+    if (!isEdit) {
+      hydratedRef.current = true
     }
   }, [])
 
@@ -499,6 +514,9 @@ const QuotationForm = () => {
       if (record.labor_items) setLaborItems(record.labor_items)
       if (record.wastage_items) setWastageItems(record.wastage_items)
     }
+    // Defer enabling dirty tracking until the next tick so that all the
+    // setState calls above have flushed and won't trigger the watcher.
+    setTimeout(() => { hydratedRef.current = true }, 0)
   }, [record, form])
 
   const getPolishingRate = () => {
@@ -960,6 +978,7 @@ const QuotationForm = () => {
     mutationFn: (data) => isEdit ? quotationApi.update(id, data) : quotationApi.create(data),
     onSuccess: (res) => {
       message.success(`Quotation ${isEdit ? 'updated' : 'created'}`)
+      setIsDirty(false)
       queryClient.invalidateQueries({ queryKey: ['quotations'] })
       queryClient.invalidateQueries({ queryKey: ['quotations-for-lead'] })
       queryClient.invalidateQueries({ queryKey: ['crm_leads'] })
@@ -1103,6 +1122,31 @@ const QuotationForm = () => {
       console.error(err)
     }
   })
+
+  // \u2500\u2500 Dirty watcher \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+  // Fires whenever any reactive slice changes. hydratedRef gates it so that
+  // programmatic population from the loaded record is transparent.
+  useEffect(() => {
+    if (hydratedRef.current) setIsDirty(true)
+  }, [groups, hardwareItems, laborItems, wastageItems])
+
+  // \u2500\u2500 Browser close / refresh guard \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+  useEffect(() => {
+    const handler = (e) => {
+      if (isDirty) { e.preventDefault(); e.returnValue = '' }
+    }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [isDirty])
+
+  // \u2500\u2500 In-app navigation guard \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+  // Note: app uses <BrowserRouter>, not createBrowserRouter, so useBlocker is
+  // not available. In-app navigation is handled via guardedNavigate below;
+  // only the back arrow, Discard, and the leave modal are wired.
+  const guardedNavigate = (path) => {
+    if (!isDirty) { navigate(path); return }
+    setLeavePrompt(path)
+  }
 
   const handleSave = async (andNew = false) => {
     try {
@@ -1398,8 +1442,10 @@ const QuotationForm = () => {
         const glass_cost = s.glass_cost || 0
         const cep_cost = s.cep_cost || 0
         const proc_cost = s.proc_cost || 0
-        // Cost Amt column shows glass cost only — CEP and process shown separately
-        const cost_amount = glass_cost
+        // Cost Amt = glass + CEP, matching Selling Amt (s.subtotal) which
+        // includes cep_charges. proc_cost stays OUT — process selling is
+        // not in the row's Selling Amt (processes are separate rows).
+        const cost_amount = parseFloat((glass_cost + cep_cost).toFixed(2))
         const selling_amount = s.subtotal || 0
         const margin_amount = parseFloat((selling_amount - cost_amount).toFixed(2))
         const margin_pct = cost_amount > 0
@@ -1451,8 +1497,8 @@ const QuotationForm = () => {
     })
 
     const glassSellingTotal = allRows.reduce((s, r) => s + r.selling_amount, 0)
-    // glass cost only — cep and proc tracked separately
-    const glassCostTotal = allRows.reduce((s, r) => s + r.cost_amount, 0)
+    // glass only — cost_amount now includes CEP, so sum glass_cost directly
+    const glassCostTotal = allRows.reduce((s, r) => s + (r.glass_cost || 0), 0)
     const glassCepTotal = allRows.reduce((s, r) => s + (r.cep_cost || 0), 0)
     const glassProcTotal = allRows.reduce((s, r) => s + (r.proc_cost || 0), 0)
     const glassTotalCost = parseFloat((glassCostTotal + glassCepTotal + glassProcTotal).toFixed(2))
@@ -1698,7 +1744,8 @@ const QuotationForm = () => {
       breadcrumbs={[{ label: 'Sales' }, { label: 'Quotations', path: '/quotations' }, { label: isEdit ? record?.quote_number || 'Edit' : 'New' }]}
       onSave={status === 'converted' ? null : () => handleSave(false)}
       onSaveNew={status === 'converted' ? null : () => handleSave(true)}
-      onDiscard={() => navigate('/quotations')}>
+      onDiscard={() => guardedNavigate('/quotations')}
+      onBack={() => guardedNavigate('/quotations')}>
 
       <input type="file" accept=".xlsx,.xls" ref={fileInputRef} style={{ display: 'none' }} onChange={handleExcelImport} />
 
@@ -1748,7 +1795,8 @@ const QuotationForm = () => {
         isConfirming={confirmMutation.isPending}
       />
 
-      <Form form={form} layout="vertical" disabled={status === 'converted'}>
+      <Form form={form} layout="vertical" disabled={status === 'converted'}
+        onValuesChange={() => { if (hydratedRef.current) setIsDirty(true) }}>
         <Form.Item name="crm_lead_id" hidden><input type="hidden" /></Form.Item>
         <CompanySelector form={form} />
 
@@ -2640,6 +2688,41 @@ const QuotationForm = () => {
             })()}
           </>
         )}
+      </Modal>
+
+      {/* ── Unsaved Changes Leave Guard ── */}
+      <Modal
+        open={leavePrompt !== null}
+        title="Unsaved changes"
+        onCancel={() => setLeavePrompt(null)}
+        footer={[
+          <Button key="stay" onClick={() => setLeavePrompt(null)}>Stay</Button>,
+          <Button key="discard" danger onClick={() => {
+            setIsDirty(false)
+            const p = leavePrompt
+            setLeavePrompt(null)
+            navigate(p)
+          }}>Leave without saving</Button>,
+          status !== 'converted' && (
+            <Button key="save" type="primary" loading={saveMutation.isPending}
+              onClick={async () => {
+                try {
+                  await handleSave(false)
+                  // handleSave calls saveMutation.mutateAsync; if it resolves,
+                  // the save succeeded. setIsDirty(false) is also done in
+                  // saveMutation.onSuccess, but we navigate here explicitly.
+                  const p = leavePrompt
+                  setLeavePrompt(null)
+                  navigate(p)
+                } catch {
+                  // Validation failed or save errored — keep user on page.
+                  setLeavePrompt(null)
+                }
+              }}>Save &amp; Leave</Button>
+          ),
+        ].filter(Boolean)}
+      >
+        <p>You have unsaved changes. If you leave now, all changes will be lost.</p>
       </Modal>
 
     </MasterForm>

@@ -16,6 +16,10 @@ const { Title } = Typography
  *   onSave       — () => void  (Save & Close)
  *   onSaveNew    — () => void  (Save & New) — omit to hide button
  *   onDiscard    — () => void
+ *   onBack       — () => void  (optional) — if provided, the back arrow calls
+ *                  this instead of handleDiscard. Allows individual pages to
+ *                  intercept the back navigation (e.g. unsaved-changes guard)
+ *                  without breaking other forms that don't pass this prop.
  *   children     — Form content
  */
 const MasterForm = ({
@@ -27,6 +31,7 @@ const MasterForm = ({
   onSave,
   onSaveNew,
   onDiscard,
+  onBack,
   children,
 }) => {
   const navigate = useNavigate()
@@ -55,7 +60,7 @@ const MasterForm = ({
       <Row justify="space-between" align="middle" style={{ marginBottom: 20 }}>
         <Col>
           <Space>
-            <Button icon={<ArrowLeftOutlined />} onClick={handleDiscard} />
+            <Button icon={<ArrowLeftOutlined />} onClick={onBack ?? handleDiscard} />
             <Title level={4} style={{ margin: 0 }}>
               {isEdit ? `Edit ${title}` : `New ${title}`}
             </Title>
