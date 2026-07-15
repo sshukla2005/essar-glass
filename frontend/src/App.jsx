@@ -137,12 +137,23 @@ const App = () => {
       // The shared calc engine (quotationCalc.js) reads toughening/process
       // rates from localStorage — without this mirror, a fresh machine or
       // cleared browser computes toughened quotations with a ZERO addon.
-      import('./api').then(({ processMasterApi }) => {
+      import('./api').then(({ processMasterApi, companyApi }) => {
         processMasterApi.dropdown()
           .then(r => {
             const list = Array.isArray(r.data) ? r.data : (r.data?.items || [])
             if (Array.isArray(list) && list.length) {
               localStorage.setItem('process_masters', JSON.stringify(list))
+            }
+          })
+          .catch(() => {})
+        // Companies mirror — PDF letterhead (getCompany) reads companies_master
+        // from localStorage; keep it fresh from the backend on every boot so
+        // edits made on any machine reach every machine's PDFs.
+        companyApi.dropdown()
+          .then(r => {
+            const list = Array.isArray(r.data) ? r.data : (r.data?.items || [])
+            if (Array.isArray(list) && list.length) {
+              localStorage.setItem('companies_master', JSON.stringify(list))
             }
           })
           .catch(() => {})

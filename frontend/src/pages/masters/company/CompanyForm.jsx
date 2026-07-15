@@ -1,8 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react'
-import { Form, Input, Select, Row, Col, Divider, InputNumber, App, Button, Space } from 'antd'
+import React, { useEffect, useState } from 'react'
+import { Form, Input, Select, Row, Col, Divider, InputNumber, App, Button, Space, Upload } from 'antd'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { UploadOutlined } from '@ant-design/icons'
+import { UploadOutlined, CloseOutlined } from '@ant-design/icons'
 import MasterForm from '../../../components/common/MasterForm'
 import { companyApi, currencyApi, companyLogoApi } from '../../../api'
 import { INDIAN_STATES, FISCAL_MONTHS } from '../../../utils/constants'
@@ -19,9 +19,8 @@ const CompanyForm = () => {
   const queryClient  = useQueryClient()
 
   // ── Logo state ────────────────────────────────────────────────────────────
-  const logoInputRef = useRef(null)
   const [logoPreview, setLogoPreview] = useState(null)
-  const [logoUploading, setLogoUploading] = useState(false)
+  const [secondaryLogoPreview, setSecondaryLogoPreview] = useState(null)
 
   // ── Fetch existing record ─────────────────────────────────────────────────
   const { data: record, isLoading } = useQuery({
@@ -38,49 +37,49 @@ const CompanyForm = () => {
 
   useEffect(() => {
     if (record) {
-      form.setFieldsValue(record)
+      form.setFieldsValue({
+        ...record,
+        address_line1: record.address_line1 || record.address,
+      })
       if (record.logo) setLogoPreview(record.logo)
+      if (record.secondary_logo) setSecondaryLogoPreview(record.secondary_logo)
     }
-  }, [record])
+  }, [record, form])
 
-  // ── Logo handlers ─────────────────────────────────────────────────────────
-  const handleLogoUpload = async (e) => {
-    const file = e.target.files[0]
-    if (!file) return
-    if (file.size > 2 * 1024 * 1024) {
-      message.error('File too large. Max 2MB.')
-      return
+  const handleLogoFile = (file, isSecondary = false) => {
+    const isJpgOrPng = file.type === 'image/jpeg' || file.type === 'image/png' || file.type === 'image/jpg';
+    if (!isJpgOrPng) {
+      message.error('You can only upload JPG/PNG/JPEG files!');
+      return Upload.LIST_IGNORE;
     }
-    setLogoUploading(true)
-    try {
-      const res = await companyLogoApi.upload(file)
-      setLogoPreview(res.data.logo)
-      message.success('Logo uploaded!')
-      queryClient.invalidateQueries({ queryKey: ['companies'] })
-      // Update sidebar logo immediately
-      window.dispatchEvent(new CustomEvent('company-logo-updated', {
-        detail: { logo: res.data.logo }
-      }))
-    } catch (err) {
-      message.error('Upload failed. Try again.')
-    } finally {
-      setLogoUploading(false)
-      e.target.value = ''
+    const isLt500K = file.size / 1024 < 500;
+    if (!isLt500K) {
+      message.error('Image must be smaller than 500KB!');
+      return Upload.LIST_IGNORE;
     }
+
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => {
+      const base64Str = reader.result;
+      if (isSecondary) {
+        setSecondaryLogoPreview(base64Str);
+        form.setFieldsValue({ secondary_logo: base64Str });
+      } else {
+        setLogoPreview(base64Str);
+        form.setFieldsValue({ logo: base64Str });
+      }
+    };
+    return false; // prevent auto-upload
   }
 
-  const handleLogoRemove = async () => {
-    setLogoUploading(true)
-    try {
-      await companyLogoApi.remove()
-      setLogoPreview(null)
-      message.success('Logo removed.')
-      queryClient.invalidateQueries({ queryKey: ['companies'] })
-      window.dispatchEvent(new CustomEvent('company-logo-updated', { detail: { logo: null } }))
-    } catch (err) {
-      message.error('Failed to remove logo.')
-    } finally {
-      setLogoUploading(false)
+  const handleRemoveLogo = (isSecondary = false) => {
+    if (isSecondary) {
+      setSecondaryLogoPreview(null);
+      form.setFieldsValue({ secondary_logo: null });
+    } else {
+      setLogoPreview(null);
+      form.setFieldsValue({ logo: null });
     }
   }
 
@@ -91,6 +90,24 @@ const CompanyForm = () => {
     onSuccess: (res) => {
       message.success(`Company ${isEdit ? 'updated' : 'created'} successfully`)
       queryClient.invalidateQueries({ queryKey: ['companies'] })
+
+      // Update companies_master in localStorage
+      try {
+        const savedCompany = res.data
+        if (savedCompany && savedCompany.id) {
+          const all = JSON.parse(localStorage.getItem('companies_master') || '[]')
+          const idx = all.findIndex(x => x.id === savedCompany.id)
+          if (idx !== -1) {
+            all[idx] = { ...all[idx], ...savedCompany }
+          } else {
+            all.push(savedCompany)
+          }
+          localStorage.setItem('companies_master', JSON.stringify(all))
+        }
+      } catch (err) {
+        console.error('Failed to update companies_master in localStorage:', err)
+      }
+
       return res
     },
     onError: () => {},
@@ -99,14 +116,25 @@ const CompanyForm = () => {
   const handleSave = async (andNew = false) => {
     try {
       const values = await form.validateFields()
+      // Map address_line1 to address for backend compatibility
+      values.address = values.address_line1
+      
+      // TODO: move to server-side company API when multi-company isolation project lands.
       // Normalize
       if (values.code)  values.code  = values.code.toUpperCase()
       if (values.gstin) values.gstin = values.gstin.toUpperCase()
       if (values.pan)   values.pan   = values.pan.toUpperCase()
       if (values.bank_ifsc) values.bank_ifsc = values.bank_ifsc.toUpperCase()
       const res = await saveMutation.mutateAsync(values)
+      if (values.logo !== undefined) {
+        window.dispatchEvent(new CustomEvent('company-logo-updated', {
+          detail: { logo: values.logo }
+        }))
+      }
       if (andNew) {
         form.resetFields()
+        setLogoPreview(null)
+        setSecondaryLogoPreview(null)
         navigate('/masters/companies/new')
       } else {
         navigate('/masters/companies')
@@ -127,76 +155,7 @@ const CompanyForm = () => {
     >
       <Form form={form} layout="vertical" initialValues={{ country: 'India', fiscal_year_start: 4, fiscal_year_end: 3 }}>
 
-        {/* ── Logo Upload Section ─────────────────────────────────────── */}
-        {isEdit && (
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 24,
-            padding: '16px 0',
-            marginBottom: 24,
-            borderBottom: '1px solid #f0f0f0'
-          }}>
-            {/* Logo Preview */}
-            <div style={{
-              width: 100, height: 100,
-              border: '2px dashed #d1d5db',
-              borderRadius: 12,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              overflow: 'hidden',
-              background: '#f9fafb',
-              flexShrink: 0,
-            }}>
-              {logoPreview ? (
-                <img
-                  src={logoPreview}
-                  alt="Company Logo"
-                  style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-                />
-              ) : (
-                <span style={{ fontSize: 32 }}>🏢</span>
-              )}
-            </div>
 
-            <div>
-              <div style={{ fontWeight: 600, marginBottom: 4, color: '#0f172a' }}>
-                Company Logo
-              </div>
-              <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 12 }}>
-                PNG, JPG, WEBP — max 2MB. Recommended: 200×200px
-              </div>
-              <Space>
-                <Button
-                  icon={<UploadOutlined />}
-                  onClick={() => logoInputRef.current?.click()}
-                  loading={logoUploading}
-                  style={{ borderColor: '#6366f1', color: '#6366f1' }}
-                >
-                  {logoPreview ? 'Change Logo' : 'Upload Logo'}
-                </Button>
-                {logoPreview && (
-                  <Button
-                    danger
-                    size="small"
-                    onClick={handleLogoRemove}
-                    loading={logoUploading}
-                  >
-                    Remove
-                  </Button>
-                )}
-              </Space>
-              <input
-                ref={logoInputRef}
-                type="file"
-                accept="image/*"
-                style={{ display: 'none' }}
-                onChange={handleLogoUpload}
-              />
-            </div>
-          </div>
-        )}
 
         {/* ── Identity ──────────────────────────────────────────────────── */}
         <Divider orientation="left">Company Identity</Divider>
@@ -221,7 +180,7 @@ const CompanyForm = () => {
         {/* ── Indian Statutory ──────────────────────────────────────────── */}
         <Divider orientation="left">Statutory Details</Divider>
         <Row gutter={16}>
-          <Col span={6}>
+          <Col span={12}>
             <Form.Item
               name="gstin"
               label="GSTIN"
@@ -230,21 +189,7 @@ const CompanyForm = () => {
               <Input placeholder="22AAAAA0000A1Z5" maxLength={15} style={{ textTransform: 'uppercase' }} />
             </Form.Item>
           </Col>
-          <Col span={5}>
-            <Form.Item
-              name="pan"
-              label="PAN"
-              rules={[{ pattern: PAN_REGEX, message: 'Invalid PAN format' }]}
-            >
-              <Input placeholder="AAAPL1234C" maxLength={10} style={{ textTransform: 'uppercase' }} />
-            </Form.Item>
-          </Col>
-          <Col span={7}>
-            <Form.Item name="cin" label="CIN">
-              <Input placeholder="L17110MH2000PLC128859" maxLength={21} />
-            </Form.Item>
-          </Col>
-          <Col span={6}>
+          <Col span={12}>
             <Form.Item name="tan" label="TAN">
               <Input placeholder="PUNE12345A" maxLength={10} />
             </Form.Item>
@@ -254,16 +199,13 @@ const CompanyForm = () => {
         {/* ── Address ───────────────────────────────────────────────────── */}
         <Divider orientation="left">Registered Address</Divider>
         <Row gutter={16}>
-          <Col span={12}>
+          <Col span={24}>
             <Form.Item name="address_line1" label="Address Line 1">
               <Input placeholder="Building, Street" />
             </Form.Item>
           </Col>
-          <Col span={12}>
-            <Form.Item name="address_line2" label="Address Line 2">
-              <Input placeholder="Area, Landmark" />
-            </Form.Item>
-          </Col>
+        </Row>
+        <Row gutter={16}>
           <Col span={6}>
             <Form.Item name="city" label="City">
               <Input placeholder="Mumbai" />
@@ -298,6 +240,113 @@ const CompanyForm = () => {
           <Col span={6}><Form.Item name="mobile"  label="Mobile"> <Input placeholder="+91 9XXXXXXXXX" /></Form.Item></Col>
           <Col span={7}><Form.Item name="email"   label="Email">  <Input placeholder="info@company.com" type="email" /></Form.Item></Col>
           <Col span={5}><Form.Item name="website" label="Website"><Input placeholder="https://..." /></Form.Item></Col>
+        </Row>
+
+        {/* ── Letterhead Details ─────────────────────────────────────── */}
+        <Divider orientation="left">Letterhead Details</Divider>
+        {/* TODO: move to server-side company API when multi-company isolation project lands. */}
+        <Row gutter={16}>
+          <Col span={12}>
+            <Form.Item label="Company Logo">
+              <Space direction="vertical" style={{ width: '100%' }}>
+                <Upload
+                  accept=".png,.jpg,.jpeg"
+                  beforeUpload={(file) => handleLogoFile(file, false)}
+                  showUploadList={false}
+                >
+                  <Button icon={<UploadOutlined />}>Select Logo</Button>
+                </Upload>
+                {logoPreview && (
+                  <div style={{ position: 'relative', width: 100, height: 100, border: '1px solid #d9d9d9', borderRadius: 8, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fafafa' }}>
+                    <img src={logoPreview} alt="Logo" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+                    <Button
+                      type="primary"
+                      danger
+                      shape="circle"
+                      icon={<CloseOutlined style={{ fontSize: 10 }} />}
+                      size="small"
+                      style={{ position: 'absolute', top: 4, right: 4, width: 20, height: 20, minWidth: 20 }}
+                      onClick={() => handleRemoveLogo(false)}
+                    />
+                  </div>
+                )}
+              </Space>
+            </Form.Item>
+            <Form.Item name="logo" hidden><Input /></Form.Item>
+          </Col>
+
+          <Col span={12}>
+            <Form.Item label="Secondary Logo (Certification/Membership Badge)">
+              <Space direction="vertical" style={{ width: '100%' }}>
+                <Upload
+                  accept=".png,.jpg,.jpeg"
+                  beforeUpload={(file) => handleLogoFile(file, true)}
+                  showUploadList={false}
+                >
+                  <Button icon={<UploadOutlined />}>Select Secondary Logo</Button>
+                </Upload>
+                {secondaryLogoPreview && (
+                  <div style={{ position: 'relative', width: 100, height: 100, border: '1px solid #d9d9d9', borderRadius: 8, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fafafa' }}>
+                    <img src={secondaryLogoPreview} alt="Secondary Logo" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+                    <Button
+                      type="primary"
+                      danger
+                      shape="circle"
+                      icon={<CloseOutlined style={{ fontSize: 10 }} />}
+                      size="small"
+                      style={{ position: 'absolute', top: 4, right: 4, width: 20, height: 20, minWidth: 20 }}
+                      onClick={() => handleRemoveLogo(true)}
+                    />
+                  </div>
+                )}
+              </Space>
+            </Form.Item>
+            <Form.Item name="secondary_logo" hidden><Input /></Form.Item>
+          </Col>
+        </Row>
+
+        <Row gutter={16}>
+          <Col span={8}>
+            <Form.Item name="whatsapp" label="WhatsApp Number">
+              <Input placeholder="e.g. +91 98765 43210" />
+            </Form.Item>
+          </Col>
+          <Col span={8}>
+            <Form.Item name="phone2" label="Secondary Phone (Optional)">
+              <Input placeholder="e.g. 022 1234567" />
+            </Form.Item>
+          </Col>
+          <Col span={8}>
+            <Form.Item name="pan" label="PAN No.">
+              <Input placeholder="e.g. AAAPL1234C" maxLength={10} style={{ textTransform: 'uppercase' }} />
+            </Form.Item>
+          </Col>
+        </Row>
+
+        <Row gutter={16}>
+          <Col span={12}>
+            <Form.Item name="cin" label="CIN No.">
+              <Input placeholder="e.g. L17110MH2000PLC128859" maxLength={21} />
+            </Form.Item>
+          </Col>
+          <Col span={6}>
+            <Form.Item name="state_code" label="State Code">
+              <Input placeholder="e.g. 27" maxLength={2} />
+            </Form.Item>
+          </Col>
+          <Col span={6}>
+            <Form.Item name="state_name" label="State Name">
+              <Input placeholder="e.g. MAHARASHTRA" style={{ textTransform: 'uppercase' }} />
+            </Form.Item>
+          </Col>
+        </Row>
+
+        <Row gutter={16}>
+          <Col span={24}>
+            <Form.Item name="address_line2" label="Address Line 2 (Optional)">
+              <Input placeholder="Area, Landmark, District" />
+            </Form.Item>
+          </Col>
         </Row>
 
         {/* ── Bank Details ──────────────────────────────────────────────── */}

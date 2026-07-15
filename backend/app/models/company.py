@@ -26,3 +26,12 @@ class Company(Base, TimestampMixin, SoftDeleteMixin):
     bank_ac_no   = Column(String(50),  nullable=True)
     bank_ifsc    = Column(String(20),  nullable=True)
 
+    # ── New Letterhead details (dynamic per company) ──────────────────────────
+    secondary_logo = Column(Text, nullable=True)  # base64 data URL
+    whatsapp       = Column(String(50), nullable=True)
+    phone2         = Column(String(50), nullable=True)
+    pan            = Column(String(50), nullable=True)
+    cin            = Column(String(100), nullable=True)
+    state_code     = Column(String(10), nullable=True)
+    state_name     = Column(String(100), nullable=True)
+    address_line2  = Column(String(500), nullable=True)

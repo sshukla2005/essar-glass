@@ -52,10 +52,25 @@ const CompanyInfo = () => {
 
   const saveMutation = useMutation({
     mutationFn: (data) => companyApi.update(companyId, data),
-    onSuccess: () => {
+    onSuccess: (res) => {
       message.success('Company details saved!')
       queryClient.invalidateQueries({ queryKey: ['company-info'] })
       queryClient.invalidateQueries({ queryKey: ['companies'] })
+      // Mirror into companies_master (localStorage) — the PDF generator's
+      // getCompany() reads the letterhead from there. Without this, PDFs
+      // keep showing stale/thin company details after saving here.
+      try {
+        const saved = res?.data
+        if (saved && saved.id) {
+          const all = JSON.parse(localStorage.getItem('companies_master') || '[]')
+          const idx = all.findIndex(x => x.id === saved.id)
+          if (idx !== -1) all[idx] = { ...all[idx], ...saved }
+          else all.push(saved)
+          localStorage.setItem('companies_master', JSON.stringify(all))
+        }
+      } catch (err) {
+        console.error('companies_master mirror failed:', err)
+      }
     },
     onError: () => message.error('Failed to save. Try again.'),
   })

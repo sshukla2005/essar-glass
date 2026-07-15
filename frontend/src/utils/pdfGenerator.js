@@ -76,6 +76,18 @@ export const cepRateLabel = (group) => {
   return `₹${group.cep_polish_rate || 15}/rft`
 }
 
+// Process rows sometimes carry only process_id (no name) — resolve the
+// display name from the process_masters cache instead of printing "-"
+const resolveProcName = (p) => {
+  if (p.process_name || p.name) return p.process_name || p.name
+  try {
+    const pm = JSON.parse(localStorage.getItem('process_masters') || '[]')
+    const m = pm.find(x => x.id === (p.process_id ?? p.id))
+    if (m?.name) return m.name
+  } catch { }
+  return 'Process'
+}
+
 const STATE_CODES = {
   '27': 'MAHARASHTRA',
   '24': 'GUJARAT',
@@ -90,11 +102,19 @@ const STATE_CODES = {
   '32': 'KERALA',
 }
 
+const cleanVal = (val) => {
+  if (val === null || val === undefined) return ''
+  const s = String(val).trim()
+  if (s.toLowerCase() === 'undefined' || s.toLowerCase() === 'null') return ''
+  return s
+}
+
 const getStateStr = (gstin, state) => {
   let code = ''
-  let name = state || ''
-  if (gstin && gstin.length >= 2) {
-    code = gstin.substring(0, 2)
+  let name = cleanVal(state)
+  const cleanGstin = cleanVal(gstin)
+  if (cleanGstin && cleanGstin.length >= 2) {
+    code = cleanGstin.substring(0, 2)
     if (!name && STATE_CODES[code]) {
       name = STATE_CODES[code]
     }
@@ -102,6 +122,7 @@ const getStateStr = (gstin, state) => {
   if (code && name) return `${code}-${name.toUpperCase()}`
   if (code) return code
   if (name) return name.toUpperCase()
+  return ''
 }
 
 const composeGroupDesc = (group) => {
@@ -124,6 +145,27 @@ const composeGroupDesc = (group) => {
     return `${prefix} — ${desc}`
   }
   return desc
+}
+
+const preloadImage = (src) => {
+  if (!src) return Promise.resolve(null)
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.onload = () => resolve(img)
+    img.onerror = () => resolve(null)
+    img.src = src
+  })
+}
+
+const preloadCompanyLogos = async (company) => {
+  if (!company) return company
+  const logoImg = await preloadImage(company.logo)
+  const secLogoImg = await preloadImage(company.secondary_logo)
+  return {
+    ...company,
+    _logoImg: logoImg,
+    _secLogoImg: secLogoImg
+  }
 }
 
 // ── Master Data Resolvers ──────
@@ -230,36 +272,240 @@ const drawBorder = (doc) => {
 
 // ── Header & Customer Cards ──────
 const drawHeader = (doc, company, docTitle) => {
-  let y = MARGIN.t
-  // Top deep primary brand block
-  drawRect(doc, MARGIN.l - 2, y - 2, CONTENT_W + 4, 30, C.primary)
-  
-  setFont(doc, 16, 'bold', C.white)
-  drawText(doc, company.name || 'ESSAR SONS', PAGE_W / 2, y + 8, { align: 'center' })
-  
-  setFont(doc, 8, 'normal', C.primaryLight)
-  drawText(doc, company.tagline || '', PAGE_W / 2, y + 14, { align: 'center' })
-  
-  setFont(doc, 7.5, 'normal', [210, 220, 245])
-  const addr = [company.address, company.city].filter(Boolean).join(', ')
-  drawText(doc, addr.substring(0, 90), PAGE_W / 2, y + 19.5, { align: 'center' })
-  
-  const contact = [
-    company.gst ? `GSTIN: ${company.gst}` : '',
-    company.phone ? `Ph: ${company.phone}` : '',
-    company.email || '',
-    company.website || '',
-  ].filter(Boolean).join('   \u2022   ')
-  setFont(doc, 7, 'normal', [190, 200, 235])
-  drawText(doc, contact.substring(0, 100), PAGE_W / 2, y + 25, { align: 'center' })
-  
-  y += 32
-  // Teal accent title bar
-  drawRect(doc, MARGIN.l - 2, y - 1, CONTENT_W + 4, 10, C.accent)
+  const yStart = MARGIN.t // 10mm
+
+  // 1. Process address text lines
+  const rawAddrText = [
+    cleanVal(company.address),
+    cleanVal(company.address_line2),
+    cleanVal(company.city)
+  ].filter(Boolean).join(', ')
+  const combinedAddrText = "Add: " + rawAddrText
+  setFont(doc, 9, 'normal', C.text)
+  const addressLines = doc.splitTextToSize(combinedAddrText, 120).slice(0, 2)
+
+  // 2. Process statutory lines
+  const panVal = cleanVal(company.pan || company.pan_number)
+  const cinVal = cleanVal(company.cin)
+  const gstinVal = cleanVal(company.gstin || company.gst)
+  const stateStr = (cleanVal(company.state_code) && cleanVal(company.state_name))
+    ? `${cleanVal(company.state_code)}-${cleanVal(company.state_name).toUpperCase()}`
+    : cleanVal(company.state_code || company.state_name)
+
+  const statutoryParts = []
+  if (panVal) statutoryParts.push(`PAN No : ${panVal}`)
+  if (cinVal) statutoryParts.push(`CIN No : ${cinVal}`)
+  if (gstinVal) statutoryParts.push(`GSTIN : ${gstinVal}`)
+  if (stateStr) statutoryParts.push(`Code / State : ${stateStr}`)
+
+  const statutoryLine = statutoryParts.join('   ')
+  setFont(doc, 8.5, 'bold', C.text)
+  const statutoryLines = doc.splitTextToSize(statutoryLine, 120).slice(0, 2)
+
+  // 3. Process contact inline segments (Line 3)
+  const segments = []
+  if (cleanVal(company.phone)) {
+    const pVal = cleanVal(company.phone2) ? `${cleanVal(company.phone)}, ${cleanVal(company.phone2)}` : cleanVal(company.phone)
+    segments.push({ label: 'Phone: ', value: pVal })
+  }
+  if (cleanVal(company.whatsapp)) {
+    segments.push({ label: '  WhatsApp: ', value: cleanVal(company.whatsapp) })
+  }
+  if (cleanVal(company.email)) {
+    segments.push({ label: '  E-mail: ', value: cleanVal(company.email) })
+  }
+
+  // Compute heights & gaps
+  const padTop = 4
+  const nameH = 6
+  const gap1 = 2
+  const addrH = addressLines.length * 4
+  const gap2 = 2
+  const contactH = segments.length > 0 ? 3.5 : 0
+  const gap3 = segments.length > 0 ? 2 : 0
+  const statH = statutoryLines.length > 0 ? (statutoryLines.length * 4) : 0
+  const padBot = 4
+
+  const boxH = padTop + nameH + gap1 + addrH + gap2 + contactH + gap3 + statH + padBot
+
+  // 4. Draw outer border rectangle (content width = 190mm)
+  // Thin border (0.3mm, dark gray)
+  drawRect(doc, 10, yStart, CONTENT_W, boxH, null, [120, 130, 140], 0.3)
+
+  // 5. Draw left vertical separator line at x = 42
+  drawLine(doc, 42, yStart, 42, yStart + boxH, [120, 130, 140], 0.3)
+
+  // 6. Draw Left Column logo / monogram
+  // Bounding box: width = 28mm, height = boxH - 4mm
+  const maxLogoW = 28
+  const maxLogoH = boxH - 4
+  const fitImage = (imgW, imgH, maxW, maxH) => {
+    const ratio = imgW / imgH
+    let w = maxW
+    let h = maxW / ratio
+    if (h > maxH) {
+      h = maxH
+      w = maxH * ratio
+    }
+    return { w, h }
+  }
+
+  const getFormat = (dataUrl) => {
+    if (dataUrl.includes('image/png')) return 'PNG'
+    if (dataUrl.includes('image/webp')) return 'WEBP'
+    return 'JPEG'
+  }
+
+  let primaryDrawSuccess = false
+  if (company.logo) {
+    try {
+      let imgW = 150
+      let imgH = 150
+      if (company._logoImg) {
+        imgW = company._logoImg.naturalWidth || company._logoImg.width || 150
+        imgH = company._logoImg.naturalHeight || company._logoImg.height || 150
+      }
+      const dims = fitImage(imgW, imgH, maxLogoW, maxLogoH)
+      const xImg = 10 + 2 + (maxLogoW - dims.w) / 2
+      const yImg = yStart + 2 + (maxLogoH - dims.h) / 2
+      const format = getFormat(company.logo)
+      doc.addImage(company.logo, format, xImg, yImg, dims.w, dims.h)
+      primaryDrawSuccess = true
+    } catch (err) {
+      console.error('Failed to draw primary logo:', err)
+    }
+  }
+
+  if (!primaryDrawSuccess) {
+    // Monogram fallback
+    const initials = (company.name || 'E').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
+    const xBox = 10 + (32 - 18) / 2
+    const yBox = yStart + (boxH - 18) / 2
+    drawCard(doc, xBox, yBox, 18, 18, C.primaryLight, C.primary, 1.0)
+    setFont(doc, 10, 'bold', C.primary)
+    drawText(doc, initials, xBox + 9, yBox + 10.5, { align: 'center' })
+  }
+
+  // 7. Draw Right Column (secondary logo if present)
+  // Bounding box: width = 24mm, height = boxH - 4mm
+  if (company.secondary_logo) {
+    try {
+      const maxSecW = 24
+      const maxSecH = boxH - 4
+      let secW = 150
+      let secH = 150
+      if (company._secLogoImg) {
+        secW = company._secLogoImg.naturalWidth || company._secLogoImg.width || 150
+        secH = company._secLogoImg.naturalHeight || company._secLogoImg.height || 150
+      }
+      const dimsSec = fitImage(secW, secH, maxSecW, maxSecH)
+      const xSec = 172 + 2 + (maxSecW - dimsSec.w) / 2
+      const ySec = yStart + 2 + (maxSecH - dimsSec.h) / 2
+      const format = getFormat(company.secondary_logo)
+      doc.addImage(company.secondary_logo, format, xSec, ySec, dimsSec.w, dimsSec.h)
+    } catch (err) {
+      console.error('Failed to draw secondary logo:', err)
+    }
+  }
+
+  // 8. Draw Center Column text (center coordinate = 107)
+  let ly = yStart + padTop + 4.5 // Base line coordinate of name
+
+  // Line 1: Company Name (bold, uppercase, fit-to-width)
+  let nameFontSize = 15
+  const nameText = (company.name || 'ESSAR SONS').toUpperCase()
+  setFont(doc, nameFontSize, 'bold', C.primary)
+  while (doc.getTextWidth(nameText) > 120 && nameFontSize > 9) {
+    nameFontSize -= 0.5
+    setFont(doc, nameFontSize, 'bold', C.primary)
+  }
+  drawText(doc, nameText, 107, ly, { align: 'center' })
+  ly += gap1
+
+  // Line 2: Address (wrapped, bold prefix "Add:")
+  if (addressLines.length > 0) {
+    ly += 3 // Advance base line
+    if (addressLines.length === 1) {
+      const line = addressLines[0]
+      const rest = line.startsWith("Add: ") ? line.substring(5) : line
+      setFont(doc, 9, 'bold', C.text)
+      const addW = doc.getTextWidth("Add: ")
+      setFont(doc, 9, 'normal', C.text)
+      const restW = doc.getTextWidth(rest)
+      const startX = 107 - (addW + restW) / 2
+
+      setFont(doc, 9, 'bold', C.text)
+      drawText(doc, "Add: ", startX, ly)
+      setFont(doc, 9, 'normal', C.text)
+      drawText(doc, rest, startX + addW, ly)
+    } else {
+      const line1 = addressLines[0]
+      const rest1 = line1.startsWith("Add: ") ? line1.substring(5) : line1
+      setFont(doc, 9, 'bold', C.text)
+      const addW = doc.getTextWidth("Add: ")
+      setFont(doc, 9, 'normal', C.text)
+      const restW = doc.getTextWidth(rest1)
+      const startX = 107 - (addW + restW) / 2
+
+      setFont(doc, 9, 'bold', C.text)
+      drawText(doc, "Add: ", startX, ly)
+      setFont(doc, 9, 'normal', C.text)
+      drawText(doc, rest1, startX + addW, ly)
+
+      ly += 4
+      setFont(doc, 9, 'normal', C.text)
+      drawText(doc, addressLines[1], 107, ly, { align: 'center' })
+    }
+    ly += gap2
+  }
+
+  // Line 3: Phone/WhatsApp/Email
+  if (segments.length > 0) {
+    ly += 2.8 // Advance base line
+    let totalW = 0
+    const segmentSpacing = 4
+    segments.forEach((seg, idx) => {
+      if (idx > 0) totalW += segmentSpacing
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(8)
+      const lw = doc.getTextWidth(seg.label)
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(8)
+      const vw = doc.getTextWidth(seg.value)
+      seg.lw = lw
+      seg.vw = vw
+      totalW += lw + vw
+    })
+
+    let currentX = 107 - totalW / 2
+    segments.forEach((seg, idx) => {
+      if (idx > 0) currentX += segmentSpacing
+      setFont(doc, 8, 'bold', C.text)
+      drawText(doc, seg.label, currentX, ly)
+      currentX += seg.lw
+      setFont(doc, 8, 'normal', C.text)
+      drawText(doc, seg.value, currentX, ly)
+      currentX += seg.vw
+    })
+    ly += gap3
+  }
+
+  // Line 4: Statutory details
+  if (statutoryLines.length > 0) {
+    statutoryLines.forEach((l) => {
+      ly += 4
+      setFont(doc, 8.5, 'bold', C.text)
+      drawText(doc, l, 107, ly, { align: 'center' })
+    })
+  }
+
+  // 9. Document Title Band (repositoned below)
+  const titleY = yStart + boxH + 2
+  drawRect(doc, MARGIN.l - 2, titleY, CONTENT_W + 4, 10, C.accent)
   setFont(doc, 10, 'bold', C.white)
-  drawText(doc, docTitle || 'PROFORMA INVOICE', PAGE_W / 2, y + 5.5, { align: 'center' })
-  
-  return y + 12
+  drawText(doc, docTitle || 'PROFORMA INVOICE', PAGE_W / 2, titleY + 6.5, { align: 'center' })
+
+  return titleY + 10 + 4
 }
 
 const drawDocInfo = (doc, quotation, y, docTitle) => {
@@ -268,10 +514,11 @@ const drawDocInfo = (doc, quotation, y, docTitle) => {
   const items = [
     { label: 'Document Type', value: docTitle },
     { label: 'Quote / Ref No', value: quotation.quote_number || quotation.so_number || quotation.po_number || 'QT-NEW' },
-    { label: 'Date', value: quotation.quote_date || quotation.order_date || quotation.po_date || '' },
+    { label: 'Date', value: formatDate(quotation.quote_date || quotation.order_date || quotation.po_date || '') },
+    quotation.valid_until ? { label: 'Valid Until', value: formatDate(quotation.valid_until) } : null,
     { label: 'Salesperson', value: quotation.salesperson || 'Admin' },
     { label: 'Payment Terms', value: quotation.payment_terms || 'Immediate' },
-  ]
+  ].filter(Boolean)
   const cellW = CONTENT_W / items.length
   items.forEach((item, i) => {
     const x = MARGIN.l + i * cellW
@@ -305,37 +552,37 @@ const drawCustomerCard = (doc, cust, y, shipCust = null) => {
   const drawSide = (data, startX) => {
     let ly = y + 11.5
     setFont(doc, 8.5, 'bold', C.primaryMid)
-    drawText(doc, (data.name || '').substring(0, 32), startX + 4, ly)
+    drawText(doc, cleanVal(data.name).substring(0, 32), startX + 4, ly)
     ly += 4.5
     setFont(doc, 7.5, 'normal', C.textMid)
     
     // Address up to 3 wrapped lines
-    const addr = data.address || ''
+    const addr = cleanVal(data.address)
     const lines = doc.splitTextToSize(addr, cardW - 8)
     const addrLines = lines.slice(0, 3)
     for (let k = 0; k < 3; k++) {
-      drawText(doc, addrLines[k] || '', startX + 4, ly)
+      drawText(doc, cleanVal(addrLines[k]) || '', startX + 4, ly)
       ly += 3.5
     }
     
     // Tel / Email
-    const tel = data.phone || data.mobile || ''
-    const email = data.email || ''
+    const tel = cleanVal(data.phone || data.mobile)
+    const email = cleanVal(data.email)
     drawText(doc, `Tel : ${tel}    E-Mail : ${email}`, startX + 4, ly)
     ly += 3.5
     
     // PAN
-    const pan = data.pan || data.pan_number || ''
+    const pan = cleanVal(data.pan || data.pan_number)
     drawText(doc, `PAN No: ${pan}`, startX + 4, ly)
     ly += 3.5
     
     // GSTIN
-    const gstin = data.gstin || ''
+    const gstin = cleanVal(data.gstin)
     drawText(doc, `GSTIN: ${gstin}`, startX + 4, ly)
     ly += 3.5
     
     // Code / State
-    const stateStr = getStateStr(gstin, data.state)
+    const stateStr = cleanVal(getStateStr(gstin, cleanVal(data.state)))
     drawText(doc, `Code / State : ${stateStr}`, startX + 4, ly)
   }
   
@@ -407,23 +654,26 @@ const drawVendorCard = (doc, vend, y) => {
   
   let ly = y + 11.5
   setFont(doc, 8.5, 'bold', C.primaryMid)
-  drawText(doc, (vend.name || '').substring(0, 60), MARGIN.l + 4, ly)
+  drawText(doc, cleanVal(vend.name).substring(0, 60), MARGIN.l + 4, ly)
   ly += 5
   setFont(doc, 7.5, 'normal', C.textMid)
-  if (vend.address) {
-    const lines = doc.splitTextToSize(vend.address, CONTENT_W - 8)
+  const addr = cleanVal(vend.address)
+  if (addr) {
+    const lines = doc.splitTextToSize(addr, CONTENT_W - 8)
     lines.slice(0, 2).forEach(l => {
-      drawText(doc, l, MARGIN.l + 4, ly)
+      drawText(doc, cleanVal(l), MARGIN.l + 4, ly)
       ly += 4
     })
   }
-  if (vend.phone) {
-    drawText(doc, `Ph: ${vend.phone}`, MARGIN.l + 4, ly)
+  const phone = cleanVal(vend.phone)
+  if (phone) {
+    drawText(doc, `Ph: ${phone}`, MARGIN.l + 4, ly)
     ly += 4
   }
-  if (vend.gstin) {
+  const gstin = cleanVal(vend.gstin)
+  if (gstin) {
     setFont(doc, 7, 'bold', C.textLight)
-    drawText(doc, `GSTIN: ${vend.gstin}`, MARGIN.l + 4, ly)
+    drawText(doc, `GSTIN: ${gstin}`, MARGIN.l + 4, ly)
   }
   return y + cardH + SP_16
 }
@@ -440,8 +690,8 @@ const getColsConfig = (hasCep) => {
       { id: 'chg_h', h: 'HEIGHT', w: 17, parent: 'Charge Size-Inch' },
       { id: 'qty', h: 'Qty', w: 10, a: 'c' },
       { id: 'sqft', h: 'Sqft', w: 20, a: 'r' },
-      { id: 'cep', h: 'CEP Rs.', w: 18, a: 'r' },
       { id: 'rate', h: 'Rate', w: 22, a: 'r' },
+      { id: 'cep', h: 'CEP Rs.', w: 18, a: 'r' },
       { id: 'amount', h: 'Amount Rs.', w: 44, a: 'r' },
     ]
   } else {
@@ -734,7 +984,7 @@ const drawGroupCard = (doc, group, groupNo, hasCep, cols, startY, pageNum, quota
     
     const chargedW = size.charged_w_inch || 0
     const chargedH = size.charged_h_inch || 0
-    const rate = size.selling_rate || size.rate || 0
+    const rate = size.selling_rate || size.rate || group.rate || 0
     
     const vals = [
       String(si + 1),
@@ -744,8 +994,8 @@ const drawGroupCard = (doc, group, groupNo, hasCep, cols, startY, pageNum, quota
       chargedH > 0 ? toFraction(chargedH) : '',
       String(qty),
       sqft.toFixed(3),
-      ...(hasCep ? [cep > 0 ? fmtN(cep) : '-'] : []),
       fmtN(rate),
+      ...(hasCep ? [cep > 0 ? fmtN(cep) : '-'] : []),
       fmtN(amt)
     ]
     
@@ -772,7 +1022,7 @@ const drawGroupCard = (doc, group, groupNo, hasCep, cols, startY, pageNum, quota
         drawRect(doc, MARGIN.l + SP_8, ly, CONTENT_W - 2 * SP_8, 6.5, C.rowAlt)
       }
       setFont(doc, 7, 'normal', C.text)
-      drawText(doc, (p.process_name || p.name || '-').substring(0, 45), MARGIN.l + SP_8 + 3, ly + 4.5)
+      drawText(doc, resolveProcName(p).substring(0, 45), MARGIN.l + SP_8 + 3, ly + 4.5)
       
       setFont(doc, 7, 'bold', C.text)
       drawText(doc, `${p.qty_area || 0} x ${fmtR(p.rate || 0)} = ${fmtR(p.amount || 0)}`, MARGIN.l + CONTENT_W - SP_8 - 5.0, ly + 4.5, { align: 'right' })
@@ -1213,9 +1463,12 @@ const buildArtworkPageHTML = (group, gi, company) => {
   </head><body><div class="page">
     <!-- Header -->
     <div class="header">
-      <div>
-        <div style="font-size:14px;font-weight:700;">${(company.name || 'ESSAR SONS').toUpperCase()}</div>
-        <div style="font-size:10px;color:#c5cae9;">${company.tagline || ''}</div>
+      <div style="display:flex;align-items:center;gap:12px;">
+        ${company.logo ? `<img src="${company.logo}" style="height:40px;object-fit:contain;background:#fff;border-radius:4px;padding:2px;"/>` : ''}
+        <div>
+          <div style="font-size:14px;font-weight:700;">${(company.name || 'ESSAR SONS').toUpperCase()}</div>
+          <div style="font-size:10px;color:#c5cae9;">${company.tagline || ''}</div>
+        </div>
       </div>
       <div style="text-align:right;">
         <div style="font-size:12px;font-weight:700;color:#80cbc4;">ARTWORK / DESIGN DETAIL</div>
@@ -1302,7 +1555,7 @@ export const generateQuotationPDF = async (quotation) => {
   try {
     const { hardware_items = [], labor_items = [], wastage_items = [] } = quotation
     const doc = new jsPDF('p', 'mm', 'a4')
-    const company = getCompany(quotation.company_id)
+    const company = await preloadCompanyLogos(getCompany(quotation.company_id))
 
     let cust = {
       name: quotation.customer_name || '',
@@ -1536,8 +1789,8 @@ const drawSOItemsCard = (doc, lines, hasCep, cols, startY, pageNum, so) => {
       chargedH > 0 ? toFraction(chargedH) : '',
       String(qty),
       area.toFixed(3),
-      ...(hasCep ? [cep > 0 ? fmtN(cep) : '-'] : []),
       fmtN(rate),
+      ...(hasCep ? [cep > 0 ? fmtN(cep) : '-'] : []),
       fmtN(amt)
     ]
     
@@ -1603,7 +1856,7 @@ const drawSOGroupCard = (doc, group, groupNo, hasCep, cols, startY, pageNum, so)
     
     const chargedW = size.charged_w_inch || w
     const chargedH = size.charged_h_inch || h
-    const rate = size.selling_rate || size.rate || 0
+    const rate = size.selling_rate || size.rate || group.rate || 0
     
     const vals = [
       String(si + 1),
@@ -1613,8 +1866,8 @@ const drawSOGroupCard = (doc, group, groupNo, hasCep, cols, startY, pageNum, so)
       chargedH > 0 ? toFraction(chargedH) : '',
       String(qty),
       sqft.toFixed(3),
-      ...(hasCep ? [cep > 0 ? fmtN(cep) : '-'] : []),
       fmtN(rate),
+      ...(hasCep ? [cep > 0 ? fmtN(cep) : '-'] : []),
       fmtN(amt)
     ]
     
@@ -1641,7 +1894,7 @@ const drawSOGroupCard = (doc, group, groupNo, hasCep, cols, startY, pageNum, so)
         drawRect(doc, MARGIN.l + SP_8, ly, CONTENT_W - 2 * SP_8, 6.5, C.rowAlt)
       }
       setFont(doc, 7, 'normal', C.text)
-      drawText(doc, (p.process_name || p.name || '-').substring(0, 45), MARGIN.l + SP_8 + 3, ly + 4.5)
+      drawText(doc, resolveProcName(p).substring(0, 45), MARGIN.l + SP_8 + 3, ly + 4.5)
       
       setFont(doc, 7, 'bold', C.text)
       drawText(doc, `${p.qty_area || 0} x ${fmtR(p.rate || 0)} = ${fmtR(p.amount || 0)}`, MARGIN.l + CONTENT_W - SP_8 - 5.0, ly + 4.5, { align: 'right' })
@@ -1662,7 +1915,7 @@ export const generateSOPDF = async (so) => {
   try {
     const { hardware_items = [], labor_items = [], wastage_items = [] } = so
     const doc = new jsPDF('p', 'mm', 'a4')
-    const company = getCompany(so.company_id)
+    const company = await preloadCompanyLogos(getCompany(so.company_id))
     
     let cust = { name: so.customer_name || '', address: '', phone: so.customer_phone || '', gstin: so.customer_gstin || '', email: '', pan: '' }
     if (so.customer_id) {
@@ -1898,7 +2151,7 @@ const drawPOItemsCard = (doc, lines, cols, startY, pageNum, po) => {
 export const generatePOPDF = async (po) => {
   try {
     const doc = new jsPDF('p', 'mm', 'a4')
-    const company = getCompany(po.company_id)
+    const company = await preloadCompanyLogos(getCompany(po.company_id))
     let vend = { name: po.vendor_name || '', address: '', phone: '', gstin: '' }
     if (po.vendor_id) {
       try {

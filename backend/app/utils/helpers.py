@@ -1,23 +1,45 @@
 from sqlalchemy.orm import Session
-from typing import Type, Any
+from typing import Type, Any, Optional
 
-def get_next_code(db: Session, model: Type,
-                  code_field: str, prefix: str) -> str:
-    """Generate next auto-code like CUST0001, QT0001 etc."""
+
+def get_next_code(
+    db: Session,
+    model: Type,
+    code_field: str,
+    prefix: str,
+    company_id: Optional[int] = None,
+) -> str:
+    """Generate next auto-code like CUST0001, QT0001 etc.
+
+    When company_id is supplied (and the model has a company_id column) the
+    sequence is scoped per-company so that two companies can independently
+    have QT0001, SO0001, etc.
+    """
     from sqlalchemy import func
-    last = db.query(model).order_by(
-        getattr(model, "id").desc()
-    ).first()
+
+    q = db.query(model)
+
+    # Scope to company if possible
+    if company_id is not None and hasattr(model, "company_id"):
+        q = q.filter(model.company_id == company_id)
+
+    last = q.order_by(getattr(model, "id").desc()).first()
     next_id = (last.id + 1) if last else 1
     return f"{prefix}{str(next_id).zfill(4)}"
 
-def apply_company_filter(query, model, user):
-    """Auto-filter by company unless superadmin."""
-    if user.role != "superadmin" and user.company_id:
-        query = query.filter(
-            model.company_id == user.company_id
-        )
+
+def apply_company_filter(query, model, active_company_id: Optional[int]):
+    """Scope a query to active_company_id.
+
+    Unlike the old implementation this no longer grants superadmin a free pass:
+    whatever company is currently active in the token is what gets filtered.
+    If active_company_id is None (no company context) the query is returned
+    unfiltered — this should only happen for the Companies list itself.
+    """
+    if active_company_id is not None and hasattr(model, "company_id"):
+        query = query.filter(model.company_id == active_company_id)
     return query
+
 
 def serialize_row(obj):
     """ORM row → plain dict with extra_data (JSON) merged flat into the top

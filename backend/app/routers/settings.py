@@ -19,7 +19,8 @@ def list_settings(
     db: Session = Depends(get_db),
     user = Depends(get_current_user)
 ):
-    company_id = getattr(user, 'company_id', None)
+    # Use active_company_id so settings are scoped to the currently viewed company
+    company_id = user.active_company_id
     settings = db.query(CompanySetting).filter(
         CompanySetting.company_id == company_id
     ).all()
@@ -31,7 +32,9 @@ def upsert_setting(
     db: Session = Depends(get_db),
     user = Depends(get_current_user)
 ):
-    company_id = data.company_id or getattr(user, 'company_id', None)
+    # Write settings against the user's HOME company (active = RO, blocked by middleware).
+    # This endpoint is only reached in non-RO mode (middleware blocks writes when RO).
+    company_id = user.active_company_id or getattr(user, 'company_id', None)
     setting = db.query(CompanySetting).filter(
         CompanySetting.key == data.key,
         CompanySetting.company_id == company_id
@@ -63,10 +66,9 @@ async def upload_company_logo(
     b64 = base64.b64encode(contents).decode("utf-8")
     logo_data = f"data:{mime_type};base64,{b64}"
     
-    company_id = getattr(user, 'company_id', None)
     from app.models.company import Company
+    company_id = user.active_company_id or getattr(user, 'company_id', None)
     
-    # If superadmin (no company_id), get first company
     if company_id:
         company = db.query(Company).filter(Company.id == company_id).first()
     else:
@@ -84,8 +86,8 @@ def delete_company_logo(
     db: Session = Depends(get_db),
     user = Depends(get_current_user)
 ):
-    company_id = getattr(user, 'company_id', None)
     from app.models.company import Company
+    company_id = user.active_company_id or getattr(user, 'company_id', None)
     company = db.query(Company).filter(Company.id == company_id).first()
     if company:
         company.logo = None
@@ -98,7 +100,8 @@ def get_setting(
     db: Session = Depends(get_db),
     user = Depends(get_current_user)
 ):
-    company_id = getattr(user, 'company_id', None)
+    # Read settings from active company
+    company_id = user.active_company_id
     setting = db.query(CompanySetting).filter(
         CompanySetting.key == key,
         CompanySetting.company_id == company_id

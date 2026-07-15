@@ -1,8 +1,10 @@
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, Request, Response
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 # pyrefly: ignore [missing-import]
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
 import os
 
 from app.config   import settings
@@ -25,7 +27,7 @@ app = FastAPI(
     redoc_url="/api/redoc",
 )
 
-# CORS
+# ── CORS ──────────────────────────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.origins_list,
@@ -34,10 +36,103 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Serve uploads
+# ── Read-Only Middleware ───────────────────────────────────────────────────────
+# This is the authoritative write-block enforcement.
+# It runs before any route handler, so even if a frontend bug fires a write
+# request, the server rejects it with 403.
+
+WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+# These paths are whitelisted and may always accept writes.
+# Only auth plumbing endpoints belong here — nothing else.
+WRITE_WHITELIST = {
+    "/api/v1/auth/login",
+    "/api/v1/auth/logout",
+    "/api/v1/auth/refresh",
+    "/api/v1/auth/switch-company",
+}
+
+class ReadOnlyMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        # Only inspect write methods
+        if request.method not in WRITE_METHODS:
+            return await call_next(request)
+
+        # Whitelisted paths always pass through
+        if request.url.path in WRITE_WHITELIST:
+            return await call_next(request)
+
+        # Try to decode the JWT
+        auth_header = request.headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer "):
+            # No token — let the route handle 401
+            return await call_next(request)
+
+        token = auth_header[len("Bearer "):]
+        try:
+            from jose import jwt as jose_jwt, JWTError
+            payload = jose_jwt.decode(
+                token,
+                settings.SECRET_KEY,
+                algorithms=[settings.ALGORITHM],
+            )
+        except Exception:
+            # Invalid token — let the route handle 401
+            return await call_next(request)
+
+        legacy_cid = payload.get("company_id")
+        home_cid   = payload.get("home_company_id",   legacy_cid)
+        active_cid = payload.get("active_company_id", legacy_cid)
+
+        # Determine read-only status
+        if home_cid is None or active_cid is None:
+            is_read_only = False
+        elif home_cid == active_cid:
+            is_read_only = False
+        else:
+            role = payload.get("role", "")
+            if settings.ALLOW_SUPERADMIN_CROSS_EDIT and role == "superadmin":
+                is_read_only = False
+            else:
+                is_read_only = True
+
+        if is_read_only:
+            # Fetch company name for a helpful error message
+            company_name = "another company"
+            try:
+                from app.database import SessionLocal
+                from app.models.company import Company as CompanyModel
+                db = SessionLocal()
+                try:
+                    c = db.query(CompanyModel).filter(
+                        CompanyModel.id == active_cid
+                    ).first()
+                    if c:
+                        company_name = c.name
+                finally:
+                    db.close()
+            except Exception:
+                pass
+
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "detail": (
+                        f"Read-only mode: you are viewing {company_name}. "
+                        f"Log in to this company to make changes."
+                    )
+                },
+            )
+
+        return await call_next(request)
+
+
+app.add_middleware(ReadOnlyMiddleware)
+
+# ── Serve uploads ──────────────────────────────────────────────────────────────
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
-# ── Import and register routers ───────────────────────────────
+# ── Import and register routers ───────────────────────────────────────────────
 from app.routers.auth import router as auth_router
 from app.routers      import make_crud_router
 from app.models.customer       import Customer
@@ -69,7 +164,7 @@ app.include_router(auth_router, prefix=f"{PREFIX}")
 # Settings
 app.include_router(settings_router)
 
-# Auto CRUD routers (all modules in 3 lines each)
+# Auto CRUD routers
 for router_cfg in [
     # (prefix, tag, model, code_prefix, code_field)
     ("/companies",    "Companies",   Company,        "COMP", None),
@@ -93,7 +188,6 @@ for router_cfg in [
     ("/payments",     "Payments",    Payment,        "PMT",  "payment_number"),
 ]:
     prefix, tag, model, code_pref, code_fld = router_cfg
-    # We need schemas — use dict-based for now (Pydantic auto later)
     from pydantic import BaseModel
     class DynCreate(BaseModel):
         model_config = {"extra": "allow"}
@@ -111,7 +205,8 @@ for router_cfg in [
     )
     app.include_router(r)
 
-# ── Receivables Summary (dashboard numbers) ───────────────────
+
+# ── Receivables Summary (dashboard numbers) ───────────────────────────────────
 @app.get("/api/v1/receivables/summary")
 def receivables_summary(
     db: Session = Depends(get_db),
@@ -120,13 +215,14 @@ def receivables_summary(
     from app.models.sales_order import SalesOrder
     from app.models.payment import Payment
     from sqlalchemy import func
+    from app.utils.helpers import apply_company_filter
 
     so_q = db.query(SalesOrder)
     pay_q = db.query(Payment)
 
-    if user.role != "superadmin" and user.company_id:
-        so_q = so_q.filter(SalesOrder.company_id == user.company_id)
-        pay_q = pay_q.filter(Payment.company_id == user.company_id)
+    # Always scope to active company (no superadmin bypass)
+    so_q = apply_company_filter(so_q, SalesOrder, user.active_company_id)
+    pay_q = apply_company_filter(pay_q, Payment, user.active_company_id)
 
     so_q = so_q.filter(SalesOrder.is_active == True)
     pay_q = pay_q.filter(Payment.is_active == True)
@@ -144,7 +240,7 @@ def receivables_summary(
     }
 
 
-# ── Customer Ledger ────────────────────────────────────────────
+# ── Customer Ledger ────────────────────────────────────────────────────────────
 @app.get("/api/v1/receivables/customer/{customer_id}")
 def customer_ledger(
     customer_id: int,
@@ -160,6 +256,14 @@ def customer_ledger(
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
 
+    # Verify customer belongs to active company
+    if (
+        user.active_company_id is not None
+        and customer.company_id is not None
+        and customer.company_id != user.active_company_id
+    ):
+        raise HTTPException(status_code=404, detail="Customer not found")
+
     sales_orders = db.query(SalesOrder).filter(
         SalesOrder.customer_id == customer_id,
         SalesOrder.is_active == True,
@@ -170,7 +274,6 @@ def customer_ledger(
         Payment.is_active == True,
     ).order_by(Payment.id.asc()).all()
 
-    # Build transactions list — combine SOs and payments, sort by date
     transactions = []
 
     for so in sales_orders:
@@ -202,10 +305,8 @@ def customer_ledger(
             "payment_reference": pay.payment_reference,
         })
 
-    # Sort by date
     transactions.sort(key=lambda x: x["date"])
 
-    # Running balance (positive = customer owes us, negative = we owe customer)
     running_balance = 0
     for t in transactions:
         running_balance += t["debit"] - t["credit"]
@@ -225,11 +326,11 @@ def customer_ledger(
         "transactions": transactions,
         "total_billed": round(total_billed, 2),
         "total_paid": round(total_paid, 2),
-        "balance": balance,  # positive = outstanding, negative = advance/credit
+        "balance": balance,
     }
 
 
-# ── Receivables per customer (for dashboard table) ────────────
+# ── Receivables per customer (for dashboard table) ─────────────────────────────
 @app.get("/api/v1/receivables/customers")
 def receivables_by_customer(
     db: Session = Depends(get_db),
@@ -238,29 +339,25 @@ def receivables_by_customer(
     from app.models.sales_order import SalesOrder
     from app.models.payment import Payment
     from app.models.customer import Customer
+    from app.utils.helpers import apply_company_filter
     from sqlalchemy import func
 
-    company_filter_so = SalesOrder.company_id == user.company_id if user.role != "superadmin" and user.company_id else True
-    company_filter_pay = Payment.company_id == user.company_id if user.role != "superadmin" and user.company_id else True
-
-    # Get all customers who have SOs
-    so_by_customer = db.query(
+    so_q = db.query(
         SalesOrder.customer_id,
         func.sum(SalesOrder.total_amount).label("total_billed"),
         func.count(SalesOrder.id).label("so_count"),
-    ).filter(
-        SalesOrder.is_active == True,
-        company_filter_so
-    ).group_by(SalesOrder.customer_id).all()
+    )
+    so_q = apply_company_filter(so_q, SalesOrder, user.active_company_id)
+    so_q = so_q.filter(SalesOrder.is_active == True)
+    so_by_customer = so_q.group_by(SalesOrder.customer_id).all()
 
-    # Get all payments per customer
-    pay_by_customer = db.query(
+    pay_q = db.query(
         Payment.customer_id,
         func.sum(Payment.amount).label("total_paid"),
-    ).filter(
-        Payment.is_active == True,
-        company_filter_pay
-    ).group_by(Payment.customer_id).all()
+    )
+    pay_q = apply_company_filter(pay_q, Payment, user.active_company_id)
+    pay_q = pay_q.filter(Payment.is_active == True)
+    pay_by_customer = pay_q.group_by(Payment.customer_id).all()
 
     pay_map = {p.customer_id: float(p.total_paid or 0) for p in pay_by_customer}
 
@@ -278,7 +375,7 @@ def receivables_by_customer(
             "customer_phone": cust.phone or "",
             "total_billed": round(total_billed, 2),
             "total_paid": round(total_paid, 2),
-            "balance": balance,  # positive = outstanding, negative = advance
+            "balance": balance,
             "so_count": row.so_count,
             "status": "advance" if balance < 0 else ("settled" if balance == 0 else "pending"),
         })
@@ -293,7 +390,7 @@ def root():
         "app":     settings.APP_NAME,
         "version": settings.APP_VERSION,
         "docs":    "/api/docs",
-        "status":  "running"
+        "status":  "running",
     }
 
 @app.get("/api/v1/health")
@@ -306,7 +403,22 @@ def get_wo_by_so(
     db: Session = Depends(get_db),
     user = Depends(get_current_user),
 ):
-    """Get all Workshop Orders linked to a Sales Order"""
+    """Get all Workshop Orders linked to a Sales Order (scoped to active company)."""
+    from app.models.sales_order import SalesOrder
+
+    # Verify the SO belongs to the active company
+    so = db.query(SalesOrder).filter(SalesOrder.id == so_id).first()
+    if not so:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Sales Order not found")
+    if (
+        user.active_company_id is not None
+        and so.company_id is not None
+        and so.company_id != user.active_company_id
+    ):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Sales Order not found")
+
     wos = db.query(WorkshopOrder).filter(
         WorkshopOrder.so_id == so_id,
     ).all()
@@ -322,5 +434,5 @@ def get_wo_by_so(
             }
             for wo in wos
         ],
-        "total": len(wos)
+        "total": len(wos),
     }

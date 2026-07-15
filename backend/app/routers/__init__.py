@@ -35,7 +35,8 @@ def make_crud_router(
         user         = Depends(get_current_user),
     ):
         q = db.query(model)
-        q = apply_company_filter(q, model, user)
+        # Always scope to active_company_id — no superadmin bypass
+        q = apply_company_filter(q, model, user.active_company_id)
 
         if is_active is not None:
             active_bool = is_active.lower() == 'true'
@@ -74,7 +75,7 @@ def make_crud_router(
         user        = Depends(get_current_user),
     ):
         q = db.query(model)
-        q = apply_company_filter(q, model, user)
+        q = apply_company_filter(q, model, user.active_company_id)
         if hasattr(model, "is_active"):
             q = q.filter(model.is_active == True)
         return [serialize_row(o) for o in q.order_by(model.id).all()]
@@ -88,6 +89,17 @@ def make_crud_router(
         item = db.query(model).filter(model.id == item_id).first()
         if not item:
             raise HTTPException(status_code=404, detail="Not found")
+
+        # Company ownership check: return 404 (not 403) so cross-company
+        # record existence is not leaked to the caller.
+        if (
+            user.active_company_id is not None
+            and hasattr(item, "company_id")
+            and item.company_id is not None
+            and item.company_id != user.active_company_id
+        ):
+            raise HTTPException(status_code=404, detail="Not found")
+
         return serialize_row(item)
 
     @router.post("/", status_code=201)
@@ -98,14 +110,17 @@ def make_crud_router(
     ):
         obj_data = data.model_dump()
 
-        # Auto-set company_id
-        if not obj_data.get("company_id") and user.company_id:
+        # ALWAYS override company_id from the token — never trust the body
+        if user.active_company_id is not None:
+            obj_data["company_id"] = user.active_company_id
+        elif not obj_data.get("company_id") and user.company_id:
             obj_data["company_id"] = user.company_id
 
-        # Auto-generate code
+        # Auto-generate code (per-company scoped)
         if code_prefix and code_field:
             obj_data[code_field] = get_next_code(
-                db, model, code_field, code_prefix
+                db, model, code_field, code_prefix,
+                company_id=obj_data.get("company_id"),
             )
 
         # Parse JSON string fields → proper objects
@@ -117,7 +132,6 @@ def make_crud_router(
                     pass
 
         # Strip base64 artwork from lines/groups before saving
-        # Too large for DB — strip it, store filename only
         if 'lines' in obj_data and isinstance(obj_data['lines'], list):
             for line in obj_data['lines']:
                 if isinstance(line, dict) and line.get('artwork_file'):
@@ -128,15 +142,11 @@ def make_crud_router(
                 if isinstance(group, dict) and group.get('artwork_file'):
                     group['artwork_file'] = None
 
-        # Remove fields that don't exist in model
-        # Prevents TypeError: 'xyz' is an invalid keyword argument
         from app.models.user import User as UserModel
         if model is UserModel and 'password' in obj_data and obj_data['password']:
             from app.services.auth_service import hash_password
             obj_data['password'] = hash_password(obj_data['password'])
 
-        # Unknown fields → extra_data JSON (if the model has it) instead of
-        # silently dropping them. Kills the silent data-loss bug class.
         obj_data = stash_extra_fields(model, obj_data)
 
         item = model(**obj_data)
@@ -156,7 +166,19 @@ def make_crud_router(
         if not item:
             raise HTTPException(status_code=404, detail="Not found")
 
+        # Company ownership check (404 to avoid leaking existence)
+        if (
+            user.active_company_id is not None
+            and hasattr(item, "company_id")
+            and item.company_id is not None
+            and item.company_id != user.active_company_id
+        ):
+            raise HTTPException(status_code=404, detail="Not found")
+
         update_data = data.model_dump(exclude_unset=True)
+
+        # Never allow company_id to be changed via update
+        update_data.pop("company_id", None)
 
         # Parse JSON string fields → proper objects
         for json_field in ['groups', 'lines', 'processes', 'permissions']:
@@ -177,15 +199,12 @@ def make_crud_router(
                 if isinstance(group, dict) and group.get('artwork_file'):
                     group['artwork_file'] = None
 
-        # Only update valid model columns
         from app.models.user import User as UserModel
         if model is UserModel and 'password' in update_data and update_data['password']:
             from app.services.auth_service import hash_password
             update_data['password'] = hash_password(update_data['password'])
 
         update_data = stash_extra_fields(model, update_data)
-        # Merge with existing extra_data so partial updates never wipe
-        # previously stashed fields
         if 'extra_data' in update_data:
             existing = dict(getattr(item, 'extra_data', None) or {})
             existing.update(update_data['extra_data'] or {})
@@ -207,6 +226,16 @@ def make_crud_router(
         item = db.query(model).filter(model.id == item_id).first()
         if not item:
             raise HTTPException(status_code=404, detail="Not found")
+
+        # Company ownership check
+        if (
+            user.active_company_id is not None
+            and hasattr(item, "company_id")
+            and item.company_id is not None
+            and item.company_id != user.active_company_id
+        ):
+            raise HTTPException(status_code=404, detail="Not found")
+
         if hasattr(item, "status"):
             item.status = data.get("status")
         db.commit()
@@ -222,6 +251,16 @@ def make_crud_router(
         item = db.query(model).filter(model.id == item_id).first()
         if not item:
             raise HTTPException(status_code=404, detail="Not found")
+
+        # Company ownership check
+        if (
+            user.active_company_id is not None
+            and hasattr(item, "company_id")
+            and item.company_id is not None
+            and item.company_id != user.active_company_id
+        ):
+            raise HTTPException(status_code=404, detail="Not found")
+
         if hasattr(item, "is_active"):
             item.is_active = False
         db.commit()
@@ -236,6 +275,16 @@ def make_crud_router(
         item = db.query(model).filter(model.id == item_id).first()
         if not item:
             raise HTTPException(status_code=404, detail="Not found")
+
+        # Company ownership check
+        if (
+            user.active_company_id is not None
+            and hasattr(item, "company_id")
+            and item.company_id is not None
+            and item.company_id != user.active_company_id
+        ):
+            raise HTTPException(status_code=404, detail="Not found")
+
         db.delete(item)
         db.commit()
         return {"message": "Deleted"}

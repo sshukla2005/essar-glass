@@ -7,7 +7,7 @@ class Quotation(Base, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "quotations"
 
     id               = Column(Integer, primary_key=True, index=True)
-    quote_number     = Column(String(20),  unique=True, nullable=False)
+    quote_number     = Column(String(20),  nullable=False, index=True)  # unique per-company (see migration)
     customer_id      = Column(Integer, ForeignKey("customers.id"),
                               nullable=True)
     crm_lead_id      = Column(Integer, ForeignKey("crm_leads.id"),
