@@ -53,8 +53,19 @@ const WorkshopOrderForm = () => {
   const [exportWizard, setExportWizard] = useState(false)
   const [exportLoading, setExportLoading] = useState(null)
   const [waLink, setWaLink] = useState(null)
-  const [artworkPanels, setArtworkPanels] = useState([])
-  const [artworkImage, setArtworkImage] = useState(null)
+  // Multi-artwork panel maps — har artwork ki APNI mapping sheet:
+  // [{ name, image, panels: [{x,y,w,h,lineIndex,note,...}] }]
+  const [artworkMaps, setArtworkMaps] = useState([])
+  const [activeMap, setActiveMap] = useState(0)
+
+  const updateActiveMap = (patch) => {
+    setArtworkMaps(prev => {
+      // Invalid index (map delete/switch ke beech) pe kuch mat badlo —
+      // naya array return karna hi render loop trigger karta hai
+      if (!prev[activeMap]) return prev
+      return prev.map((m, i) => (i === activeMap ? { ...m, ...patch } : m))
+    })
+  }
 
   // Load artwork master from backend on mount
   useEffect(() => {
@@ -149,8 +160,18 @@ const WorkshopOrderForm = () => {
         }
       }))
       if (record.jobwork_vendor) setSelectedJobworkVendor(record.jobwork_vendor)
-      if (record.artwork_panels) setArtworkPanels(record.artwork_panels)
-      if (record.artwork_image) setArtworkImage(record.artwork_image)
+      // Naya format: maps ka array [{name,image,panels}]. Purana (legacy):
+      // flat panels array + alag artwork_image — usse ek map mein wrap karo.
+      if (Array.isArray(record.artwork_panels) && record.artwork_panels.length > 0) {
+        if (record.artwork_panels[0]?.panels !== undefined) {
+          setArtworkMaps(record.artwork_panels)
+        } else {
+          setArtworkMaps([{ name: 'Map 1', image: record.artwork_image || null, panels: record.artwork_panels }])
+        }
+      } else if (record.artwork_image) {
+        setArtworkMaps([{ name: 'Map 1', image: record.artwork_image, panels: [] }])
+      }
+      setActiveMap(0)
     }
   }, [record, form, processMasters])
 
@@ -377,8 +398,11 @@ const WorkshopOrderForm = () => {
       values.so_number = so?.so_number || ''
       values.lines = lines.map(({ key, ...rest }) => rest)
       values.jobwork_vendor = selectedJobworkVendor || null
-      values.artwork_panels = artworkPanels
-      values.artwork_image = artworkImage
+      // Poora maps array artwork_panels JSON mein; artwork_image mein pehli
+      // map ki image (backward compatibility ke liye)
+      const cleanMaps = artworkMaps.filter(m => m.image || (m.panels || []).length > 0)
+      values.artwork_panels = cleanMaps
+      values.artwork_image = cleanMaps[0]?.image || null
       await saveMutation.mutateAsync(values)
       if (andNew) { form.resetFields(); setLines([]); navigate('/workshop/orders/new') }
     } catch (err) { }
@@ -496,130 +520,134 @@ const WorkshopOrderForm = () => {
         margin: { left: margin, right: margin },
       })
 
-      // ── PANEL MAPPING SECTION ─────────────────────────
-      if (artworkPanels && artworkPanels.length > 0 && artworkImage) {
-        let pmY = (doc.lastAutoTable?.finalY || 80) + 10
+      // ── ARTWORK SHEETS — worker-facing, one FULL PAGE per artwork ──────
+      const PANEL_COLORS = [
+        '#6366f1', '#10b981', '#f59e0b', '#ef4444',
+        '#8b5cf6', '#06b6d4', '#ec4899', '#f97316'
+      ]
+      const pageH = doc.internal.pageSize.getHeight()
+      const contentW = pageW - margin * 2
 
-        if (pmY + 20 > doc.internal.pageSize.getHeight() - 20) {
-          doc.addPage()
-          pmY = 20
-        }
+      const drawSheetHeader = (title, subtitle) => {
+        doc.setFillColor(124, 58, 237)
+        doc.rect(0, 0, pageW, 16, 'F')
+        doc.setFontSize(12); doc.setFont('helvetica', 'bold'); doc.setTextColor(255, 255, 255)
+        doc.text(title, margin, 10)
+        doc.setFontSize(8); doc.setFont('helvetica', 'normal')
+        doc.text(subtitle, pageW - margin, 10, { align: 'right' })
+      }
 
-        // Section heading
-        doc.setFontSize(11)
-        doc.setFont('helvetica', 'bold')
-        doc.setTextColor(15, 23, 42)
-        doc.text('Master Artwork — Panel Mapping', margin, pmY)
-        pmY += 5
+      const fitDims = (iw, ih, maxW, maxH) => {
+        const s = Math.min(maxW / iw, maxH / ih)
+        return { w: iw * s, h: ih * s }
+      }
 
-        doc.setDrawColor(124, 58, 237)
-        doc.setLineWidth(0.5)
-        doc.line(margin, pmY, pageW - margin, pmY)
-        pmY += 6
-
-        // Draw annotated image on offscreen canvas
+      // 1) PANEL MAP SHEETS — har artwork map ka APNA full page, apne panels
+      const validMaps = (artworkMaps || []).filter(m => m.image && (m.panels || []).length > 0)
+      for (let mi = 0; mi < validMaps.length; mi++) {
+        const map = validMaps[mi]
         try {
-          const oCanvas = document.createElement('canvas')
           const oImg = new Image()
           await new Promise((resolve, reject) => {
             oImg.onload = resolve
             oImg.onerror = reject
-            oImg.src = artworkImage
+            oImg.src = map.image
           })
 
-          const maxImgW = 90
-          const maxImgH = 70
-          const scale = Math.min(maxImgW / oImg.width, maxImgH / oImg.height, 1)
-          oCanvas.width = Math.round(oImg.width * scale)
-          oCanvas.height = Math.round(oImg.height * scale)
+          const oCanvas = document.createElement('canvas')
+          oCanvas.width = oImg.width
+          oCanvas.height = oImg.height
           const oCtx = oCanvas.getContext('2d')
-          oCtx.drawImage(oImg, 0, 0, oCanvas.width, oCanvas.height)
+          oCtx.drawImage(oImg, 0, 0)
 
-          const PANEL_COLORS = [
-            '#6366f1', '#10b981', '#f59e0b', '#ef4444',
-            '#8b5cf6', '#06b6d4', '#ec4899', '#f97316'
-          ]
+          const k = Math.max(oImg.width, oImg.height) / 800
 
-          artworkPanels.forEach((p, i) => {
+          map.panels.forEach((p, i) => {
             const color = PANEL_COLORS[i % PANEL_COLORS.length]
+            const line = (p.lineIndex != null) ? lines[p.lineIndex] : null
             oCtx.strokeStyle = color
-            oCtx.lineWidth = 2
-            oCtx.strokeRect(p.x * scale, p.y * scale, p.w * scale, p.h * scale)
-            oCtx.fillStyle = color + '40'
-            oCtx.fillRect(p.x * scale, p.y * scale, p.w * scale, p.h * scale)
-            // number badge
+            oCtx.lineWidth = 4 * k
+            oCtx.strokeRect(p.x, p.y, p.w, p.h)
+            oCtx.fillStyle = color + '2e'
+            oCtx.fillRect(p.x, p.y, p.w, p.h)
+            const bs = 34 * k
             oCtx.fillStyle = color
-            oCtx.fillRect(p.x * scale + 2, p.y * scale + 2, 18, 18)
+            oCtx.fillRect(p.x + 3 * k, p.y + 3 * k, bs, bs)
             oCtx.fillStyle = '#ffffff'
-            oCtx.font = 'bold 12px sans-serif'
-            oCtx.fillText(String(i + 1), p.x * scale + 5, p.y * scale + 14)
+            oCtx.font = `bold ${22 * k}px sans-serif`
+            oCtx.fillText(String(i + 1), p.x + 12 * k, p.y + 27 * k)
+            if (line) {
+              const label = `${line.description || 'Line ' + (p.lineIndex + 1)}  ${line.act_w_in || '?'}"x${line.act_h_in || '?'}" x${line.qty || 1}`
+              oCtx.font = `bold ${14 * k}px sans-serif`
+              const tw = oCtx.measureText(label).width + 10 * k
+              oCtx.fillStyle = 'rgba(255,255,255,0.92)'
+              oCtx.fillRect(p.x + 3 * k, p.y + p.h - 22 * k, Math.min(tw, Math.max(p.w - 6 * k, 40 * k)), 19 * k)
+              oCtx.fillStyle = color
+              oCtx.fillText(label, p.x + 8 * k, p.y + p.h - 8 * k)
+            }
           })
 
-          const pdfImgW = oCanvas.width * (0.264583) // px to mm at 96dpi
-          const pdfImgH = oCanvas.height * (0.264583)
-          const finalImgW = Math.min(pdfImgW, 90)
-          const finalImgH = pdfImgH * (finalImgW / pdfImgW)
-
-          if (pmY + finalImgH + 10 > doc.internal.pageSize.getHeight() - 20) {
-            doc.addPage()
-            pmY = 20
-          }
-
-          const imgData = oCanvas.toDataURL('image/jpeg', 0.85)
-          doc.addImage(imgData, 'JPEG', margin, pmY, finalImgW, finalImgH)
-          pmY += finalImgH + 8
-        } catch (imgErr) {
-          doc.setFontSize(8)
-          doc.setTextColor(200, 80, 80)
-          doc.text('[Annotated panel image could not be rendered]', margin, pmY)
-          pmY += 6
-        }
-
-        // Panel mapping table
-        if (pmY + 10 > doc.internal.pageSize.getHeight() - 20) {
           doc.addPage()
-          pmY = 20
+          drawSheetHeader(
+            `PANEL MAP ${validMaps.length > 1 ? `${mi + 1}/${validMaps.length} — ` : '— '}${String(map.name || 'ARTWORK').toUpperCase().substring(0, 30)}`,
+            `${record?.wo_number || 'WO'}${record?.customer_name ? ' | ' + record.customer_name : ''}`
+          )
+
+          const legendH = 12 + map.panels.length * 7
+          const maxImgH = pageH - 16 - 12 - legendH - 14
+          const dims = fitDims(oCanvas.width, oCanvas.height, contentW, Math.max(90, maxImgH))
+          const imgData = oCanvas.toDataURL('image/jpeg', 0.9)
+          doc.addImage(imgData, 'JPEG', (pageW - dims.w) / 2, 20, dims.w, dims.h)
+
+          const pmTableRows = map.panels.map((p, i) => {
+            const line = (p.lineIndex != null) ? lines[p.lineIndex] : null
+            return [
+              String(i + 1),
+              line ? (line.description || `Line ${p.lineIndex + 1}`) : 'NOT ASSIGNED',
+              line ? `${line.act_w_in || '?'}" × ${line.act_h_in || '?'}"` : '—',
+              line ? String(line.qty || 1) : '—',
+              (line?.toughened || line?.is_toughened) ? 'YES' : '—',
+              p.note || '—',
+            ]
+          })
+
+          autoTable(doc, {
+            startY: 20 + dims.h + 6,
+            head: [['Panel', 'Glass Line', 'Size', 'Qty', 'Tgh', 'Note']],
+            body: pmTableRows,
+            styles: { fontSize: 8.5, cellPadding: 2.5 },
+            headStyles: { fillColor: [124, 58, 237], textColor: 255, fontStyle: 'bold' },
+            alternateRowStyles: { fillColor: [245, 243, 255] },
+            columnStyles: {
+              0: { cellWidth: 14, halign: 'center' },
+              1: { cellWidth: 70 },
+              2: { cellWidth: 35 },
+              3: { cellWidth: 12, halign: 'center' },
+              4: { cellWidth: 12, halign: 'center' },
+              5: { cellWidth: 'auto' },
+            },
+            margin: { left: margin, right: margin },
+            didParseCell: (data) => {
+              if (data.section === 'body' && data.column.index === 0) {
+                const c = PANEL_COLORS[data.row.index % PANEL_COLORS.length]
+                data.cell.styles.fillColor = [
+                  parseInt(c.slice(1, 3), 16),
+                  parseInt(c.slice(3, 5), 16),
+                  parseInt(c.slice(5, 7), 16),
+                ]
+                data.cell.styles.textColor = 255
+                data.cell.styles.fontStyle = 'bold'
+              }
+            },
+          })
+        } catch (imgErr) {
+          console.error('Panel map sheet failed:', imgErr)
         }
-
-        const pmTableRows = artworkPanels.map((p, i) => {
-          const line = (p.lineIndex != null) ? lines[p.lineIndex] : null
-          return [
-            String(i + 1),
-            line ? (line.description || `Line ${p.lineIndex + 1}`) : 'Not assigned',
-            line
-              ? `${line.act_w_in || '?'}" × ${line.act_h_in || '?'}" (Qty: ${line.qty || 1})`
-              : '—',
-            p.note || '—',
-          ]
-        })
-
-        autoTable(doc, {
-          startY: pmY,
-          head: [['Panel', 'Line Description', 'Dimensions', 'Note']],
-          body: pmTableRows,
-          styles: { fontSize: 8, cellPadding: 2.5 },
-          headStyles: {
-            fillColor: [124, 58, 237],
-            textColor: 255,
-            fontStyle: 'bold',
-            fontSize: 8.5,
-          },
-          alternateRowStyles: { fillColor: [245, 243, 255] },
-          columnStyles: {
-            0: { cellWidth: 14, halign: 'center' },
-            1: { cellWidth: 65 },
-            2: { cellWidth: 45 },
-            3: { cellWidth: 'auto' },
-          },
-          margin: { left: margin, right: margin },
-        })
       }
 
-      // ── ARTWORK SECTION ──────────────────────────────
-      let artY = (doc.lastAutoTable?.finalY || 80) + 10
-
+      // 2) LINE ARTWORK SHEETS — har unique artwork ka apna FULL PAGE:
+      //    badi image + neeche kaun si glass lines is design se banni hain
       const processLines = lines.filter(l => l.has_process && l.artwork_file_data)
-
       const artworkMap = new Map()
       processLines.forEach(l => {
         const key = l.artwork_master_id || l.key
@@ -627,75 +655,60 @@ const WorkshopOrderForm = () => {
           artworkMap.set(key, {
             name: l.artwork_name || l.artwork_file_name || 'Artwork',
             data: l.artwork_file_data,
-            sizes: []
+            rows: []
           })
         }
-        artworkMap.get(key).sizes.push(
-          `${l.description} — ${l.act_w_in || '?'}" × ${l.act_h_in || '?'}" (Qty: ${l.qty || 1})`
-        )
+        artworkMap.get(key).rows.push(l)
       })
 
-      if (artworkMap.size > 0) {
-        if (artY + 10 > doc.internal.pageSize.getHeight() - 20) {
-          doc.addPage()
-          artY = 20
-        }
+      for (const [, art] of artworkMap) {
+        // Kisi panel-map sheet pe ye image already full-page aa chuki hai
+        if (validMaps.some(m => m.image === art.data)) continue
 
-        doc.setFontSize(11)
-        doc.setFont('helvetica', 'bold')
-        doc.setTextColor(15, 23, 42)
-        doc.text('Artwork References', margin, artY)
-        artY += 6
+        if (art.data && art.data.startsWith('data:image/')) {
+          try {
+            const im = new Image()
+            await new Promise((res, rej) => { im.onload = res; im.onerror = rej; im.src = art.data })
 
-        doc.setDrawColor(99, 102, 241)
-        doc.line(margin, artY, pageW - margin, artY)
-        artY += 6
-
-        for (const [, art] of artworkMap) {
-          if (artY + 60 > doc.internal.pageSize.getHeight() - 20) {
             doc.addPage()
-            artY = 20
+            drawSheetHeader(
+              `ARTWORK: ${String(art.name).toUpperCase().substring(0, 40)}`,
+              `${record?.wo_number || 'WO'}`
+            )
+
+            const tblH = 14 + art.rows.length * 7
+            const maxImgH = pageH - 16 - 12 - tblH - 14
+            const dims = fitDims(im.width, im.height, contentW, Math.max(100, maxImgH))
+            const fmt = art.data.includes('data:image/png') ? 'PNG' : 'JPEG'
+            doc.addImage(art.data, fmt, (pageW - dims.w) / 2, 20, dims.w, dims.h)
+
+            autoTable(doc, {
+              startY: 20 + dims.h + 6,
+              head: [['#', 'Glass Line (uses this artwork)', 'Size', 'Qty', 'Tgh', 'Remark']],
+              body: art.rows.map((l, i) => [
+                String(i + 1),
+                l.description || '—',
+                `${l.act_w_in || '?'}" × ${l.act_h_in || '?'}"`,
+                String(l.qty || 1),
+                (l.toughened || l.is_toughened) ? 'YES' : '—',
+                l.remark || '—',
+              ]),
+              styles: { fontSize: 8.5, cellPadding: 2.5 },
+              headStyles: { fillColor: [99, 102, 241], textColor: 255, fontStyle: 'bold' },
+              alternateRowStyles: { fillColor: [238, 242, 255] },
+              margin: { left: margin, right: margin },
+            })
+          } catch (e) {
+            console.error('Artwork sheet failed:', e)
           }
-
-          doc.setFontSize(9)
-          doc.setFont('helvetica', 'bold')
-          doc.setTextColor(99, 102, 241)
-          doc.text(`${art.name}`, margin, artY)
-          artY += 5
-
-          doc.setFont('helvetica', 'normal')
-          doc.setFontSize(8)
-          doc.setTextColor(80, 80, 80)
-          art.sizes.forEach(s => {
-            doc.text(`  • ${s}`, margin + 3, artY)
-            artY += 4.5
-          })
-
-          if (art.data && art.data.startsWith('data:image/')) {
-            try {
-              const imgFormat = art.data.includes('data:image/png') ? 'PNG' : 'JPEG'
-              const imgW = 60
-              const imgH = 45
-              if (artY + imgH + 6 > doc.internal.pageSize.getHeight() - 20) {
-                doc.addPage()
-                artY = 20
-              }
-              doc.addImage(art.data, imgFormat, margin, artY, imgW, imgH)
-              artY += imgH + 6
-            } catch (e) {
-              doc.setFontSize(8)
-              doc.setTextColor(200, 80, 80)
-              doc.text('  [Image could not be rendered]', margin, artY)
-              artY += 5
-            }
-          } else if (art.data && art.data.startsWith('data:application/pdf')) {
-            doc.setFontSize(8)
-            doc.setTextColor(80, 80, 80)
-            doc.text(`  [PDF artwork: ${art.name} — open separately]`, margin, artY)
-            artY += 5
-          }
-
-          artY += 4
+        } else if (art.data && art.data.startsWith('data:application/pdf')) {
+          doc.addPage()
+          drawSheetHeader(
+            `ARTWORK: ${String(art.name).toUpperCase().substring(0, 40)}`,
+            `${record?.wo_number || 'WO'}`
+          )
+          doc.setFontSize(10); doc.setFont('helvetica', 'normal'); doc.setTextColor(80, 80, 80)
+          doc.text(`PDF artwork attached: "${art.name}" — print/open the PDF file separately.`, margin, 30)
         }
       }
 
@@ -947,11 +960,15 @@ const WorkshopOrderForm = () => {
       }
 
       // ── PANEL MAPPING SHEET ───────────────────────────
-      if (artworkPanels && artworkPanels.length > 0) {
+      const allPanels = (artworkMaps || []).flatMap((map, mapIdx) =>
+        (map.panels || []).map((p) => ({ ...p, mapName: map.name || `Map ${mapIdx + 1}` }))
+      )
+
+      if (allPanels.length > 0) {
         const pmWs = wb.addWorksheet('Panel Mapping')
 
         // Header
-        pmWs.mergeCells('A1:D1')
+        pmWs.mergeCells('A1:E1')
         pmWs.getCell('A1').value = 'MASTER ARTWORK — PANEL MAPPING'
         pmWs.getCell('A1').font = { bold: true, size: 14, color: { argb: 'FFFFFFFF' } }
         pmWs.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF7C3AED' } }
@@ -968,7 +985,7 @@ const WorkshopOrderForm = () => {
         pmWs.addRow([])
 
         // Table header
-        const pmHeader = pmWs.addRow(['Panel #', 'Assigned Line', 'Dimensions', 'Note'])
+        const pmHeader = pmWs.addRow(['Map Name', 'Panel #', 'Assigned Line', 'Dimensions', 'Note'])
         pmHeader.eachCell(cell => {
           cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 10 }
           cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF6366F1' } }
@@ -981,7 +998,7 @@ const WorkshopOrderForm = () => {
         pmHeader.height = 22
 
         // Data rows
-        artworkPanels.forEach((p, i) => {
+        allPanels.forEach((p, i) => {
           const line = (p.lineIndex != null) ? lines[p.lineIndex] : null
           const lineDesc = line
             ? (line.description || `Line ${p.lineIndex + 1}`)
@@ -991,6 +1008,7 @@ const WorkshopOrderForm = () => {
             : '—'
 
           const row = pmWs.addRow([
+            p.mapName,
             i + 1,
             lineDesc,
             lineDims,
@@ -1008,7 +1026,7 @@ const WorkshopOrderForm = () => {
               right: { style: 'thin', color: { argb: 'FFE2E8F0' } }
             }
             if (!line) {
-              row.getCell(2).font = { color: { argb: 'FFEF4444' }, italic: true }
+              row.getCell(3).font = { color: { argb: 'FFEF4444' }, italic: true }
             }
           })
           row.height = 20
@@ -1016,6 +1034,7 @@ const WorkshopOrderForm = () => {
 
         // Column widths
         pmWs.columns = [
+          { width: 20 },
           { width: 10 },
           { width: 45 },
           { width: 30 },
@@ -1025,9 +1044,10 @@ const WorkshopOrderForm = () => {
         // Summary row
         pmWs.addRow([])
         const totalRow = pmWs.addRow([
-          `Total Panels: ${artworkPanels.length}`,
-          `Assigned: ${artworkPanels.filter(p => p.lineIndex != null && lines[p.lineIndex]).length}`,
-          `Unassigned: ${artworkPanels.filter(p => p.lineIndex == null || !lines[p.lineIndex]).length}`,
+          `Total Panels: ${allPanels.length}`,
+          `Assigned: ${allPanels.filter(p => p.lineIndex != null && lines[p.lineIndex]).length}`,
+          `Unassigned: ${allPanels.filter(p => p.lineIndex == null || !lines[p.lineIndex]).length}`,
+          '',
           '',
         ])
         totalRow.eachCell(cell => {
@@ -1288,11 +1308,63 @@ const WorkshopOrderForm = () => {
           style={{ marginBottom: 16, borderColor: '#e0e7ff' }}
           styles={{ header: { background: '#f5f3ff', borderBottom: '1px solid #e0e7ff' } }}
         >
+          <Space style={{ marginBottom: 10 }} wrap>
+            <Select
+              style={{ minWidth: 200 }}
+              value={artworkMaps.length ? activeMap : undefined}
+              placeholder="No artwork map yet"
+              options={artworkMaps.map((m, i) => ({ value: i, label: `Map ${i + 1}: ${m.name || 'untitled'}` }))}
+              onChange={setActiveMap}
+            />
+            <Button onClick={() => {
+              setArtworkMaps(p => [...p, { name: `Map ${p.length + 1}`, image: null, panels: [] }])
+              setActiveMap(artworkMaps.length)
+            }}>+ New Map</Button>
+            {artworkMaps.length > 0 && (
+              <>
+                <Input
+                  style={{ width: 180 }}
+                  placeholder="Map name (PDF heading)"
+                  value={artworkMaps[activeMap]?.name || ''}
+                  onChange={e => updateActiveMap({ name: e.target.value })}
+                />
+                <Button danger onClick={() => {
+                  setArtworkMaps(p => p.filter((_, i) => i !== activeMap))
+                  setActiveMap(0)
+                }}>Delete Map</Button>
+              </>
+            )}
+          </Space>
           <ArtworkPanelMapper
             lines={lines}
-            value={artworkPanels}
-            onChange={setArtworkPanels}
-            onImageChange={setArtworkImage}
+            value={artworkMaps[activeMap]?.panels || []}
+            onChange={(pnls) => updateActiveMap({ panels: pnls })}
+            onImageChange={(img) => {
+              if (artworkMaps.length === 0) {
+                setArtworkMaps([{ name: 'Map 1', image: img, panels: [] }])
+                setActiveMap(0)
+              } else {
+                updateActiveMap({ image: img })
+              }
+            }}
+            initialImage={artworkMaps[activeMap]?.image || null}
+            artworkSources={(() => {
+              const seen = new Set()
+              const srcs = []
+              lines.forEach((l, i) => {
+                if (l.artwork_file_data && !seen.has(l.artwork_file_data)) {
+                  seen.add(l.artwork_file_data)
+                  srcs.push({ label: `Line ${i + 1}: ${l.artwork_name || l.artwork_file_name || 'artwork'}`, data: l.artwork_file_data })
+                }
+              })
+              artworkMaster.forEach(a => {
+                if (a.file_data && !seen.has(a.file_data)) {
+                  seen.add(a.file_data)
+                  srcs.push({ label: `Master: ${a.name}`, data: a.file_data })
+                }
+              })
+              return srcs
+            })()}
           />
         </Card>
 

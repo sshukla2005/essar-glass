@@ -13,7 +13,7 @@ const GROUP_COLORS = [
 // onChange   — callback(panels)
 // onImageChange — callback(base64string)
 
-const ArtworkPanelMapper = ({ lines = [], value = [], onChange, onImageChange }) => {
+const ArtworkPanelMapper = ({ lines = [], value = [], onChange, onImageChange, artworkSources = [], initialImage = null }) => {
   const canvasRef = useRef(null)
   const [imgSrc, setImgSrc] = useState(null)
   const [imgObj, setImgObj] = useState(null)
@@ -22,29 +22,57 @@ const ArtworkPanelMapper = ({ lines = [], value = [], onChange, onImageChange })
   const [drawing, setDrawing] = useState(false)
   const [startPos, setStartPos] = useState(null)
   const [currentRect, setCurrentRect] = useState(null)
+
+  // Parent-controlled image: saved-WO reload AND multi-map switching — jab
+  // parent initialImage badle (map switch), canvas ka image bhi badle aur
+  // purani selection/draft clear ho (warna pichhle map ka ghost dikhta hai)
+  useEffect(() => {
+    if (initialImage !== imgSrc) {
+      setImgSrc(initialImage || null)
+      setSelectedPanel(null)
+      setCurrentRect(null)
+      setDrawing(false)
+      if (!initialImage) setImgObj(null)
+    }
+  }, [initialImage])
+  // Parent → mapper panels sync. GUARD: empty→empty skip karo — parent har
+  // render pe naya [] bhej sakta hai, bina guard ke ye infinite
+  // reset→onChange→reset loop banata hai (wahi flicker glitch)
+  useEffect(() => {
+    if (!Array.isArray(value) || value === panels) return
+    if (value.length === 0 && panels.length === 0) return
+    setPanels(value)
+    setSelectedPanel(null)
+  }, [value])
   const fileInputRef = useRef(null)
 
-  // sync panels to parent
+  // Mapper → parent panels sync. Echo mat bhejo: agar panels wahi ref hai jo
+  // parent ne diya tha to onChange skip (loop ka doosra sira)
   useEffect(() => {
+    if (panels === value) return
     onChange && onChange(panels)
   }, [panels])
 
-  // load image onto canvas
+  // load image onto canvas — sizing yahan, DRAWING sirf neeche wale effect
+  // mein (yahan redraw karne se stale-closure panels ka ghost frame aata tha)
   useEffect(() => {
-    if (!imgSrc) return
+    if (!imgSrc) { setImgObj(null); return }
+    let cancelled = false
     const img = new Image()
     img.onload = () => {
-      setImgObj(img)
+      if (cancelled) return
       const canvas = canvasRef.current
-      if (!canvas) return
-      const maxW = canvas.parentElement?.clientWidth || 500
-      const maxH = 460
-      const scale = Math.min(maxW / img.width, maxH / img.height, 1)
-      canvas.width = Math.round(img.width * scale)
-      canvas.height = Math.round(img.height * scale)
-      redraw(img, panels, selectedPanel, currentRect, canvas)
+      if (canvas) {
+        const maxW = canvas.parentElement?.clientWidth || 500
+        const maxH = 460
+        const scale = Math.min(maxW / img.width, maxH / img.height, 1)
+        canvas.width = Math.round(img.width * scale)
+        canvas.height = Math.round(img.height * scale)
+      }
+      setImgObj(img)
     }
     img.src = imgSrc
+    return () => { cancelled = true }
   }, [imgSrc])
 
   const redraw = (img, pnls, selPanel, curRect, cvs) => {
@@ -114,6 +142,7 @@ const ArtworkPanelMapper = ({ lines = [], value = [], onChange, onImageChange })
   }
 
   const handleMouseDown = (e) => {
+    e.preventDefault()
     const { x, y } = getPos(e)
     const hit = hitTest(x, y)
     if (hit) {
@@ -207,6 +236,21 @@ const ArtworkPanelMapper = ({ lines = [], value = [], onChange, onImageChange })
           style={{ display: 'none' }}
           onChange={handleImageUpload}
         />
+        {artworkSources.length > 0 && (
+          <Select
+            size="middle"
+            style={{ minWidth: 260 }}
+            placeholder="…or use artwork from lines / master"
+            options={artworkSources.map((a, i) => ({ value: i, label: a.label }))}
+            onChange={(i) => {
+              const src = artworkSources[i]
+              if (src?.data) {
+                setImgSrc(src.data)
+                onImageChange && onImageChange(src.data)
+              }
+            }}
+          />
+        )}
         {panels.length > 0 && (
           <Button
             danger
@@ -233,6 +277,8 @@ const ArtworkPanelMapper = ({ lines = [], value = [], onChange, onImageChange })
               overflow: 'hidden',
               display: 'inline-block',
               cursor: 'crosshair',
+              userSelect: 'none',
+              WebkitUserSelect: 'none',
             }}>
               <canvas
                 ref={canvasRef}
@@ -295,6 +341,19 @@ const ArtworkPanelMapper = ({ lines = [], value = [], onChange, onImageChange })
                 padding: '4px 6px', background: '#e0e7ff', borderRadius: 4,
               }}>
                 {selectedLine.description || 'Line'} — {selectedLine.act_w_in || '?'}" × {selectedLine.act_h_in || '?'}" × {selectedLine.qty || 1}pcs
+              </div>
+            )}
+            {/* Us line ka allotted artwork — cross-check ke liye */}
+            {selectedLine?.artwork_file_data && (
+              <div style={{ marginBottom: 8 }}>
+                <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 4 }}>
+                  Line's allotted artwork{selectedLine.artwork_name ? ` — ${selectedLine.artwork_name}` : ''}
+                </div>
+                <img
+                  src={selectedLine.artwork_file_data}
+                  alt="line artwork"
+                  style={{ width: '100%', maxHeight: 120, objectFit: 'contain', border: '1px solid #e2e8f0', borderRadius: 4, background: '#fff' }}
+                />
               </div>
             )}
             <div style={{ marginBottom: 8 }}>
