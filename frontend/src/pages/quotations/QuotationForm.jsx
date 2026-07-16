@@ -454,6 +454,19 @@ const QuotationForm = () => {
         charged_h_inch: line.charged_h_inch || 0,
         _charged_w_manual: line._charged_w_manual || false,
         _charged_h_manual: line._charged_h_manual || false,
+        cost_ceil_w: line.cost_ceil_w ?? undefined,
+        cost_ceil_h: line.cost_ceil_h ?? undefined,
+        cost_charged_w: line.cost_charged_w ?? undefined,
+        cost_charged_h: line.cost_charged_h ?? undefined,
+        cost_charged_sqft: line.cost_charged_sqft ?? undefined,
+        _cost_charged_w_manual: line._cost_charged_w_manual || false,
+        _cost_charged_h_manual: line._cost_charged_h_manual || false,
+        glass_cost: line.glass_cost ?? 0,
+        cep_cost: line.cep_cost ?? 0,
+        proc_cost: line.proc_cost ?? 0,
+        cost_amount: line.cost_amount ?? 0,
+        margin_amount: line.margin_amount ?? 0,
+        margin_pct: line.margin_pct ?? 0,
         cep_rft: line.cep_rft || 0,
         cep_charges: line.cep_charges || 0,
         tgh_sqmt: line.tgh_sqmt || 0,
@@ -890,12 +903,19 @@ const QuotationForm = () => {
               if (pm.charge_type === 'fixed') updated.qty_area = 1
 
               updated.amount = parseFloat(((updated.qty_area || 0) * pm.rate).toFixed(2))
+              updated.cost_rate = (typeof pm.cost_rate === 'number' && pm.cost_rate >= 0)
+                ? pm.cost_rate
+                : parseFloat((pm.rate * 0.70).toFixed(2))
             }
           }
 
-          if (field === 'qty_area' || field === 'rate') {
+          if (field === 'qty_area' || field === 'rate' || field === 'cost_rate') {
             updated.amount = parseFloat(
               ((updated.qty_area || 0) * (updated.rate || 0)).toFixed(2)
+            )
+            const gpCostRate = updated.cost_rate ?? ((updated.rate || 0) * 0.70)
+            updated.cost_amount = parseFloat(
+              ((updated.qty_area || 0) * gpCostRate).toFixed(2)
             )
           }
 
@@ -1034,6 +1054,19 @@ const QuotationForm = () => {
         charged_h_inch: s.charged_h_inch,
         _charged_w_manual: s._charged_w_manual || false,
         _charged_h_manual: s._charged_h_manual || false,
+        cost_ceil_w: s.cost_ceil_w ?? null,
+        cost_ceil_h: s.cost_ceil_h ?? null,
+        cost_charged_w: s.cost_charged_w ?? null,
+        cost_charged_h: s.cost_charged_h ?? null,
+        cost_charged_sqft: s.cost_charged_sqft ?? null,
+        _cost_charged_w_manual: s._cost_charged_w_manual || false,
+        _cost_charged_h_manual: s._cost_charged_h_manual || false,
+        glass_cost: s.glass_cost ?? 0,
+        cep_cost: s.cep_cost ?? 0,
+        proc_cost: s.proc_cost ?? 0,
+        cost_amount: s.cost_amount ?? 0,
+        margin_amount: s.margin_amount ?? 0,
+        margin_pct: s.margin_pct ?? 0,
         cep_rft: s.cep_rft,
         cep_charges: s.cep_charges,
         tgh_sqmt: s.tgh_sqmt,
@@ -1091,6 +1124,8 @@ const QuotationForm = () => {
         dc_cost: form.getFieldValue('dc_cost') || 0,
         totals: totals,
         quotation_id: parseInt(id),
+        gst_mode: gstMode,
+        is_inter_state: gstMode === 'igst',
         subtotal: totals.subIII,
         tax_amount: totals.cgst + totals.sgst + totals.igst,
         total_amount: totals.grandTotal,
@@ -1184,6 +1219,49 @@ const QuotationForm = () => {
     } catch (err) { }
   }
 
+  // ── Flush wizard row edits back into group.sizes so Cost Chg W/H,
+  // ceilings and computed cost fields survive modal close → Save → reload ──
+  const flushWizardRowsToSizes = () => {
+    if (!compWizard?.group_key || !Array.isArray(compWizard.rows)) return
+    setGroups(prev => prev.map(g => {
+      if (g.group_key !== compWizard.group_key) return g
+      const ceilFn = (x, c, customMm) => {
+        if (c === 'plus30mm') return x + (30 / 25.4)
+        if (c === 'custom') return x + ((customMm || 30) / 25.4)
+        return Math.ceil(x / c) * c
+      }
+      const sizes = g.sizes.map((s, i) => {
+        const r = compWizard.rows[i]
+        if (!r) return s
+        // A row counts as manually edited only if its value differs from
+        // what the current ceiling would produce — ceiling changes alone
+        // must NOT set the manual flag, or ceilings would stop working.
+        const autoW = parseFloat(ceilFn(r._w_raw || 0, r.cost_ceil_w || 3, g.wizard_cost_ceil_w_custom_mm || 30).toFixed(4))
+        const autoH = parseFloat(ceilFn(r._h_raw || 0, r.cost_ceil_h || 3, g.wizard_cost_ceil_h_custom_mm || 30).toFixed(4))
+        const wManual = (r.cost_charged_w > 0) && Math.abs(r.cost_charged_w - autoW) > 0.001
+        const hManual = (r.cost_charged_h > 0) && Math.abs(r.cost_charged_h - autoH) > 0.001
+        return {
+          ...s,
+          cost_ceil_w: r.cost_ceil_w,
+          cost_ceil_h: r.cost_ceil_h,
+          cost_charged_w: r.cost_charged_w,
+          cost_charged_h: r.cost_charged_h,
+          _cost_charged_w_manual: wManual,
+          _cost_charged_h_manual: hManual,
+          // separate field — never touch s.charged_sqft (selling side)
+          cost_charged_sqft: parseFloat(r.charged_sqft) || 0,
+          glass_cost: r.glass_cost || 0,
+          cep_cost: r.cep_cost || 0,
+          proc_cost: r.proc_cost || 0,
+          cost_amount: r.cost_amount || 0,
+          margin_amount: r.margin_amount || 0,
+          margin_pct: r.margin_pct || 0,
+        }
+      })
+      return { ...g, sizes }
+    }))
+  }
+
   const openComparisonWizard = (group) => {
     // Always reset to null first — ensures fresh calc every open
     setWizardCostPrice(null)
@@ -1211,7 +1289,9 @@ const QuotationForm = () => {
       const cost_ceil_h = s.cost_ceil_h || group.wizard_cost_ceil_h || 3
       const cost_charged_w = s.cost_charged_w !== undefined ? s.cost_charged_w : w
       const cost_charged_h = s.cost_charged_h !== undefined ? s.cost_charged_h : h
-      const charged_sqft = s.charged_sqft || 0
+      // persisted COST-side sqft; falls back to selling charged_sqft on first-ever open
+      const charged_sqft = (s.cost_charged_sqft !== undefined && s.cost_charged_sqft !== null)
+        ? s.cost_charged_sqft : (s.charged_sqft || 0)
       const glass_cost = s.glass_cost || 0
       const actual_rft = parseFloat(((w + h) * 2 / 12 * qty).toFixed(4))
       const cep_cost = s.cep_cost || 0
@@ -1254,9 +1334,12 @@ const QuotationForm = () => {
     const totalCepCost = rows.reduce((s, r) => s + (r.cep_cost || 0), 0)
     const totalSizeProcCost = rows.reduce((s, r) => s + (r.proc_cost || 0), 0)
 
-    // Group-level processes — no cost_rate field, use 70% estimate
+    // Group-level processes — use the editable cost_rate; 70% of selling only as fallback
     const procSelling = (group.processes || []).reduce((s, p) => s + (p.amount || 0), 0)
-    const groupProcCost = parseFloat((procSelling * 0.70).toFixed(2))
+    const groupProcCost = parseFloat(((group.processes || []).reduce((s, p) => {
+      const cr = p.cost_rate ?? ((p.rate || 0) * 0.70)
+      return s + (p.qty_area || 0) * cr
+    }, 0)).toFixed(2))
 
     // Size-level processes selling amount
     const sizeProcSelling = (group.sizes || [])
@@ -1990,13 +2073,13 @@ const QuotationForm = () => {
 
       {/* ── Modal 2: Cost vs Selling (Per-Product) ── */}
       <Modal title={<Space><LineChartOutlined style={{ color: '#6366f1' }} /><span>Cost vs Selling — {compWizard?.product_name}</span></Space>}
-        open={compWizard !== null} onCancel={() => { setCompWizard(null); setWizardCostPrice(null) }} width={820}
+        open={compWizard !== null} onCancel={() => { flushWizardRowsToSizes(); setCompWizard(null); setWizardCostPrice(null) }} width={820}
         footer={<Space>
           <Button style={{ borderColor: '#10b981', color: '#10b981' }} disabled={!wizardCostPrice || wizardCostPrice <= 0}
-            onClick={() => { if (compWizard?.group_key && wizardCostPrice > 0) { updateGroup(compWizard.group_key, 'manual_cost_price', wizardCostPrice); message.success(`Cost price ₹${wizardCostPrice}/sqft saved`) } setCompWizard(null); setWizardCostPrice(null) }}>
+            onClick={() => { flushWizardRowsToSizes(); if (compWizard?.group_key && wizardCostPrice > 0) { updateGroup(compWizard.group_key, 'manual_cost_price', wizardCostPrice); message.success(`Cost price ₹${wizardCostPrice}/sqft saved`) } setCompWizard(null); setWizardCostPrice(null) }}>
             Save Cost Price Only
           </Button>
-          <Button onClick={() => { setCompWizard(null); setWizardCostPrice(null) }}>Close</Button>
+          <Button onClick={() => { flushWizardRowsToSizes(); setCompWizard(null); setWizardCostPrice(null) }}>Close</Button>
         </Space>}>
         {compWizard && (<>
           <Row gutter={16} style={{ marginBottom: 16 }}>

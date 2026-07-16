@@ -15,8 +15,15 @@ const QuotationDetailsCard = forwardRef(({
   customerApi,
   employeeApi,
   queryClient,
-  message
+  message,
+  // Sales order specific props
+  type = 'quotation',
+  warehouses = [],
+  quotations = [],
+  handleQuotationChange
 }, ref) => {
+  const isSO = type === 'sales_order'
+
   const lbl = (text) => (
     <span style={{ 
       fontSize: 11, 
@@ -149,7 +156,7 @@ const QuotationDetailsCard = forwardRef(({
         background: '#FAFBFD'
       }}>
         <span style={{ fontSize: 16, fontWeight: 600, color: '#0f172a', letterSpacing: -0.1 }}>
-          Quotation Details
+          {isSO ? 'Sales Order Details' : 'Quotation Details'}
         </span>
         <Space>
           <Radio.Group 
@@ -259,17 +266,55 @@ const QuotationDetailsCard = forwardRef(({
             </Modal>
           </Col>
 
-          <Col xs={12} md={4}>
-            <Form.Item name="quote_date" label={lbl('Quote Date')} style={{ marginBottom: 0 }}>
-              <DatePicker style={{ width: '100%', borderRadius: 8 }} format="DD/MM/YYYY" size="large" />
-            </Form.Item>
-          </Col>
-
-          <Col xs={12} md={4}>
-            <Form.Item name="valid_until" label={lbl('Valid Until')} style={{ marginBottom: 0 }}>
-              <DatePicker style={{ width: '100%', borderRadius: 8 }} format="DD/MM/YYYY" size="large" />
-            </Form.Item>
-          </Col>
+          {isSO ? (
+            <>
+              <Col xs={12} md={4}>
+                <Form.Item name="order_date" label={lbl('Order Date')} style={{ marginBottom: 0 }}>
+                  <DatePicker style={{ width: '100%', borderRadius: 8 }} format="DD/MM/YYYY" size="large" />
+                </Form.Item>
+              </Col>
+              <Col xs={12} md={4}>
+                <Form.Item name="delivery_date" label={lbl('Delivery Date')} style={{ marginBottom: 0 }}>
+                  <DatePicker style={{ width: '100%', borderRadius: 8 }} format="DD/MM/YYYY" size="large" />
+                </Form.Item>
+              </Col>
+              <Col xs={12} md={4}>
+                <Form.Item name="warehouse_id" label={lbl('Warehouse')} style={{ marginBottom: 0 }}>
+                  <Select 
+                    options={warehouses.map(w => ({ value: w.id, label: w.name }))} 
+                    size="large" 
+                    style={{ borderRadius: 8 }} 
+                    placeholder="Warehouse"
+                  />
+                </Form.Item>
+              </Col>
+              <Col xs={12} md={4}>
+                <Form.Item name="quotation_id" label={lbl('Quotation Ref')} style={{ marginBottom: 0 }}>
+                  <Select 
+                    options={quotations.map(q => ({ value: q.id, label: q.quote_number }))} 
+                    allowClear 
+                    onChange={handleQuotationChange} 
+                    size="large" 
+                    style={{ borderRadius: 8 }} 
+                    placeholder="Quote Ref"
+                  />
+                </Form.Item>
+              </Col>
+            </>
+          ) : (
+            <>
+              <Col xs={12} md={4}>
+                <Form.Item name="quote_date" label={lbl('Quote Date')} style={{ marginBottom: 0 }}>
+                  <DatePicker style={{ width: '100%', borderRadius: 8 }} format="DD/MM/YYYY" size="large" />
+                </Form.Item>
+              </Col>
+              <Col xs={12} md={4}>
+                <Form.Item name="valid_until" label={lbl('Valid Until')} style={{ marginBottom: 0 }}>
+                  <DatePicker style={{ width: '100%', borderRadius: 8 }} format="DD/MM/YYYY" size="large" />
+                </Form.Item>
+              </Col>
+            </>
+          )}
 
           <Col xs={12} md={4}>
             <Form.Item name="salesperson" label={lbl('Salesperson')} style={{ marginBottom: 0 }}>

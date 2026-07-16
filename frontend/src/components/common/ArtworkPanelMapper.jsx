@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react'
-import { Button, Select, Input, Space, Table } from 'antd'
+import { Button, Select, Input, Space, Table, message } from 'antd'
 import { DeleteOutlined, UploadOutlined } from '@ant-design/icons'
 
 const GROUP_COLORS = [
@@ -68,6 +68,15 @@ const ArtworkPanelMapper = ({ lines = [], value = [], onChange, onImageChange, a
         const scale = Math.min(maxW / img.width, maxH / img.height, 1)
         canvas.width = Math.round(img.width * scale)
         canvas.height = Math.round(img.height * scale)
+        // Reproject saved normalized panels onto this canvas size so they
+        // appear exactly where they were drawn, regardless of screen width
+        setPanels(prev => prev.map(p => (p.nx != null) ? {
+          ...p,
+          x: p.nx * canvas.width,
+          y: p.ny * canvas.height,
+          w: p.nw * canvas.width,
+          h: p.nh * canvas.height,
+        } : p))
       }
       setImgObj(img)
     }
@@ -165,13 +174,33 @@ const ArtworkPanelMapper = ({ lines = [], value = [], onChange, onImageChange, a
     if (!drawing || !currentRect) return
     setDrawing(false)
     if (Math.abs(currentRect.w) > 10 && Math.abs(currentRect.h) > 10) {
+      const eligible = getEligibleLineIdx()
+      const totalPieces = eligible.reduce((s, i) => s + (lines[i]?.qty || 1), 0)
+      if (totalPieces > 0 && panels.length >= totalPieces) {
+        message.warning(`This artwork covers ${totalPieces} piece(s) — all are already mapped. Delete a panel to remap.`)
+        setCurrentRect(null)
+        return
+      }
+      const canvas = canvasRef.current
+      const px = currentRect.w < 0 ? currentRect.x + currentRect.w : currentRect.x
+      const py = currentRect.h < 0 ? currentRect.y + currentRect.h : currentRect.y
+      const pw = Math.abs(currentRect.w)
+      const ph = Math.abs(currentRect.h)
       const newPanel = {
         id: Date.now(),
-        x: currentRect.w < 0 ? currentRect.x + currentRect.w : currentRect.x,
-        y: currentRect.h < 0 ? currentRect.y + currentRect.h : currentRect.y,
-        w: Math.abs(currentRect.w),
-        h: Math.abs(currentRect.h),
-        lineIndex: lines.length > 0 ? 0 : null,
+        x: px, y: py, w: pw, h: ph,
+        // Normalized 0–1 coords — resolution-independent, so the PDF (full-res
+        // image) and any canvas size can reproject the exact same region
+        nx: canvas && canvas.width ? px / canvas.width : 0,
+        ny: canvas && canvas.height ? py / canvas.height : 0,
+        nw: canvas && canvas.width ? pw / canvas.width : 0,
+        nh: canvas && canvas.height ? ph / canvas.height : 0,
+        lineIndex: (() => {
+          const counts = {}
+          panels.forEach(pp => { if (pp.lineIndex != null) counts[pp.lineIndex] = (counts[pp.lineIndex] || 0) + 1 })
+          const free = getEligibleLineIdx().find(idx => (counts[idx] || 0) < (lines[idx]?.qty || 1))
+          return free !== undefined ? free : null
+        })(),
         note: '',
       }
       const updated = [...panels, newPanel]
@@ -208,10 +237,23 @@ const ArtworkPanelMapper = ({ lines = [], value = [], onChange, onImageChange, a
     e.target.value = ''
   }
 
-  const lineOptions = lines.map((l, i) => ({
-    value: i,
-    label: `${i + 1}. ${l.description || 'Line ' + (i + 1)} (${l.act_w_in || '?'}" × ${l.act_h_in || '?'}" × ${l.qty || 1}pcs)`,
-  }))
+  // ── Lines eligible for THIS map: lines whose allotted artwork is the exact
+  // image loaded in the mapper. If none match (freshly uploaded image not
+  // linked to any line), fall back to all lines.
+  const getEligibleLineIdx = () => {
+    const matched = lines
+      .map((l, i) => (l.artwork_file_data && imgSrc && l.artwork_file_data === imgSrc) ? i : -1)
+      .filter(i => i >= 0)
+    return matched.length > 0 ? matched : lines.map((_, i) => i)
+  }
+
+  const lineOptions = getEligibleLineIdx().map(i => {
+    const l = lines[i]
+    return {
+      value: i,
+      label: `${i + 1}. ${l.description || 'Line ' + (i + 1)} (${l.act_w_in || '?'}" × ${l.act_h_in || '?'}" × ${l.qty || 1}pcs)`,
+    }
+  })
 
   const selectedIdx = selectedPanel ? panels.findIndex(p => p.id === selectedPanel.id) : -1
   const selectedLine = (selectedPanel && selectedPanel.lineIndex != null)
@@ -331,7 +373,17 @@ const ArtworkPanelMapper = ({ lines = [], value = [], onChange, onImageChange, a
                 style={{ width: '100%' }}
                 value={selectedPanel.lineIndex ?? null}
                 options={lineOptions}
-                onChange={(val) => updateSelectedPanel('lineIndex', val)}
+                onChange={(val) => {
+                  if (val != null) {
+                    const line = lines[val]
+                    const assigned = panels.filter(pp => pp.lineIndex === val && pp.id !== selectedPanel.id).length
+                    if (line && assigned >= (line.qty || 1)) {
+                      message.warning(`"${line.description || 'Line ' + (val + 1)}" has qty ${line.qty || 1} — all its pieces are already mapped`)
+                      return
+                    }
+                  }
+                  updateSelectedPanel('lineIndex', val)
+                }}
                 placeholder="Select line"
               />
             </div>

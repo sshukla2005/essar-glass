@@ -1064,7 +1064,7 @@ const GlassCard = ({
             </div>
             {(group.processes || []).map((proc, pi) => (
               <Row key={proc.proc_key} gutter={8} align="middle" style={{ marginBottom: 6 }}>
-                <Col span={7}>
+                <Col span={6}>
                   <Select 
                     size="small" 
                     placeholder="Select process" 
@@ -1074,7 +1074,7 @@ const GlassCard = ({
                     onChange={val => updateGroupProcess(group.group_key, proc.proc_key, 'process_id', val)} 
                   />
                 </Col>
-                <Col span={4}>
+                <Col span={3}>
                   <InputNumber 
                     size="small" 
                     value={proc.qty_area} 
@@ -1100,11 +1100,22 @@ const GlassCard = ({
                   />
                 </Col>
                 <Col span={4}>
+                  <InputNumber 
+                    size="small" 
+                    value={proc.cost_rate ?? parseFloat(((proc.rate || 0) * 0.70).toFixed(2))} 
+                    min={0} 
+                    prefix="₹" 
+                    placeholder="Cost" 
+                    style={{ width: '100%', borderRadius: 6, borderColor: '#f59e0b' }} 
+                    onChange={val => updateGroupProcess(group.group_key, proc.proc_key, 'cost_rate', val)} 
+                  />
+                </Col>
+                <Col span={3}>
                   <Text strong style={{ color: '#7c3aed', fontSize: 13 }}>
                     ₹{(proc.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                   </Text>
                 </Col>
-                <Col span={3} style={{ textAlign: 'right' }}>
+                <Col span={2} style={{ textAlign: 'right' }}>
                   <Button 
                     size="small" 
                     type="text" 

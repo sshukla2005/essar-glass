@@ -187,8 +187,13 @@ export const calcGroupSize = (group, size, products) => {
   }
   const cost_ceil_w_custom_mm = group.wizard_cost_ceil_w_custom_mm || 30
   const cost_ceil_h_custom_mm = group.wizard_cost_ceil_h_custom_mm || 30
-  const cost_charged_w = parseFloat(costCeilFn(w_inch, cost_ceil_w, cost_ceil_w_custom_mm).toFixed(4))
-  const cost_charged_h = parseFloat(costCeilFn(h_inch, cost_ceil_h, cost_ceil_h_custom_mm).toFixed(4))
+  const auto_cost_charged_w = parseFloat(costCeilFn(w_inch, cost_ceil_w, cost_ceil_w_custom_mm).toFixed(4))
+  const auto_cost_charged_h = parseFloat(costCeilFn(h_inch, cost_ceil_h, cost_ceil_h_custom_mm).toFixed(4))
+  // Respect manual per-row overrides made in the Cost vs Selling wizard.
+  // Ceiling-derived values apply ONLY when no manual edit exists — otherwise
+  // every group recalc (manual_cost_price save, rate change) wipes the edit.
+  const cost_charged_w = (size._cost_charged_w_manual && size.cost_charged_w > 0) ? size.cost_charged_w : auto_cost_charged_w
+  const cost_charged_h = (size._cost_charged_h_manual && size.cost_charged_h > 0) ? size.cost_charged_h : auto_cost_charged_h
   const cost_charged_sqft = (cost_charged_w * cost_charged_h * qty) / 144
   const glass_cost = parseFloat((cost_charged_sqft * costPerSqft).toFixed(2))
 
@@ -239,6 +244,7 @@ export const calcGroupSize = (group, size, products) => {
     // Cost Side properties
     cost_charged_w,
     cost_charged_h,
+    cost_charged_sqft: parseFloat(cost_charged_sqft.toFixed(4)),
     glass_cost,
     cep_cost,
     proc_cost,

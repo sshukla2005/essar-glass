@@ -574,35 +574,47 @@ const WorkshopOrderForm = () => {
           })
 
           const oCanvas = document.createElement('canvas')
-          oCanvas.width = oImg.width
-          oCanvas.height = oImg.height
+          // Upscale small source images so overlays, labels, and the artwork
+          // itself render crisp when the PDF stretches this to page width
+          const UPSCALE_TARGET = 1400
+          const up = Math.max(1, Math.min(3, UPSCALE_TARGET / Math.max(oImg.width, 1)))
+          oCanvas.width = Math.round(oImg.width * up)
+          oCanvas.height = Math.round(oImg.height * up)
           const oCtx = oCanvas.getContext('2d')
-          oCtx.drawImage(oImg, 0, 0)
+          oCtx.imageSmoothingEnabled = true
+          oCtx.imageSmoothingQuality = 'high'
+          oCtx.drawImage(oImg, 0, 0, oCanvas.width, oCanvas.height)
 
-          const k = Math.max(oImg.width, oImg.height) / 800
+          const k = Math.max(oCanvas.width, oCanvas.height) / 800
 
           map.panels.forEach((p, i) => {
             const color = PANEL_COLORS[i % PANEL_COLORS.length]
             const line = (p.lineIndex != null) ? lines[p.lineIndex] : null
+            // Normalized coords reproject exactly onto the full-resolution
+            // image; legacy panels (no nx) fall back to raw pixel coords
+            const px = (p.nx != null) ? p.nx * oCanvas.width : p.x * up
+            const py = (p.ny != null) ? p.ny * oCanvas.height : p.y * up
+            const pw = (p.nw != null) ? p.nw * oCanvas.width : p.w * up
+            const ph = (p.nh != null) ? p.nh * oCanvas.height : p.h * up
             oCtx.strokeStyle = color
             oCtx.lineWidth = 4 * k
-            oCtx.strokeRect(p.x, p.y, p.w, p.h)
+            oCtx.strokeRect(px, py, pw, ph)
             oCtx.fillStyle = color + '2e'
-            oCtx.fillRect(p.x, p.y, p.w, p.h)
+            oCtx.fillRect(px, py, pw, ph)
             const bs = 34 * k
             oCtx.fillStyle = color
-            oCtx.fillRect(p.x + 3 * k, p.y + 3 * k, bs, bs)
+            oCtx.fillRect(px + 3 * k, py + 3 * k, bs, bs)
             oCtx.fillStyle = '#ffffff'
             oCtx.font = `bold ${22 * k}px sans-serif`
-            oCtx.fillText(String(i + 1), p.x + 12 * k, p.y + 27 * k)
+            oCtx.fillText(String(i + 1), px + 12 * k, py + 27 * k)
             if (line) {
               const label = `${line.description || 'Line ' + (p.lineIndex + 1)}  ${line.act_w_in || '?'}"x${line.act_h_in || '?'}" x${line.qty || 1}`
               oCtx.font = `bold ${14 * k}px sans-serif`
               const tw = oCtx.measureText(label).width + 10 * k
               oCtx.fillStyle = 'rgba(255,255,255,0.92)'
-              oCtx.fillRect(p.x + 3 * k, p.y + p.h - 22 * k, Math.min(tw, Math.max(p.w - 6 * k, 40 * k)), 19 * k)
+              oCtx.fillRect(px + 3 * k, py + ph - 22 * k, Math.min(tw, Math.max(pw - 6 * k, 40 * k)), 19 * k)
               oCtx.fillStyle = color
-              oCtx.fillText(label, p.x + 8 * k, p.y + p.h - 8 * k)
+              oCtx.fillText(label, px + 8 * k, py + ph - 8 * k)
             }
           })
 
@@ -615,8 +627,8 @@ const WorkshopOrderForm = () => {
           const legendH = 12 + map.panels.length * 7
           const maxImgH = pageH - 16 - 12 - legendH - 14
           const dims = fitDims(oCanvas.width, oCanvas.height, contentW, Math.max(90, maxImgH))
-          const imgData = oCanvas.toDataURL('image/jpeg', 0.9)
-          doc.addImage(imgData, 'JPEG', (pageW - dims.w) / 2, 20, dims.w, dims.h)
+          const imgData = oCanvas.toDataURL('image/png')
+          doc.addImage(imgData, 'PNG', (pageW - dims.w) / 2, 20, dims.w, dims.h)
 
           const pmTableRows = map.panels.map((p, i) => {
             const line = (p.lineIndex != null) ? lines[p.lineIndex] : null

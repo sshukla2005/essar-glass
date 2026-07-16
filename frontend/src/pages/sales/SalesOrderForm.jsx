@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Form, Input, InputNumber, Select, Row, Col, Divider, Tabs, DatePicker, Button, Table, Steps, Space, Tag, Popconfirm, Switch, Badge, App, Radio, Tooltip, Card, Modal, Typography } from 'antd'
-import { PlusOutlined, DeleteOutlined, CheckCircleOutlined, CloseCircleOutlined, ShoppingCartOutlined, FileTextOutlined, CarOutlined, DollarOutlined, ToolOutlined, GiftOutlined, DownloadOutlined, AimOutlined, LineChartOutlined } from '@ant-design/icons'
+import { Form, Row, Col, Divider, Button, Space, Tag, Badge, App, Modal, Typography, Table, InputNumber, Select, Card } from 'antd'
+import { PlusOutlined, ShoppingCartOutlined, FileTextOutlined, CarOutlined, DollarOutlined, ToolOutlined, DownloadOutlined, AimOutlined, LineChartOutlined } from '@ant-design/icons'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import dayjs from 'dayjs'
@@ -14,6 +14,18 @@ import {
   getAutoChargedDim,
 } from '../../utils/quotationCalc'
 import CompanySelector from '../../components/common/CompanySelector'
+
+// Shared quotation components
+import ActionToolbar from '../quotations/components/ActionToolbar'
+import QuotationDetailsCard from '../quotations/components/QuotationDetailsCard'
+import GlassCard from '../quotations/components/GlassCard'
+import HardwareCard from '../quotations/components/HardwareCard'
+import LabourCard from '../quotations/components/LabourCard'
+import WastageCard from '../quotations/components/WastageCard'
+import NotesCard from '../quotations/components/NotesCard'
+import StickySummary from '../quotations/components/StickySummary'
+import CostAnalysisCard from '../quotations/components/CostAnalysisCard'
+import FractionInput, { toFraction } from '../quotations/components/FractionInput'
 
 const getUomRates = (uom) => {
   try {
@@ -32,16 +44,12 @@ const getUomRates = (uom) => {
   }
 }
 
-const { TextArea } = Input
 const { Text } = Typography
 
 const PAYMENT_TERMS = [
   { value: 'immediate', label: 'Immediate' }, { value: '15_days', label: '15 Days' },
   { value: '30_days', label: '30 Days' }, { value: '45_days', label: '45 Days' },
 ]
-
-const STATUS_STEPS = ['draft', 'confirmed', 'in_production', 'ready', 'delivered']
-const STATUS_IDX = { draft: 0, confirmed: 1, in_production: 2, ready: 3, delivered: 4, cancelled: 0 }
 
 const getDropdownConfig = () => {
   try {
@@ -109,169 +117,6 @@ const emptyGroupProcess = () => ({
   amount: 0,
 })
 
-const emptyGroup = () => ({
-  group_key: Date.now() + Math.random(),
-  glass_thickness: null,
-  glass_type: null,
-  glass_category: null,
-  ceiling_inches: 6,
-  ceiling_w_inches: 6,
-  ceiling_h_inches: 6,
-  wizard_cost_ceil_w: 3,
-  wizard_cost_ceil_h: 3,
-  wizard_cost_ceil_w_custom_mm: 30,
-  wizard_cost_ceil_h_custom_mm: 30,
-  wizard_cep_cost_rate: 5,
-  ceiling_w_custom_mm: 30,
-  ceiling_h_custom_mm: 30,
-  cep_polish_rate: 15,
-  cep_polish_rate_custom: null,
-  artwork_master_id: null,
-  artwork_name: null,
-  artwork_file_data: null,
-  is_toughened: false,
-  base_glass_rate: 0,
-  manual_cost_price: null,
-  product_id: null,
-  description: '',
-  rate: 0,
-  rate_rft: 0,
-  cep: false,
-  pricing_method: 'per_sqft',
-  discount_pct: 0,
-  tax_rate: 18,
-  custom_costing: false,
-  manual_rate: null,
-  cep_rft_multiplier: null,
-  sizes: [emptySize()],
-  processes: []
-})
-
-
-// ── Convert decimal inches to fraction display string ──────────
-const toFraction = (decimal) => {
-  if (decimal === null || decimal === undefined || decimal === '') return ''
-  const num = parseFloat(decimal)
-  if (isNaN(num)) return ''
-
-  const whole = Math.floor(num)
-  const remainder = num - whole
-
-  if (remainder === 0) return `${whole}`
-
-  const sixteenths = Math.round(remainder * 16)
-
-  if (sixteenths === 0) return `${whole}`
-  if (sixteenths === 16) return `${whole + 1}`
-
-  const gcd = (a, b) => b === 0 ? a : gcd(b, a % b)
-  const g = gcd(sixteenths, 16)
-  const num_simplified = sixteenths / g
-  const den_simplified = 16 / g
-
-  if (whole === 0) return `${num_simplified}/${den_simplified}`
-  return `${whole} ${num_simplified}/${den_simplified}`
-}
-
-// ── Convert fraction string back to decimal ────────────────────
-const fromFraction = (str) => {
-  if (str === null || str === undefined || str === '') return null
-  const s = String(str).trim()
-
-  if (!s.includes('/') && !isNaN(parseFloat(s))) {
-    return parseFloat(s)
-  }
-
-  const parts = s.split(' ')
-  if (parts.length === 2) {
-    const whole = parseFloat(parts[0])
-    const fracParts = parts[1].split('/')
-    if (fracParts.length === 2) {
-      const numerator = parseFloat(fracParts[0])
-      const denominator = parseFloat(fracParts[1])
-      if (!isNaN(whole) && !isNaN(numerator) && !isNaN(denominator) && denominator !== 0) {
-        return parseFloat((whole + numerator / denominator).toFixed(6))
-      }
-    }
-  }
-
-  if (parts.length === 1 && s.includes('/')) {
-    const fracParts = s.split('/')
-    if (fracParts.length === 2) {
-      const numerator = parseFloat(fracParts[0])
-      const denominator = parseFloat(fracParts[1])
-      if (!isNaN(numerator) && !isNaN(denominator) && denominator !== 0) {
-        return parseFloat((numerator / denominator).toFixed(6))
-      }
-    }
-  }
-
-  return null
-}
-
-const isValidFractionInput = (str) => {
-  if (!str) return true
-  return /^[\d\s./]*$/.test(str)
-}
-
-const FractionInput = ({ value, onChange, placeholder, style, size }) => {
-  const [inputVal, setInputVal] = React.useState('')
-  const [isFocused, setIsFocused] = React.useState(false)
-
-  React.useEffect(() => {
-    if (!isFocused) {
-      setInputVal(value !== null && value !== undefined ? toFraction(value) : '')
-    }
-  }, [value, isFocused])
-
-  const handleFocus = () => {
-    setIsFocused(true)
-    setInputVal(value !== null && value !== undefined ? String(value) : '')
-  }
-
-  const handleBlur = () => {
-    setIsFocused(false)
-    const decimal = fromFraction(inputVal)
-    if (decimal !== null) {
-      onChange && onChange(decimal)
-      setInputVal(toFraction(decimal))
-    } else if (inputVal === '' || inputVal === null) {
-      onChange && onChange(null)
-      setInputVal('')
-    } else {
-      setInputVal(value !== null && value !== undefined ? toFraction(value) : '')
-    }
-  }
-
-  const handleChange = (e) => {
-    const val = e.target.value
-    if (isValidFractionInput(val)) {
-      setInputVal(val)
-    }
-  }
-
-  const handleKeyDown = (e) => {
-    if (e.key === 'Enter') {
-      e.target.blur()
-    }
-  }
-
-  return (
-    <Input
-      size={size || 'small'}
-      value={inputVal}
-      placeholder={isFocused ? '84.25 or 84 1/4' : (placeholder || 'e.g. 84 1/4')}
-      style={{ width: '100%', fontFamily: 'monospace', ...style }}
-      onFocus={handleFocus}
-      onBlur={handleBlur}
-      onChange={handleChange}
-      onKeyDown={handleKeyDown}
-    />
-  )
-}
-
-
-
 const SalesOrderForm = () => {
   const { message } = App.useApp()
   const { id } = useParams()
@@ -282,7 +127,6 @@ const SalesOrderForm = () => {
   const queryClient = useQueryClient()
 
   const [soUnit, setSoUnit] = useState('inch')
-  const [groups, setGroups] = useState([emptyGroup()])
   const [dropdownConfig] = useState(getDropdownConfig())
   const [customSearchVal, setCustomSearchVal] = useState({})
   const [hardwareItems, setHardwareItems] = useState([])
@@ -292,15 +136,87 @@ const SalesOrderForm = () => {
   const [compWizard, setCompWizard] = useState(null)
   const [wizardCostPrice, setWizardCostPrice] = useState(null)
 
+  const { data: record, isLoading } = useQuery({
+    queryKey: ['sales_orders', id], queryFn: () => salesOrderApi.get(id).then(r => r.data), enabled: isEdit,
+  })
+  const { data: customersData } = useQuery({ queryKey: ['customers-dd'], queryFn: () => customerApi.dropdown().then(r => r.data) })
+  const { data: productsData } = useQuery({ queryKey: ['products-dd'], queryFn: () => productApi.dropdown().then(r => r.data) })
+  const { data: processMastersData } = useQuery({ queryKey: ['process-masters'], queryFn: () => processMasterApi.dropdown().then(r => r.data) })
+  const { data: quotationsData } = useQuery({ queryKey: ['quotations-dd'], queryFn: () => quotationApi.dropdown().then(r => r.data) })
+  const { data: warehousesData } = useQuery({ queryKey: ['warehouses-dd'], queryFn: () => warehouseApi.dropdown().then(r => r.data) })
+  const { data: employeesData } = useQuery({ queryKey: ['employees-dd'], queryFn: () => employeeApi.dropdown().then(r => r.data) })
+
+  const { data: posData } = useQuery({ queryKey: ['pos-so', id], queryFn: () => purchaseOrderApi.list({ so_id: id }).then(r => r.data), enabled: isEdit })
+  const { data: dcsData } = useQuery({ queryKey: ['dcs-so', id], queryFn: () => deliveryChallanApi.list({ so_id: id }).then(r => r.data), enabled: isEdit })
+  const { data: invData } = useQuery({ queryKey: ['inv-so', id], queryFn: () => invoiceApi.list({ so_id: id }).then(r => r.data), enabled: isEdit })
+  const { data: woData } = useQuery({ queryKey: ['wo-so', id], queryFn: () => workshopOrderApi.list({ so_id: id }).then(r => r.data), enabled: isEdit })
+
+  const customers = Array.isArray(customersData) ? customersData : (customersData?.items || [])
+  const products = Array.isArray(productsData) ? productsData : (productsData?.items || [])
+  const processMasters = Array.isArray(processMastersData) ? processMastersData : (processMastersData?.items || [])
+  const quotations = Array.isArray(quotationsData) ? quotationsData : (quotationsData?.items || [])
+  const warehouses = Array.isArray(warehousesData) ? warehousesData : (warehousesData?.items || [])
+  const employees = Array.isArray(employeesData) ? employeesData : (employeesData?.items || [])
+
+  const getPolishingRate = () => {
+    try {
+      const polish = processMasters.find(p =>
+        p.process_type === 'polishing' &&
+        (p.name?.toLowerCase().includes('4') || p.name?.toLowerCase().includes('four'))
+      ) || processMasters.find(p => p.process_type === 'polishing')
+      return polish?.rate || 15
+    } catch { return 15 }
+  }
+
+  const emptyGroup = () => ({
+    group_key: Date.now() + Math.random(),
+    glass_thickness: null,
+    glass_type: null,
+    glass_category: null,
+    ceiling_inches: 6,
+    ceiling_w_inches: 6,
+    ceiling_h_inches: 6,
+    wizard_cost_ceil_w: 3,
+    wizard_cost_ceil_h: 3,
+    wizard_cost_ceil_w_custom_mm: 30,
+    wizard_cost_ceil_h_custom_mm: 30,
+    wizard_cep_cost_rate: 5,
+    ceiling_w_custom_mm: 30,
+    ceiling_h_custom_mm: 30,
+    cep_polish_rate: getPolishingRate(),
+    cep_polish_rate_custom: null,
+    artwork_master_id: null,
+    artwork_name: null,
+    artwork_file_data: null,
+    is_toughened: false,
+    base_glass_rate: 0,
+    manual_cost_price: null,
+    product_id: null,
+    description: '',
+    rate: 0,
+    rate_rft: 0,
+    cep: false,
+    pricing_method: 'per_sqft',
+    discount_pct: 0,
+    tax_rate: 18,
+    custom_costing: false,
+    manual_rate: null,
+    cep_rft_multiplier: null,
+    sizes: [emptySize()],
+    processes: []
+  })
+
+  const [groups, setGroups] = useState([emptyGroup()])
+
   const emptyHardware = () => ({
     hw_key: Date.now() + Math.random(),
     description: '',
     qty: 1,
     uom: '',
     cost_rate: 0,
-    rate: 0,       // selling rate
+    rate: 0,
     cost_amount: 0,
-    amount: 0,     // selling amount
+    amount: 0,
   })
 
   const emptyLabor = () => ({
@@ -324,27 +240,6 @@ const SalesOrderForm = () => {
     amount: 0,
   })
 
-  const { data: record, isLoading } = useQuery({
-    queryKey: ['sales_orders', id], queryFn: () => salesOrderApi.get(id).then(r => r.data), enabled: isEdit,
-  })
-  const { data: customersData } = useQuery({ queryKey: ['customers-dd'], queryFn: () => customerApi.dropdown().then(r => r.data) })
-  const { data: productsData } = useQuery({ queryKey: ['products-dd'], queryFn: () => productApi.dropdown().then(r => r.data) })
-  const { data: processMastersData } = useQuery({ queryKey: ['process-masters'], queryFn: () => processMasterApi.dropdown().then(r => r.data) })
-  const { data: quotationsData } = useQuery({ queryKey: ['quotations-dd'], queryFn: () => quotationApi.dropdown().then(r => r.data) })
-  const { data: warehousesData } = useQuery({ queryKey: ['warehouses-dd'], queryFn: () => warehouseApi.dropdown().then(r => r.data) })
-  const { data: employeesData } = useQuery({ queryKey: ['employees-dd'], queryFn: () => employeeApi.dropdown().then(r => r.data) })
-
-  const { data: posData } = useQuery({ queryKey: ['pos-so', id], queryFn: () => purchaseOrderApi.list({ so_id: id }).then(r => r.data), enabled: isEdit })
-  const { data: dcsData } = useQuery({ queryKey: ['dcs-so', id], queryFn: () => deliveryChallanApi.list({ so_id: id }).then(r => r.data), enabled: isEdit })
-  const { data: invData } = useQuery({ queryKey: ['inv-so', id], queryFn: () => invoiceApi.list({ so_id: id }).then(r => r.data), enabled: isEdit })
-  const { data: woData } = useQuery({ queryKey: ['wo-so', id], queryFn: () => workshopOrderApi.list({ so_id: id }).then(r => r.data), enabled: isEdit })
-
-  const customers = Array.isArray(customersData) ? customersData : (customersData?.items || [])
-  const products = Array.isArray(productsData) ? productsData : (productsData?.items || [])
-  const processMasters = Array.isArray(processMastersData) ? processMastersData : (processMastersData?.items || [])
-  const quotations = Array.isArray(quotationsData) ? quotationsData : (quotationsData?.items || [])
-  const warehouses = Array.isArray(warehousesData) ? warehousesData : (warehousesData?.items || [])
-  const employees = Array.isArray(employeesData) ? employeesData : (employeesData?.items || [])
   const reconstructGroups = (flatLines) => {
     const groupMap = new Map()
     flatLines.forEach((line, i) => {
@@ -422,32 +317,12 @@ const SalesOrderForm = () => {
     return Array.from(groupMap.values())
   }
 
-  const getPolishingRate = () => {
-    try {
-      const polish = processMasters.find(p =>
-        p.process_type === 'polishing' &&
-        (p.name?.toLowerCase().includes('4') || p.name?.toLowerCase().includes('four'))
-      ) || processMasters.find(p => p.process_type === 'polishing')
-      return polish?.rate || 15
-    } catch { return 15 }
-  }
-
   // ── Calculation engine shared with QuotationForm ──
-  // Lives in src/utils/quotationCalc.js — DO NOT re-implement locally.
-  // Fixes inherited from the shared engine vs the old local fork:
-  //   • margin % = (selling − cost) ÷ COST (was ÷ selling)
-  //   • manual_cost_price treated as fully-loaded (no addon double-count)
-  //   • custom-mm ceilings on both selling and cost side
-  //   • CEP billed from group.cep_polish_rate incl. custom ₹/rft and ₹/mm
   const getGroupBaseCostRate = (g, prods = products) => sharedGetGroupBaseCostRate(g, prods)
   const getGroupLoadedCostRate = (g, prods = products) => sharedGetGroupLoadedCostRate(g, prods)
   const calcGroupSize = (group, size) => sharedCalcGroupSize(group, size, products)
 
-  const autoSuggestProcesses = (group) => {
-    // No auto-suggest — client adds processes manually
-    // Only hole, cutout, big hole, big cutout, farma allowed
-    return []
-  }
+  const autoSuggestProcesses = (group) => []
 
   const updateGroup = (gkey, field, value) => {
     setGroups(prev => prev.map(g => {
@@ -573,8 +448,6 @@ const SalesOrderForm = () => {
       })
       let updatedGroup = { ...g, sizes: updatedSizes }
 
-      // Recalculate effective rate for toughened groups when sizes change
-      // (skip when custom_costing — user-typed rates must not be overwritten)
       if (!updatedGroup.custom_costing && (updatedGroup.is_toughened || updatedGroup.glass_type === 'Toughened')) {
         const avgAddon = updatedSizes.length > 0
           ? updatedSizes.reduce((s, sz) => s + (sz.tgh_rate_addon || 0), 0) / updatedSizes.length
@@ -829,7 +702,6 @@ const SalesOrderForm = () => {
     )
   }
 
-
   useEffect(() => {
     if (!isEdit) {
       form.setFieldValue('order_date', dayjs())
@@ -880,11 +752,9 @@ const SalesOrderForm = () => {
         setGroups(mappedGroups)
       } else if (record.lines?.length) {
         const reconstructed = reconstructGroups(record.lines)
-        // Backend valid_columns filter strips manual_cost_price from lines
-        // Restore from record.groups which is saved as-is
         if (record.groups?.length) {
           reconstructed.forEach((g, idx) => {
-            const saved = record.groups[idx]  // match by INDEX not description
+            const saved = record.groups[idx]
             if (saved?.manual_cost_price) g.manual_cost_price = saved.manual_cost_price
             if (saved?.wizard_cost_ceil_w) g.wizard_cost_ceil_w = saved.wizard_cost_ceil_w
             if (saved?.wizard_cost_ceil_h) g.wizard_cost_ceil_h = saved.wizard_cost_ceil_h
@@ -990,71 +860,93 @@ const SalesOrderForm = () => {
     const grandTotal = subIII + cgst + sgst + igst
     const balance = grandTotal - (advanceRec || 0)
 
-    let totalCost = 0
-    groups.forEach(g => {
-      const prod = products.find(x => x.id === g.product_id)
-      if (prod?.cost_price) {
-        g.sizes.forEach(s => {
-          totalCost += (s.total_sqft || 0) * prod.cost_price
-        })
-      }
-      ; (g.processes || []).forEach(p => {
-        totalCost += (p.amount || 0) * 0.7
-      })
-    })
+    let glassCostTotal = allSizes.reduce((s, x) => s + (x.cost_amount || 0), 0)
+    let procCostTotal = allGroupProcesses.reduce((s, p) => {
+      const procCostRate = p.cost_rate ?? (p.rate * 0.70)
+      return s + ((p.qty_area || 0) * procCostRate)
+    }, 0)
+
+    const sellableCost = glassCostTotal + procCostTotal + hwCostTotal + lbCostTotal + wstCostTotal + (dcCost || 0)
     const sellableTotal = subIII - (dcCharges || 0)
-    const sellableCost = totalCost + hwCostTotal + lbCostTotal + wstCostTotal
     const marginAmt = sellableTotal - sellableCost
-    const marginPct = sellableTotal > 0 ? (marginAmt / sellableTotal) * 100 : 100
+    const marginPct = sellableCost > 0 ? (marginAmt / sellableCost) * 100 : 100
 
     return {
       subI, procTotal, hwTotal, lbTotal, wstTotal, dcCharges, dcCost, subII,
       discountAmt, subIII, cgst, sgst, igst,
       grandTotal, advanceRec, balance,
-      totalCost, marginAmt, marginPct,
+      totalCost: sellableCost, marginAmt, marginPct,
       hwCostTotal, lbCostTotal, wstCostTotal
     }
   }, [groups, hardwareItems, laborItems, wastageItems, dcCharges, dcCost, discountAmt, advanceRec, gstMode, products])
 
+  const flushWizardRowsToSizes = () => {
+    if (!compWizard?.group_key || !Array.isArray(compWizard.rows)) return
+    setGroups(prev => prev.map(g => {
+      if (g.group_key !== compWizard.group_key) return g
+      const ceilFn = (x, c, customMm) => {
+        if (c === 'plus30mm') return x + (30 / 25.4)
+        if (c === 'custom') return x + ((customMm || 30) / 25.4)
+        return Math.ceil(x / c) * c
+      }
+      const sizes = g.sizes.map((s, i) => {
+        const r = compWizard.rows[i]
+        if (!r) return s
+        const autoW = parseFloat(ceilFn(r._w_raw || 0, r.cost_ceil_w || 3, g.wizard_cost_ceil_w_custom_mm || 30).toFixed(4))
+        const autoH = parseFloat(ceilFn(r._h_raw || 0, r.cost_ceil_h || 3, g.wizard_cost_ceil_h_custom_mm || 30).toFixed(4))
+        const wManual = (r.cost_charged_w > 0) && Math.abs(r.cost_charged_w - autoW) > 0.001
+        const hManual = (r.cost_charged_h > 0) && Math.abs(r.cost_charged_h - autoH) > 0.001
+        return {
+          ...s,
+          cost_ceil_w: r.cost_ceil_w,
+          cost_ceil_h: r.cost_ceil_h,
+          cost_charged_w: r.cost_charged_w,
+          cost_charged_h: r.cost_charged_h,
+          _cost_charged_w_manual: wManual,
+          _cost_charged_h_manual: hManual,
+          cost_charged_sqft: parseFloat(r.charged_sqft) || 0,
+          glass_cost: r.glass_cost || 0,
+          cep_cost: r.cep_cost || 0,
+          proc_cost: r.proc_cost || 0,
+          cost_amount: r.cost_amount || 0,
+          margin_amount: r.margin_amount || 0,
+          margin_pct: r.margin_pct || 0,
+        }
+      })
+      return { ...g, sizes }
+    }))
+  }
+
   const openComparisonWizard = (group) => {
-    // Always reset to null first — ensures fresh calc every open
     setWizardCostPrice(null)
     setCompWizard(null)
 
-  const costPerSqft = getGroupBaseCostRate(group, products)
-  setWizardCostPrice(costPerSqft)
+    const { loadedCost: costPerSqft, baseCost: wizardBaseCost, addon: wizardCostAddon } = getGroupLoadedCostRate(group, products)
+    setWizardCostPrice(costPerSqft)
 
-    const CEP_COST_RATE = 5  // ₹5 per running foot (client confirmed)
+    const CEP_COST_RATE = 5
 
     const rows = group.sizes.map((s, i) => {
       const w = s.width_inch || 0
       const h = s.height_inch || 0
       const qty = s.quantity || 1
 
-      // ── SELLING SIDE ──
       const selling_sqft = s.total_sqft || 0
       const selling_amount = s.subtotal || 0
 
-      // ── COST SIDE ──
-      const ceil3 = (x) => Math.ceil(x / 3) * 3
-      const charged_sqft = (ceil3(w) * ceil3(h) * qty) / 144
-
-      // Glass cost = charged sqft × cost price
-      const glass_cost = parseFloat((charged_sqft * costPerSqft).toFixed(2))
-
-      // CEP cost = actual running ft × rate (inch to inch, no ceiling)
+      const cost_ceil_w = s.cost_ceil_w || group.wizard_cost_ceil_w || 3
+      const cost_ceil_h = s.cost_ceil_h || group.wizard_cost_ceil_h || 3
+      const cost_charged_w = s.cost_charged_w !== undefined ? s.cost_charged_w : w
+      const cost_charged_h = s.cost_charged_h !== undefined ? s.cost_charged_h : h
+      const charged_sqft = (s.cost_charged_sqft !== undefined && s.cost_charged_sqft !== null)
+        ? s.cost_charged_sqft : (s.charged_sqft || 0)
+      const glass_cost = s.glass_cost || 0
       const actual_rft = parseFloat(((w + h) * 2 / 12 * qty).toFixed(4))
-      const wizardCepRate = (typeof group.wizard_cep_cost_rate === 'number' && group.wizard_cep_cost_rate >= 0) ? group.wizard_cep_cost_rate : CEP_COST_RATE
-      const cep_cost = group.cep
-        ? parseFloat((actual_rft * wizardCepRate).toFixed(2))
-        : 0
-
-      // Total cost = glass cost + CEP cost
-      const cost_amount = parseFloat((glass_cost + cep_cost).toFixed(2))
-      const margin_amount = parseFloat((selling_amount - cost_amount).toFixed(2))
-      const margin_pct = selling_amount > 0
-        ? parseFloat(((margin_amount / selling_amount) * 100).toFixed(2))
-        : 100
+      const cep_cost = s.cep_cost || 0
+      const proc_cost = s.proc_cost || 0
+      const cost_amount = s.cost_amount || 0
+      const margin_amount = s.margin_amount || 0
+      const margin_pct = s.margin_pct || 0
 
       return {
         key: i,
@@ -1063,43 +955,61 @@ const SalesOrderForm = () => {
         height_display: soUnit === 'inch' ? `${toFraction(h)}"` : `${(h * 25.4).toFixed(1)}mm`,
         quantity: qty,
         selling_sqft: selling_sqft.toFixed(3),
-        charged_sqft: charged_sqft.toFixed(3),
+        charged_sqft: Number(charged_sqft).toFixed(3),
         actual_rft: actual_rft.toFixed(3),
         glass_cost,
         cep_cost,
+        proc_cost,
         selling_amount,
         cost_amount,
         margin_amount,
         margin_pct,
+        _w_raw: w,
+        _h_raw: h,
+        cost_ceil_w,
+        cost_ceil_h,
+        cost_charged_w,
+        cost_charged_h,
+        _group_key: group.group_key,
       }
     })
 
-    // Per-product wizard: glass + process charges
     const glassSellingTotal = rows.reduce((s, r) => s + r.selling_amount, 0)
-    const glassCostTotal = rows.reduce((s, r) => s + r.cost_amount, 0)
-    const totalCepCost = rows.reduce((s, r) => s + r.cep_cost, 0)
+    const glassCostTotal = rows.reduce((s, r) => s + (r.glass_cost || 0), 0)
+    const totalCepCost = rows.reduce((s, r) => s + (r.cep_cost || 0), 0)
+    const totalSizeProcCost = rows.reduce((s, r) => s + (r.proc_cost || 0), 0)
 
-    // Include group-level + size-level process charges
     const procSelling = (group.processes || []).reduce((s, p) => s + (p.amount || 0), 0)
+    const groupProcCost = parseFloat(((group.processes || []).reduce((s, p) => {
+      const cr = p.cost_rate ?? ((p.rate || 0) * 0.70)
+      return s + (p.qty_area || 0) * cr
+    }, 0)).toFixed(2))
+
     const sizeProcSelling = (group.sizes || [])
       .flatMap(s => s.size_processes || [])
       .reduce((s, p) => s + (p.amount || 0), 0)
-    const totalProcSelling = procSelling + sizeProcSelling
-    const totalProcCost = parseFloat((totalProcSelling * 0.70).toFixed(2))
 
-    const totalSelling = parseFloat((glassSellingTotal + totalProcSelling).toFixed(2))
-    const totalCost = parseFloat((glassCostTotal + totalProcCost).toFixed(2))
+    const totalProcSelling = procSelling + sizeProcSelling
+
+    const totalSelling = parseFloat((glassSellingTotal).toFixed(2))
+    const totalCost = parseFloat((glassCostTotal + totalCepCost + totalSizeProcCost + groupProcCost).toFixed(2))
 
     const totalMargin = parseFloat((totalSelling - totalCost).toFixed(2))
-    const totalMarginPct = totalSelling > 0
-      ? parseFloat(((totalMargin / totalSelling) * 100).toFixed(2)) : 100
+    const totalMarginPct = totalCost > 0
+      ? parseFloat(((totalMargin / totalCost) * 100).toFixed(2)) : 100
 
     setCompWizard({
       product_name: group.description || 'Product',
       cost_price: costPerSqft,
+      cost_base: wizardBaseCost,
+      cost_addon: wizardCostAddon,
       selling_rate: group.rate,
       cep_on: group.cep,
-      cep_cost_rate: (typeof group.wizard_cep_cost_rate === 'number' && group.wizard_cep_cost_rate >= 0) ? group.wizard_cep_cost_rate : CEP_COST_RATE,
+      cep_cost_rate: (typeof group.wizard_cep_cost_rate === 'number' || group.wizard_cep_cost_rate === 'custom') ? group.wizard_cep_cost_rate : 5,
+      cost_ceil_w: group.wizard_cost_ceil_w || 3,
+      cost_ceil_h: group.wizard_cost_ceil_h || 3,
+      cost_ceil_w_custom_mm: group.wizard_cost_ceil_w_custom_mm || 30,
+      cost_ceil_h_custom_mm: group.wizard_cost_ceil_h_custom_mm || 30,
       rows,
       glassSellingTotal,
       totalProcSelling,
@@ -1109,15 +1019,18 @@ const SalesOrderForm = () => {
   }
 
   const saveMutation = useMutation({
+    onSuccess: (res) => {
+      message.success(`SO ${isEdit ? 'updated' : 'created'}`)
+      queryClient.invalidateQueries({ queryKey: ['sales_orders'] })
+      if (!isEdit && res?.data?.id) navigate(`/sales-orders/${res.data.id}/edit`)
+    },
     mutationFn: (data) => isEdit ? salesOrderApi.update(id, data) : salesOrderApi.create(data),
-    onSuccess: (res) => { message.success(`SO ${isEdit ? 'updated' : 'created'}`); queryClient.invalidateQueries({ queryKey: ['sales_orders'] }); if (!isEdit && res?.data?.id) navigate(`/sales-orders/${res.data.id}/edit`) },
   })
 
   const statusMutation = useMutation({
     mutationFn: async (newStatus) => {
       await salesOrderApi.changeStatus(id, newStatus)
 
-      // When SO is confirmed → auto-win the linked CRM lead
       if (newStatus === 'confirmed' && record?.crm_lead_id) {
         try {
           const stages = JSON.parse(localStorage.getItem('crm_stages') || '[]')
@@ -1150,7 +1063,6 @@ const SalesOrderForm = () => {
     },
   })
 
-  // Document creation actions
   const createPOMutation = useMutation({
     mutationFn: async () => {
       const poData = { so_id: parseInt(id), vendor_reference: record?.so_number, lines: getFlatLines().map(l => ({ ...l, unit_price: 0 })) }
@@ -1195,7 +1107,6 @@ const SalesOrderForm = () => {
       values.tax_amount = totals.cgst + totals.sgst + totals.igst
       values.total_amount = totals.grandTotal
 
-      // Preserve crm_lead_id from existing record or URL
       if (!values.crm_lead_id && record?.crm_lead_id) {
         values.crm_lead_id = record.crm_lead_id
       }
@@ -1209,14 +1120,72 @@ const SalesOrderForm = () => {
     } catch (err) { }
   }
 
+  const handleQuotationChange = async (val) => {
+    if (!val) return
+    try {
+      const res = await quotationApi.get(val)
+      const quotation = res.data
 
+      form.setFieldsValue({
+        customer_id: quotation.customer_id,
+        payment_terms: quotation.payment_terms,
+        salesperson: quotation.salesperson,
+        notes: quotation.customer_notes,
+      })
+
+      if (quotation.groups?.length) {
+        const mappedGroups = quotation.groups.map(g => ({
+          ...emptyGroup(),
+          ...g,
+          group_key: Date.now() + Math.random(),
+          sizes: (g.sizes || []).map(s => ({
+            ...emptySize(),
+            ...s,
+            size_key: Date.now() + Math.random(),
+          })),
+          processes: (g.processes || []).map(p => ({
+            ...emptyGroupProcess(),
+            ...p,
+            proc_key: Date.now() + Math.random(),
+          }))
+        }))
+        // Recalculate
+        mappedGroups.forEach(g => {
+          g.sizes = g.sizes.map(s => calcGroupSize(g, s))
+        })
+        setGroups(mappedGroups)
+      }
+
+      if (quotation.hardware_items?.length) {
+        setHardwareItems(quotation.hardware_items.map((h, i) => ({
+          hw_key: h.hw_key || Date.now() + Math.random() + i,
+          ...h
+        })))
+      }
+      if (quotation.labor_items?.length) {
+        setLaborItems(quotation.labor_items.map((l, i) => ({
+          lb_key: l.lb_key || Date.now() + Math.random() + i,
+          ...l
+        })))
+      }
+      if (quotation.wastage_items?.length) {
+        setWastageItems(quotation.wastage_items.map((w, i) => ({
+          wst_key: w.wst_key || Date.now() + Math.random() + i,
+          ...w
+        })))
+      }
+      if (quotation.customer_notes) {
+        form.setFieldValue('notes', quotation.customer_notes)
+      }
+      message.success('Copied lines and details from Quotation reference!')
+    } catch (e) {
+      message.error('Failed to load quotation details')
+    }
+  }
 
   const status = record?.status || 'draft'
-  const fmt = (v) => `₹ ${Number(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
-
   const soId = id ? parseInt(id) : null
 
-  // Derive counts AND first linked record id from existing query data
   const poItems = Array.isArray(posData) ? posData : (posData?.items || [])
   const dcItems = Array.isArray(dcsData) ? dcsData : (dcsData?.items || [])
   const invItems = Array.isArray(invData) ? invData : (invData?.items || [])
@@ -1232,14 +1201,13 @@ const SalesOrderForm = () => {
   const invoiceCount = invItems.filter(i => i.so_id === soId).length
   const woCount = woItems.filter(w => w.so_id === soId).length
 
-
   return (
     <MasterForm title="Sales Order" isEdit={isEdit} isLoading={isLoading} isSaving={saveMutation.isPending}
       breadcrumbs={[{ label: 'Sales' }, { label: 'Sales Orders', path: '/sales-orders' }, { label: isEdit ? record?.so_number || 'Edit' : 'New' }]}
       onSave={() => handleSave(false)} onSaveNew={() => handleSave(true)} onDiscard={() => navigate('/sales-orders')}>
 
       {isEdit && (
-        <div style={{ marginBottom: 16, display: 'flex', gap: 8 }}>
+        <div style={{ marginBottom: 16, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {record?.quotation_id && (
             <Button icon={<FileTextOutlined />} onClick={() => navigate(`/quotations/${record.quotation_id}/edit`)}>Quotation</Button>
           )}
@@ -1339,68 +1307,57 @@ const SalesOrderForm = () => {
         </div>
       )}
 
-      <Row gutter={[16, 16]} align="middle" style={{ marginBottom: 24 }}>
-        <Col xs={24} lg={14}>
-          <Steps size="small" current={STATUS_IDX[status] || 0} items={STATUS_STEPS.map(s => ({ title: s.replace('_', ' ').toUpperCase() }))} />
-        </Col>
-        <Col xs={24} lg={10} style={{ textAlign: 'right' }}>
-          <Space wrap>
-            {isEdit && (
-              <Button
-                icon={<DownloadOutlined />}
-                onClick={async () => {
-                  const recordData = {
-                    ...form.getFieldsValue(),
-                    so_number: record?.so_number,
-                    company_id: form.getFieldValue('company_id') || record?.company_id || 1,
-                    customer_id: form.getFieldValue('customer_id') || record?.customer_id,
-                    customer_name: form.getFieldValue('customer_name') || record?.customer_name,
-                    order_date: form.getFieldValue('order_date') || record?.order_date,
-                    delivery_date: form.getFieldValue('delivery_date') || record?.delivery_date,
-                    salesperson: form.getFieldValue('salesperson') || record?.salesperson,
-                    payment_terms: form.getFieldValue('payment_terms') || record?.payment_terms,
-                    gst_mode: gstMode,
-                    discount_amount: discountAmt,
-                    dc_charges: dcCharges,
-                    advance_received: advanceRec,
-                    lines: getFlatLines(),
-                    groups,
-                    hardware_items: hardwareItems,
-                    labor_items: laborItems,
-                    wastage_items: wastageItems,
-                    totals,
-                    subtotal: totals.subI,
-                    tax_amount: totals.cgst + totals.sgst + totals.igst,
-                    total_amount: totals.grandTotal
-                  }
-                  const hide = message.loading('Generating Proforma Invoice PDF...', 0)
-                  try {
-                    await generateSOPDF(recordData)
-                  } catch (err) {
-                    message.error('Failed to generate PDF')
-                  } finally {
-                    hide()
-                  }
-                }}
-              >
-                PDF
-              </Button>
-            )}
-            {status === 'draft' && <>
-              <Button type="primary" icon={<CheckCircleOutlined />} onClick={() => statusMutation.mutate('confirmed')} style={{ background: '#3b82f6' }}>Confirm Order</Button>
-              <Button icon={<ShoppingCartOutlined />} onClick={() => createPOMutation.mutate()} style={{ color: '#f59e0b', borderColor: '#f59e0b' }}>Create PO</Button>
-            </>}
-            {status === 'confirmed' && <Button type="primary" icon={<ToolOutlined />} onClick={() => statusMutation.mutate('in_production')} style={{ background: '#f59e0b' }}>Production</Button>}
-            {status === 'in_production' && <Button type="primary" icon={<GiftOutlined />} onClick={() => statusMutation.mutate('ready')} style={{ background: '#a855f7' }}>Ready</Button>}
-            {status === 'ready' && <>
-              <Button type="primary" icon={<CarOutlined />} onClick={() => createDCMutation.mutate()} style={{ background: '#10b981' }}>Delivery</Button>
-              <Button type="primary" icon={<DollarOutlined />} onClick={() => createInvoiceMutation.mutate()} style={{ background: '#3b82f6' }}>Invoice</Button>
-            </>}
-            {status === 'delivered' && <Tag color="green" style={{ padding: '6px 12px', fontSize: 14 }}>✅ COMPLETED</Tag>}
-            {status === 'cancelled' && <Tag color="red" style={{ padding: '6px 12px', fontSize: 14 }}>❌ CANCELLED</Tag>}
-          </Space>
-        </Col>
-      </Row>
+      <ActionToolbar
+        type="sales_order"
+        status={status}
+        isEdit={isEdit}
+        onGeneratePDF={async () => {
+          const recordData = {
+            ...form.getFieldsValue(),
+            so_number: record?.so_number,
+            company_id: form.getFieldValue('company_id') || record?.company_id || 1,
+            customer_id: form.getFieldValue('customer_id') || record?.customer_id,
+            customer_name: form.getFieldValue('customer_name') || record?.customer_name,
+            order_date: form.getFieldValue('order_date') || record?.order_date,
+            delivery_date: form.getFieldValue('delivery_date') || record?.delivery_date,
+            salesperson: form.getFieldValue('salesperson') || record?.salesperson,
+            payment_terms: form.getFieldValue('payment_terms') || record?.payment_terms,
+            gst_mode: gstMode,
+            discount_amount: discountAmt,
+            dc_charges: dcCharges,
+            advance_received: advanceRec,
+            lines: getFlatLines(),
+            groups,
+            hardware_items: hardwareItems,
+            labor_items: laborItems,
+            wastage_items: wastageItems,
+            totals,
+            subtotal: totals.subI,
+            tax_amount: totals.cgst + totals.sgst + totals.igst,
+            total_amount: totals.grandTotal
+          }
+          const hide = message.loading('Generating Proforma Invoice PDF...', 0)
+          try {
+            await generateSOPDF(recordData)
+          } catch (err) {
+            message.error('Failed to generate PDF')
+          } finally {
+            hide()
+          }
+        }}
+        onConfirm={() => statusMutation.mutate('confirmed')}
+        isConfirming={statusMutation.isPending && statusMutation.variables === 'confirmed'}
+        onCreatePO={() => createPOMutation.mutate()}
+        isCreatingPO={createPOMutation.isPending}
+        onProduction={() => statusMutation.mutate('in_production')}
+        isStartingProduction={statusMutation.isPending && statusMutation.variables === 'in_production'}
+        onReady={() => statusMutation.mutate('ready')}
+        isMarkingReady={statusMutation.isPending && statusMutation.variables === 'ready'}
+        onCreateDelivery={() => createDCMutation.mutate()}
+        isCreatingDelivery={createDCMutation.isPending}
+        onCreateInvoice={() => createInvoiceMutation.mutate()}
+        isCreatingInvoice={createInvoiceMutation.isPending}
+      />
 
       {isEdit && woData?.items?.length > 0 && (
         <div style={{
@@ -1437,7 +1394,7 @@ const SalesOrderForm = () => {
             type="primary"
             icon={<PlusOutlined />}
             style={{ background: '#6366f1', borderColor: '#6366f1' }}
-            onClick={() => navigate(`/workshop/orders/new?so_id=${id}`)}
+            onClick={() => navigate(`/workshop/orders/new?so_id={id}`)}
           >
             + New WO
           </Button>
@@ -1446,1495 +1403,280 @@ const SalesOrderForm = () => {
 
       <Form form={form} layout="vertical" initialValues={{ status: 'draft' }}>
         <CompanySelector form={form} />
+
         <Row gutter={16}>
-          <Col span={8}>
-            <Form.Item name="customer_id" label="Customer" rules={[{ required: true }]}>
-              <Select
-                showSearch
-                placeholder="Select customer"
-                options={customers.map(c => ({ value: c.id, label: c.name }))}
-                filterOption={(input, option) => (option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
-                onChange={(val) => {
-                  const c = customers.find(x => x.id === val); if (c) form.setFieldsValue({ payment_terms: c.payment_terms })
-                }}
-              />
-            </Form.Item>
-          </Col>
-          <Col span={4}><Form.Item name="order_date" label="Order Date"><DatePicker style={{ width: '100%' }} format="DD/MM/YYYY" /></Form.Item></Col>
-          <Col span={4}><Form.Item name="delivery_date" label="Delivery Date"><DatePicker style={{ width: '100%' }} format="DD/MM/YYYY" /></Form.Item></Col>
-          <Col span={4}><Form.Item name="warehouse_id" label="Warehouse"><Select options={warehouses.map(w => ({ value: w.id, label: w.name }))} /></Form.Item></Col>
-          <Col span={4}>
-            <Form.Item name="quotation_id" label="Quotation Ref">
-              <Select
-                options={quotations.map(q => ({ value: q.id, label: q.quote_number }))}
-                allowClear
-                onChange={async (val) => {
-                  if (!val) return
-                  try {
-                    const res = await quotationApi.get(val)
-                    const quotation = res.data
-
-                    form.setFieldsValue({
-                      customer_id: quotation.customer_id,
-                      payment_terms: quotation.payment_terms,
-                      salesperson: quotation.salesperson,
-                      notes: quotation.customer_notes,
-                      subtotal: quotation.subtotal,
-                      tax_amount: (quotation.cgst || 0) + (quotation.sgst || 0) + (quotation.igst || 0),
-                      total_amount: quotation.total_amount,
-                    })
-
-                    if (quotation.groups) {
-                      const newLines = quotation.groups.flatMap(group =>
-                        group.sizes.map(size => ({
-                          key: Date.now() + Math.random(),
-                          description: group.description || `${group.glass_thickness}mm ${group.glass_type} ${group.glass_category}`,
-                          product_id: group.product_id || null,
-                          width_mm: Math.round((size.width_inch || 0) * 25.4),
-                          height_mm: Math.round((size.height_inch || 0) * 25.4),
-                          cep: (size.cep_charges || 0) > 0 || group.cep,
-                          pricing_method: group.pricing_method || 'per_sqft',
-                          quantity: size.quantity || 1,
-                          unit_price: group.rate || 0,
-                          subtotal: size.subtotal || 0,
-                        }))
-                      )
-                      setLines(newLines)
-                    }
-                  } catch (e) { }
-                }}
-              />
-            </Form.Item>
-          </Col>
-          <Col span={4}>
-            <Form.Item name="salesperson" label="Salesperson">
-              <Select
-                showSearch
-                allowClear
-                placeholder="Select salesperson"
-                optionFilterProp="label"
-                options={employees.map(e => ({
-                  value: e.name,
-                  label: e.name,
-                }))}
-              />
-            </Form.Item>
-          </Col>
-        </Row>
-
-        <Divider orientation="left" style={{ color: '#3b82f6' }}>Order Lines</Divider>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: 16 }}>
-          <Space>
-            <Radio.Group value={soUnit} onChange={e => setSoUnit(e.target.value)} buttonStyle="solid" size="small">
-              <Radio.Button value="inch">inch</Radio.Button>
-              <Radio.Button value="mm">MM</Radio.Button>
-            </Radio.Group>
-            <Text type="secondary" style={{ fontSize: 11 }}>(Default: Inch)</Text>
-          </Space>
-        </div>
-        {groups.map(group => (
-          <Card
-            key={group.group_key}
-            style={{ marginBottom: 16, border: '1px solid #e2e8f0', borderRadius: 8 }}
-            bodyStyle={{ padding: '12px 16px' }}
-          >
-            {/* ── Row 1: Glass Attribute Selectors ── */}
-            <Row gutter={8} align="middle" style={{ marginBottom: 10 }}>
-              <Col span={1}>
-                <Text type="secondary" style={{ fontSize: 13, fontWeight: 700 }}>{groups.indexOf(group) + 1}.</Text>
-              </Col>
-              <Col span={3}>
-                <div style={{ marginBottom: 2 }}><Text style={{ fontSize: 10, color: '#94a3b8' }}>THICKNESS</Text></div>
-                <Select
-                  size="small"
-                  placeholder="mm"
-                  value={group.glass_thickness}
-                  style={{ width: '100%' }}
-                  showSearch
-                  options={[
-                    ...dropdownConfig.thicknesses.map(t => ({
-                      value: t, label: `${t}mm`
-                    })),
-                    { value: '__custom__', label: '+ Add custom...' }
-                  ]}
-                  onChange={val => {
-                    if (val === '__custom__') return
-                    updateGroup(group.group_key, 'glass_thickness', val)
-                  }}
-                  onSearch={searchVal => {
-                  }}
-                  filterOption={(input, option) => {
-                    if (option.value === '__custom__') return true
-                    return String(option.label).toLowerCase()
-                      .includes(input.toLowerCase())
-                  }}
-                  onInputKeyDown={e => {
-                    if (e.key === 'Enter') {
-                      const num = parseFloat(e.target.value)
-                      if (!num || isNaN(num)) return
-                      try {
-                        const cfg = JSON.parse(
-                          localStorage.getItem('glass_dropdown_config') || '{}'
-                        )
-                        const existing = cfg.thicknesses || [3.5, 4, 5, 6, 8, 10, 12]
-                        if (!existing.includes(num)) {
-                          const updated = [...existing, num].sort((a, b) => a - b)
-                          localStorage.setItem('glass_dropdown_config',
-                            JSON.stringify({ ...cfg, thicknesses: updated })
-                          )
-                          message.success(`${num}mm added!`)
-                        }
-                      } catch { }
-                      updateGroup(group.group_key, 'glass_thickness', num)
-                    }
-                  }}
-                />
-              </Col>
-              <Col span={3}>
-                <div style={{ marginBottom: 2 }}><Text style={{ fontSize: 10, color: '#94a3b8' }}>TYPE</Text></div>
-                <Select
-                  size="small"
-                  placeholder="Type"
-                  value={group.glass_type}
-                  style={{ width: '100%' }}
-                  showSearch
-                  options={[
-                    ...dropdownConfig.glass_types.map(t => ({
-                      value: t, label: t
-                    })),
-                    { value: '__custom__', label: '+ Add custom...' }
-                  ]}
-                  filterOption={(input, option) => {
-                    if (option.value === '__custom__') return true
-                    return String(option.label).toLowerCase()
-                      .includes(input.toLowerCase())
-                  }}
-                  onChange={val => {
-                    if (val === '__custom__') return
-                    updateGroup(group.group_key, 'glass_type', val)
-                  }}
-                  onInputKeyDown={e => {
-                    if (e.key === 'Enter') {
-                      const val = e.target.value.trim()
-                      if (!val || val === '__custom__') return
-                      try {
-                        const cfg = JSON.parse(
-                          localStorage.getItem('glass_dropdown_config') || '{}'
-                        )
-                        const existing = cfg.glass_types ||
-                          ['Annealed', 'Toughened', 'Laminated', 'DGU']
-                        if (!existing.includes(val)) {
-                          localStorage.setItem('glass_dropdown_config',
-                            JSON.stringify({
-                              ...cfg, glass_types: [...existing, val]
-                            })
-                          )
-                          message.success(`"${val}" added to types!`)
-                        }
-                      } catch { }
-                      updateGroup(group.group_key, 'glass_type', val)
-                    }
-                  }}
-                />
-              </Col>
-              <Col span={3}>
-                <div style={{ marginBottom: 2 }}><Text style={{ fontSize: 10, color: '#94a3b8' }}>CATEGORY</Text></div>
-                <Select
-                  size="small"
-                  placeholder="Category"
-                  value={group.glass_category}
-                  style={{ width: '100%' }}
-                  showSearch
-                  options={[
-                    ...dropdownConfig.categories.map(c => ({
-                      value: c, label: c
-                    })),
-                    { value: '__custom__', label: '+ Add custom...' }
-                  ]}
-                  filterOption={(input, option) => {
-                    if (option.value === '__custom__') return true
-                    return String(option.label).toLowerCase()
-                      .includes(input.toLowerCase())
-                  }}
-                  onChange={val => {
-                    if (val === '__custom__') return
-                    updateGroup(group.group_key, 'glass_category', val)
-                  }}
-                  onInputKeyDown={e => {
-                    if (e.key === 'Enter') {
-                      const val = e.target.value.trim()
-                      if (!val || val === '__custom__') return
-                      try {
-                        const cfg = JSON.parse(
-                          localStorage.getItem('glass_dropdown_config') || '{}'
-                        )
-                        const existing = cfg.categories ||
-                          ['Clear', 'Xtra Clear', 'Tinted', 'Reflective', 'Mirror']
-                        if (!existing.includes(val)) {
-                          localStorage.setItem('glass_dropdown_config',
-                            JSON.stringify({
-                              ...cfg, categories: [...existing, val]
-                            })
-                          )
-                          message.success(`"${val}" added to categories!`)
-                        }
-                      } catch { }
-                      updateGroup(group.group_key, 'glass_category', val)
-                    }
-                  }}
-                />
-              </Col>
-              <Col span={4}>
-                <div style={{ marginBottom: 2 }}>
-                  <Text style={{ fontSize: 10, color: '#94a3b8' }}>PRODUCT NAME</Text>
-                </div>
-                <div style={{
-                  padding: '3px 8px', background: '#f0fdf4',
-                  border: '1px solid #86efac', borderRadius: 6,
-                  fontSize: 12, fontWeight: 600, color: '#16a34a',
-                  minHeight: 26, display: 'flex', alignItems: 'center', gap: 4
-                }}>
-                  {group.description ||
-                    <Text type="secondary" style={{ fontSize: 11 }}>
-                      Auto-generated
-                    </Text>
-                  }
-                  {group.is_toughened &&
-                    <Tag color="orange" style={{ fontSize: 10, margin: 0 }}>
-                      Toughened
-                    </Tag>
-                  }
-                </div>
-              </Col>
-              <Col span={2}>
-                <div style={{ marginBottom: 2 }}><Text style={{ fontSize: 10, color: '#94a3b8' }}>W CEILING</Text></div>
-                <Select size="small" value={group.ceiling_w_inches ?? 6} style={{ width: '100%' }}
-                  options={CEILING_OPTIONS}
-                  onChange={val => updateGroup(group.group_key, 'ceiling_w_inches', val)} />
-              </Col>
-              <Col span={2}>
-                <div style={{ marginBottom: 2 }}><Text style={{ fontSize: 10, color: '#94a3b8' }}>H CEILING</Text></div>
-                <Select size="small" value={group.ceiling_h_inches ?? 6} style={{ width: '100%' }}
-                  options={CEILING_OPTIONS}
-                  onChange={val => updateGroup(group.group_key, 'ceiling_h_inches', val)} />
-              </Col>
-              <Col span={3}>
-                <div style={{
-                  marginBottom: 2,
-                  display: 'flex',
-                  justifyContent: 'space-between'
-                }}>
-                  <Text style={{ fontSize: 10, color: '#94a3b8' }}>RATE/SQFT</Text>
-                  <Tooltip title={group.custom_costing ? 'Custom Rate' : 'Auto from Matrix'}>
-                    <Switch
-                      size="small"
-                      checked={group.custom_costing}
-                      checkedChildren="Custom"
-                      unCheckedChildren="Auto"
-                      onChange={val =>
-                        updateGroup(group.group_key, 'custom_costing', val)
-                      }
-                      style={{ transform: 'scale(0.75)' }}
-                    />
-                  </Tooltip>
-                </div>
-                <div>
-                  <InputNumber
-                    size="small"
-                    value={group.rate}
-                    min={0}
-                    prefix="₹"
-                    disabled={!group.custom_costing}
-                    style={{
-                      width: '100%',
-                      borderColor: group.custom_costing ? '#f59e0b' : undefined
-                    }}
-                    onChange={val =>
-                      updateGroup(group.group_key, 'rate', val)
-                    }
-                  />
-                  {(group.is_toughened || group.glass_type === 'Toughened') && group.base_glass_rate > 0 && (
-                    <Text style={{ fontSize: 10, color: '#f97316', display: 'block', marginTop: 2 }}>
-                      Base ₹{group.base_glass_rate.toFixed(2)} + Tgh included
-                    </Text>
-                  )}
-                </div>
-              </Col>
-              <Col span={2}>
-                <div style={{ marginBottom: 2 }}><Text style={{ fontSize: 10, color: '#94a3b8' }}>CEP (Polish)</Text></div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4, paddingTop: 4 }}>
-                  <Switch size="small" checked={group.cep} onChange={val => updateGroup(group.group_key, 'cep', val)} />
-                  {group.cep && <Tag color="blue" style={{ fontSize: 10, margin: 0 }}>ON</Tag>}
-                </div>
-              </Col>
-              <Col span={3} style={{ textAlign: 'right' }}>
-                <Text strong style={{ color: '#059669', fontSize: 13 }}>
-                  ₹{group.sizes
-                    .reduce((s, x) => s + (x.subtotal || 0), 0)
-                    .toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                </Text>
-                <div style={{
-                  display: 'flex', gap: 4,
-                  justifyContent: 'flex-end', marginTop: 4
-                }}>
-                  <Tooltip title="Cost vs Selling Comparison">
-                    <Button
-                      size="small"
-                      icon={<LineChartOutlined />}
-                      style={{ color: '#6366f1', borderColor: '#6366f1' }}
-                      onClick={() => openComparisonWizard(group)}
-                    />
-                  </Tooltip>
-                  <Button
-                    size="small"
-                    danger
-                    icon={<DeleteOutlined />}
-                    onClick={() => removeGroup(group.group_key)}
-                  />
-                </div>
-              </Col>
-            </Row>
-
-
-
-
-
-            <Table
-              dataSource={group.sizes}
-              rowKey="size_key"
-              size="small"
-              pagination={false}
-              scroll={{ x: 'max-content' }}
-              style={{ marginLeft: 24 }}
-              expandable={{
-                expandedRowRender: (size) => {
-                  const sizeProcesses = size.size_processes || []
-                  return (
-                    <div style={{
-                      padding: '8px 12px',
-                      background: '#faf5ff',
-                      borderRadius: 6,
-                      border: '1px solid #e9d5ff',
-                      marginLeft: 8,
-                    }}>
-                      {sizeProcesses.length > 0 && (
-                        <div style={{
-                          display: 'grid',
-                          gridTemplateColumns:
-                            '200px 80px 50px 110px 110px 40px',
-                          gap: 6,
-                          padding: '4px 0',
-                          marginBottom: 4,
-                          fontSize: 11,
-                          fontWeight: 600,
-                          color: '#6d28d9',
-                        }}>
-                          <div>Process</div>
-                          <div>Qty</div>
-                          <div>Unit</div>
-                          <div>Rate</div>
-                          <div>Amount</div>
-                          <div></div>
-                        </div>
-                      )}
-
-                      {sizeProcesses.map(proc => (
-                        <div
-                          key={proc.sproc_key}
-                          style={{
-                            display: 'grid',
-                            gridTemplateColumns:
-                              '200px 80px 50px 110px 110px 40px',
-                            gap: 6,
-                            alignItems: 'center',
-                            marginBottom: 6,
-                          }}
-                        >
-                          <Select
-                            size="small"
-                            placeholder="Select process"
-                            value={proc.process_id}
-                            style={{ width: '100%' }}
-                            options={processMasters
-                              .filter(p =>
-                                ['hole', 'cutout', 'farma', 'beveling']
-                                  .includes(p.process_type)
-                              )
-                              .map(p => ({ value: p.id, label: p.name }))
-                            }
-                            onChange={val =>
-                              updateSizeProcess(
-                                group.group_key, size.size_key,
-                                proc.sproc_key, 'process_id', val
-                              )
-                            }
-                          />
-                          <InputNumber
-                            size="small"
-                            value={proc.qty_area}
-                            min={0}
-                            style={{ width: '100%' }}
-                            placeholder="Qty"
-                            onChange={val =>
-                              updateSizeProcess(
-                                group.group_key, size.size_key,
-                                proc.sproc_key, 'qty_area', val
-                              )
-                            }
-                          />
-                          <Text type="secondary" style={{ fontSize: 11 }}>
-                            {proc.charge_type === 'per_piece' ? 'pcs' :
-                              proc.charge_type === 'per_sqft' ? 'sqft' :
-                                proc.charge_type === 'per_rft' ? 'rft' :
-                                  proc.charge_type === 'fixed' ? 'fixed' : 'pcs'}
-                          </Text>
-                          <InputNumber
-                            size="small"
-                            value={proc.rate}
-                            min={0}
-                            prefix="₹"
-                            style={{ width: '100%' }}
-                            onChange={val =>
-                              updateSizeProcess(
-                                group.group_key, size.size_key,
-                                proc.sproc_key, 'rate', val
-                              )
-                            }
-                          />
-                          <Text strong style={{ color: '#6366f1', fontSize: 12 }}>
-                            ₹{Number(proc.amount || 0).toLocaleString('en-IN',
-                              { minimumFractionDigits: 2 })}
-                          </Text>
-                          <Button
-                            size="small"
-                            type="text"
-                            danger
-                            icon={<DeleteOutlined />}
-                            onClick={() =>
-                              removeSizeProcess(
-                                group.group_key, size.size_key,
-                                proc.sproc_key
-                              )
-                            }
-                          />
-                        </div>
-                      ))}
-
-                      <Button
-                        type="dashed"
-                        size="small"
-                        icon={<PlusOutlined />}
-                        style={{
-                          marginTop: 4,
-                          fontSize: 11,
-                          borderColor: '#7c3aed',
-                          color: '#7c3aed',
-                        }}
-                        onClick={() =>
-                          addSizeProcess(group.group_key, size.size_key)
-                        }
-                      >
-                        + Add Process
-                      </Button>
-
-                      {sizeProcesses.length > 0 && (
-                        <div style={{
-                          marginTop: 6,
-                          textAlign: 'right',
-                          fontSize: 12,
-                          color: '#6366f1',
-                          fontWeight: 600,
-                        }}>
-                          Process Total: ₹{sizeProcesses
-                            .reduce((s, p) => s + (p.amount || 0), 0)
-                            .toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                        </div>
-                      )}
-                    </div>
-                  )
-                },
-                rowExpandable: () => true,
-                expandIcon: ({ expanded, onExpand, record }) => (
-                  <Button
-                    size="small"
-                    type={
-                      (record.size_processes || []).length > 0
-                        ? 'primary'
-                        : 'default'
-                    }
-                    icon={expanded ? <CloseCircleOutlined /> : <PlusOutlined />}
-                    style={{
-                      fontSize: 10,
-                      padding: '0 4px',
-                      height: 20,
-                      background:
-                        (record.size_processes || []).length > 0
-                          ? '#7c3aed'
-                          : undefined,
-                      borderColor:
-                        (record.size_processes || []).length > 0
-                          ? '#7c3aed'
-                          : undefined,
-                    }}
-                    onClick={e => onExpand(record, e)}
-                  />
-                ),
+          <Col xs={24} lg={18}>
+            {/* Details Card */}
+            <QuotationDetailsCard
+              form={form}
+              unit={soUnit}
+              setUnit={setSoUnit}
+              customers={customers}
+              employees={employees}
+              paymentTerms={PAYMENT_TERMS}
+              handleCustomerChange={(val) => {
+                const c = customers.find(x => x.id === val)
+                if (c) form.setFieldsValue({ payment_terms: c.payment_terms })
               }}
-              columns={[
-                { title: '#', width: 30, render: (_, __, i) => <Text type="secondary" style={{ fontSize: 11 }}>{String.fromCharCode(97 + i)}</Text> },
-                {
-                  title: `Actual W (${soUnit === 'inch' ? 'inch' : 'mm'})`, width: 100, dataIndex: 'width_inch',
-                  render: (v, row) => soUnit === 'inch' ? (
-                    <FractionInput value={v} onChange={val => updateSize(group.group_key, row.size_key, 'width_inch', val)} placeholder="84 1/4" />
-                  ) : (
-                    <InputNumber size="small" value={v ? parseFloat((v * 25.4).toFixed(2)) : null} min={0} style={{ width: '100%' }}
-                      onChange={val => updateSize(group.group_key, row.size_key, 'width_inch', val ? val / 25.4 : null)} />
-                  )
-                },
-                {
-                  title: `Actual H (${soUnit === 'inch' ? 'inch' : 'mm'})`, width: 100, dataIndex: 'height_inch',
-                  render: (v, row) => soUnit === 'inch' ? (
-                    <FractionInput value={v} onChange={val => updateSize(group.group_key, row.size_key, 'height_inch', val)} placeholder="48 1/2" />
-                  ) : (
-                    <InputNumber size="small" value={v ? parseFloat((v * 25.4).toFixed(2)) : null} min={0} style={{ width: '100%' }}
-                      onChange={val => updateSize(group.group_key, row.size_key, 'height_inch', val ? val / 25.4 : null)} />
-                  )
-                },
-                {
-                  title: 'Qty', width: 60, dataIndex: 'quantity',
-                  render: (v, row) => <InputNumber size="small" value={v} min={1} style={{ width: '100%' }}
-                    onChange={val => updateSize(group.group_key, row.size_key, 'quantity', val)} />
-                },
-                {
-                  title: 'Chg W', width: 80, dataIndex: 'charged_w_inch',
-                  render: (v) => (
-                    <Text style={{ fontSize: 12, color: '#475569', paddingLeft: 4 }}>
-                      {v ? parseFloat(v.toFixed(3)) : '—'}
-                    </Text>
-                  )
-                },
-                {
-                  title: 'Chg H', width: 80, dataIndex: 'charged_h_inch',
-                  render: (v) => (
-                    <Text style={{ fontSize: 12, color: '#475569', paddingLeft: 4 }}>
-                      {v ? parseFloat(v.toFixed(3)) : '—'}
-                    </Text>
-                  )
-                },
-                {
-                  title: 'Sqft', width: 80, dataIndex: 'total_sqft',
-                  render: (v, row) => <InputNumber size="small" value={v ? parseFloat(v.toFixed(3)) : null} min={0} step={0.001} style={{ width: '100%' }}
-                    onChange={val => setGroups(prev => prev.map(g => {
-                      if (g.group_key !== group.group_key) return g
-                      return {
-                        ...g, sizes: g.sizes.map(s => {
-                          if (s.size_key !== row.size_key) return s
-                          const sub = parseFloat(((val || 0) * (g.rate || 0) * (1 - (g.discount_pct || 0) / 100) + (s.cep_charges || 0)).toFixed(2))
-                          return { ...s, total_sqft: val, subtotal: sub }
-                        })
-                      }
-                    }))} />
-                },
-
-                ...(group.cep ? [{
-                  title: <span>CEP <Tag color="blue" style={{ fontSize: 9 }}>Polish</Tag></span>, width: 90, dataIndex: 'cep_charges',
-                  render: (v, row) => <InputNumber size="small" value={v ? parseFloat(v.toFixed(2)) : 0} min={0} prefix="₹"
-                    style={{ width: '100%', borderColor: '#3b82f6' }}
-                    onChange={val => setGroups(prev => prev.map(g => {
-                      if (g.group_key !== group.group_key) return g
-                      return {
-                        ...g, sizes: g.sizes.map(s => {
-                          if (s.size_key !== row.size_key) return s
-                          const sub = parseFloat(((s.total_sqft || 0) * (g.rate || 0) * (1 - (g.discount_pct || 0) / 100) + (val || 0)).toFixed(2))
-                          return { ...s, cep_charges: val, subtotal: sub }
-                        })
-                      }
-                    }))} />
-                }] : []),
-
-                {
-                  title: 'Amount', width: 110, dataIndex: 'subtotal', align: 'right',
-                  render: (v, row) => <InputNumber size="small" value={v ? parseFloat(v.toFixed(2)) : 0} min={0} prefix="₹"
-                    style={{ width: '100%' }}
-                    onChange={val => setGroups(prev => prev.map(g => {
-                      if (g.group_key !== group.group_key) return g
-                      return { ...g, sizes: g.sizes.map(s => s.size_key !== row.size_key ? s : { ...s, subtotal: val }) }
-                    }))} />
-                },
-                {
-                  title: '', width: 40,
-                  render: (_, row) => <Button size="small" type="text" danger icon={<DeleteOutlined />}
-                    onClick={() => removeSize(group.group_key, row.size_key)} />
-                },
-              ]}
-              footer={() => (
-                <Button
-                  type="dashed" size="small" icon={<PlusOutlined />}
-                  onClick={() => addSize(group.group_key)}
-                  style={{ marginLeft: 0 }}
-                >
-                  Add Size
-                </Button>
-              )}
+              customerApi={customerApi}
+              employeeApi={employeeApi}
+              queryClient={queryClient}
+              message={message}
+              type="sales_order"
+              warehouses={warehouses}
+              quotations={quotations}
+              handleQuotationChange={handleQuotationChange}
             />
 
-            {(group.processes?.length > 0 || true) && (
-              <div style={{
-                marginTop: 10,
-                marginLeft: 24,
-                padding: '8px 12px',
-                background: '#fafafa',
-                borderRadius: 6,
-                border: '1px dashed #d1d5db'
-              }}>
-                <Row justify="space-between" align="middle" style={{ marginBottom: 6 }}>
-                  <Col>
-                    <Text type="secondary" style={{ fontSize: 12, fontWeight: 600 }}>
-                      ⚙️ Process Charges
-                    </Text>
-                  </Col>
-                  <Col>
-                    <Text type="secondary" style={{ fontSize: 11 }}>
-                      Total: <Text strong style={{ color: '#6366f1' }}>
-                        ₹{(group.processes || [])
-                          .reduce((s, p) => s + (p.amount || 0), 0)
-                          .toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                      </Text>
-                    </Text>
-                  </Col>
-                </Row>
+            {/* Glass line items */}
+            <Divider orientation="left" style={{ color: '#3b82f6', marginTop: 24, fontSize: 15, fontWeight: 600 }}>Glass Items</Divider>
+            {groups.map((group, gi) => (
+              <GlassCard
+                key={group.group_key}
+                group={group}
+                gi={gi}
+                unit={soUnit}
+                dropdownConfig={dropdownConfig}
+                customSearchVal={customSearchVal}
+                setCustomSearchVal={setCustomSearchVal}
+                products={products}
+                processMasters={processMasters}
+                updateGroup={updateGroup}
+                removeGroup={removeGroup}
+                openComparisonWizard={openComparisonWizard}
+                updateSize={updateSize}
+                updateSizeProcess={updateSizeProcess}
+                removeSizeProcess={removeSizeProcess}
+                addSizeProcess={addSizeProcess}
+                addSize={addSize}
+                removeSize={removeSize}
+                updateGroupProcess={updateGroupProcess}
+                removeGroupProcess={removeGroupProcess}
+                addGroupProcess={addGroupProcess}
+                setGroups={setGroups}
+                queryClient={queryClient}
+                message={message}
+                CEILING_OPTIONS={CEILING_OPTIONS}
+                productApi={productApi}
+              />
+            ))}
 
-                {(group.processes || []).map((proc, pi) => (
-                  <Row key={proc.proc_key} gutter={6} align="middle"
-                    style={{ marginBottom: 4 }}>
-                    <Col span={7}>
-                      <Select
-                        size="small"
-                        placeholder="Select process"
-                        value={proc.process_id}
-                        style={{ width: '100%' }}
-                        options={processMasters
-                          .filter(p =>
-                            ['hole', 'cutout', 'farma', 'beveling'].includes(p.process_type)
-                          )
-                          .map(p => ({
-                            value: p.id,
-                            label: p.name
-                          }))
-                        }
-                        onChange={val => updateGroupProcess(
-                          group.group_key, proc.proc_key, 'process_id', val
-                        )}
-                      />
-                    </Col>
-                    <Col span={4}>
-                      <InputNumber
-                        size="small"
-                        value={proc.qty_area}
-                        min={0}
-                        style={{ width: '100%' }}
-                        placeholder="Qty/Area"
-                        onChange={val => updateGroupProcess(
-                          group.group_key, proc.proc_key, 'qty_area', val
-                        )}
-                      />
-                    </Col>
-                    <Col span={2}>
-                      <Text type="secondary" style={{ fontSize: 11 }}>
-                        {proc.charge_type === 'per_sqft' ? 'sqft' :
-                          proc.charge_type === 'per_rft' ? 'rft' :
-                            proc.charge_type === 'per_sqmt' ? 'sqmt' :
-                              proc.charge_type === 'per_piece' ? 'pcs' : 'fixed'}
-                      </Text>
-                    </Col>
-                    <Col span={4}>
-                      <InputNumber
-                        size="small"
-                        value={proc.rate}
-                        min={0}
-                        prefix="₹"
-                        style={{ width: '100%' }}
-                        onChange={val => updateGroupProcess(
-                          group.group_key, proc.proc_key, 'rate', val
-                        )}
-                      />
-                    </Col>
-                    <Col span={4}>
-                      <Text strong style={{ color: '#6366f1', fontSize: 13 }}>
-                        ₹{(proc.amount || 0).toLocaleString('en-IN',
-                          { minimumFractionDigits: 2 })}
-                      </Text>
-                    </Col>
-                    <Col span={3} style={{ textAlign: 'right' }}>
-                      <Button
-                        size="small" type="text" danger
-                        icon={<DeleteOutlined />}
-                        onClick={() => removeGroupProcess(
-                          group.group_key, proc.proc_key
-                        )}
-                      />
-                    </Col>
-                  </Row>
-                ))}
-
-                <Button
-                  type="dashed"
-                  size="small"
-                  icon={<PlusOutlined />}
-                  onClick={() => addGroupProcess(group.group_key)}
-                  style={{ marginTop: 4, fontSize: 12 }}
-                >
-                  Add Process
-                </Button>
-              </div>
-            )}
-          </Card>
-        ))}
-
-        <Row gutter={8} style={{ marginTop: 8 }} align="middle">
-          <Col>
             <Button
               type="dashed"
               icon={<PlusOutlined />}
               onClick={addGroup}
+              style={{ width: '100%', marginBottom: 20, height: 40, borderRadius: 10, fontWeight: 500 }}
             >
-              + Add Product
+              Add Product Group
             </Button>
-          </Col>
-          <Col>
-            <Button
-              type="dashed"
-              icon={<PlusOutlined />}
-              style={{ borderColor: '#f59e0b', color: '#f59e0b' }}
-              onClick={() => setHardwareItems(prev => [
-                ...prev, emptyHardware()
-              ])}
-            >
-              + Add Hardware
-            </Button>
-          </Col>
-          <Col>
-            <Button
-              type="dashed"
-              icon={<PlusOutlined />}
-              style={{ borderColor: '#8b5cf6', color: '#8b5cf6' }}
-              onClick={() => setLaborItems(prev => [
-                ...prev, emptyLabor()
-              ])}
-            >
-              + Add Labor
-            </Button>
-          </Col>
-          <Col>
-            <Button
-              type="dashed"
-              icon={<PlusOutlined />}
-              style={{ borderColor: '#ef4444', color: '#ef4444' }}
-              onClick={() => setWastageItems(prev => [
-                ...prev, emptyWastage()
-              ])}
-            >
-              + Add Wastage
-            </Button>
-          </Col>
-        </Row>
 
-        {hardwareItems.length > 0 && (
-          <Card
-            title={
-              <Space>
-                <span>🔩 Hardware Items</span>
-                <Text type="secondary" style={{ fontSize: 11 }}>
-                  Total: ₹{hardwareItems.reduce((s, h) => s + (h.amount || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                </Text>
-              </Space>
-            }
-            size="small"
-            style={{ marginTop: 16, border: '1px solid #e2e8f0' }}
-          >
-            <Table
-              dataSource={hardwareItems}
-              rowKey="hw_key"
-              size="small"
-              pagination={false}
-              columns={[
-                {
-                  title: 'Description', dataIndex: 'description', width: 300,
-                  render: (v, row) => (
-                    <Input
-                      size="small"
-                      value={v}
-                      placeholder="Enter hardware description"
-                      onChange={e => setHardwareItems(prev =>
-                        prev.map(h => h.hw_key !== row.hw_key ? h : {
-                          ...h, description: e.target.value
-                        })
-                      )}
-                    />
-                  )
-                },
-                {
-                  title: 'Qty', dataIndex: 'qty', width: 80,
-                  render: (v, row) => (
-                    <InputNumber
-                      size="small" value={v} min={0} style={{ width: '100%' }}
-                      onChange={val => setHardwareItems(prev =>
-                        prev.map(h => h.hw_key !== row.hw_key ? h : {
-                          ...h,
-                          qty: val,
-                          amount: parseFloat(((val || 0) * (h.rate || 0)).toFixed(2)),
-                          cost_amount: parseFloat(((val || 0) * (h.cost_rate || 0)).toFixed(2)),
-                        })
-                      )}
-                    />
-                  )
-                },
-                {
-                  title: 'UOM', dataIndex: 'uom', width: 100,
-                  render: (v, row) => (
-                    <Select
-                      size="small"
-                      value={v || undefined}
-                      placeholder="UOM"
-                      style={{ width: '100%' }}
-                      allowClear
-                      options={[
-                        { value: 'PCS', label: 'PCS' },
-                        { value: 'RFT', label: 'RFT' },
-                        { value: 'SQFT', label: 'SQFT' },
-                        { value: 'HRS', label: 'HRS' },
-                        { value: 'SQMT', label: 'SQMT' },
-                      ].concat(
-                        (() => {
-                          try {
-                            return JSON.parse(localStorage.getItem('uom_rate_master') || '[]')
-                              .filter(u => !['PCS', 'RFT', 'SQFT', 'HRS', 'SQMT'].includes(u.uom))
-                              .map(u => ({ value: u.uom, label: u.uom }))
-                          } catch { return [] }
-                        })()
-                      )}
-                      onChange={val => {
-                        const rates = getUomRates(val)
-                        setHardwareItems(prev => prev.map(h =>
-                          h.hw_key !== row.hw_key ? h : {
-                            ...h,
-                            uom: val,
-                            cost_rate: rates.cost_rate,
-                            rate: rates.selling_rate,
-                            cost_amount: parseFloat(((h.qty || 0) * rates.cost_rate).toFixed(2)),
-                            amount: parseFloat(((h.qty || 0) * rates.selling_rate).toFixed(2)),
-                          }
-                        ))
-                      }}
-                    />
-                  )
-                },
-                {
-                  title: 'Cost Rate',
-                  dataIndex: 'cost_rate',
-                  width: 120,
-                  render: (v, row) => (
-                    <InputNumber
-                      size="small" value={v} min={0} prefix="₹"
-                      style={{ width: '100%', borderColor: '#f59e0b' }}
-                      onChange={val => setHardwareItems(prev =>
-                        prev.map(h => h.hw_key !== row.hw_key ? h : {
-                          ...h,
-                          cost_rate: val,
-                          cost_amount: parseFloat(((h.qty || 0) * (val || 0)).toFixed(2))
-                        })
-                      )}
-                    />
-                  )
-                },
-                {
-                  title: 'Rate', dataIndex: 'rate', width: 120,
-                  render: (v, row) => (
-                    <InputNumber
-                      size="small" value={v} min={0} prefix="₹"
-                      style={{ width: '100%' }}
-                      onChange={val => setHardwareItems(prev =>
-                        prev.map(h => h.hw_key !== row.hw_key ? h : {
-                          ...h,
-                          rate: val,
-                          amount: parseFloat(((h.qty || 0) * (val || 0)).toFixed(2))
-                        })
-                      )}
-                    />
-                  )
-                },
-                {
-                  title: 'Amount', dataIndex: 'amount', width: 120, align: 'right',
-                  render: v => (
-                    <Text strong style={{ color: '#059669' }}>
-                      ₹{Number(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    </Text>
-                  )
-                },
-                {
-                  title: '', width: 40,
-                  render: (_, row) => (
-                    <Button
-                      size="small" type="text" danger
-                      icon={<DeleteOutlined />}
-                      onClick={() => setHardwareItems(prev =>
-                        prev.filter(h => h.hw_key !== row.hw_key)
-                      )}
-                    />
-                  )
-                }
-              ]}
+            {/* Hardware Card */}
+            <HardwareCard
+              hardwareItems={hardwareItems}
+              setHardwareItems={setHardwareItems}
+              getUomRates={getUomRates}
             />
-          </Card>
-        )}
-
-        {laborItems.length > 0 && (
-          <Card
-            title={
-              <Space>
-                <span>👷 Labor Charges</span>
-                <Text type="secondary" style={{ fontSize: 11 }}>
-                  Total: ₹{laborItems.reduce((s, l) => s + (l.amount || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                </Text>
-              </Space>
-            }
-            size="small"
-            style={{ marginTop: 16, border: '1px solid #e2e8f0' }}
-          >
-            <Table
-              dataSource={laborItems}
-              rowKey="lb_key"
-              size="small"
-              pagination={false}
-              columns={[
-                {
-                  title: 'Description', dataIndex: 'description', width: 300,
-                  render: (v, row) => (
-                    <Input
-                      size="small"
-                      value={v}
-                      placeholder="Enter labor description"
-                      onChange={e => setLaborItems(prev =>
-                        prev.map(l => l.lb_key !== row.lb_key ? l : {
-                          ...l, description: e.target.value
-                        })
-                      )}
-                    />
-                  )
-                },
-                {
-                  title: 'Qty', dataIndex: 'qty', width: 80,
-                  render: (v, row) => (
-                    <InputNumber
-                      size="small" value={v} min={0} style={{ width: '100%' }}
-                      onChange={val => setLaborItems(prev =>
-                        prev.map(l => l.lb_key !== row.lb_key ? l : {
-                          ...l,
-                          qty: val,
-                          amount: parseFloat(((val || 0) * (l.rate || 0)).toFixed(2)),
-                          cost_amount: parseFloat(((val || 0) * (l.cost_rate || 0)).toFixed(2)),
-                        })
-                      )}
-                    />
-                  )
-                },
-                {
-                  title: 'UOM', dataIndex: 'uom', width: 100,
-                  render: (v, row) => (
-                    <Select
-                      size="small"
-                      value={v || undefined}
-                      placeholder="UOM"
-                      style={{ width: '100%' }}
-                      allowClear
-                      options={[
-                        { value: 'PCS', label: 'PCS' },
-                        { value: 'RFT', label: 'RFT' },
-                        { value: 'SQFT', label: 'SQFT' },
-                        { value: 'HRS', label: 'HRS' },
-                        { value: 'SQMT', label: 'SQMT' },
-                      ].concat(
-                        (() => {
-                          try {
-                            return JSON.parse(localStorage.getItem('uom_rate_master') || '[]')
-                              .filter(u => !['PCS', 'RFT', 'SQFT', 'HRS', 'SQMT'].includes(u.uom))
-                              .map(u => ({ value: u.uom, label: u.uom }))
-                          } catch { return [] }
-                        })()
-                      )}
-                      onChange={val => {
-                        const rates = getUomRates(val)
-                        setLaborItems(prev => prev.map(l =>
-                          l.lb_key !== row.lb_key ? l : {
-                            ...l,
-                            uom: val,
-                            cost_rate: rates.cost_rate,
-                            rate: rates.selling_rate,
-                            cost_amount: parseFloat(((l.qty || 0) * rates.cost_rate).toFixed(2)),
-                            amount: parseFloat(((l.qty || 0) * rates.selling_rate).toFixed(2)),
-                          }
-                        ))
-                      }}
-                    />
-                  )
-                },
-                {
-                  title: 'Cost Rate',
-                  dataIndex: 'cost_rate',
-                  width: 120,
-                  render: (v, row) => (
-                    <InputNumber
-                      size="small" value={v} min={0} prefix="₹"
-                      style={{ width: '100%', borderColor: '#f59e0b' }}
-                      onChange={val => setLaborItems(prev =>
-                        prev.map(l => l.lb_key !== row.lb_key ? l : {
-                          ...l,
-                          cost_rate: val,
-                          cost_amount: parseFloat(((l.qty || 0) * (val || 0)).toFixed(2))
-                        })
-                      )}
-                    />
-                  )
-                },
-                {
-                  title: 'Rate', dataIndex: 'rate', width: 120,
-                  render: (v, row) => (
-                    <InputNumber
-                      size="small" value={v} min={0} prefix="₹"
-                      style={{ width: '100%' }}
-                      onChange={val => setLaborItems(prev =>
-                        prev.map(l => l.lb_key !== row.lb_key ? l : {
-                          ...l,
-                          rate: val,
-                          amount: parseFloat(((l.qty || 0) * (val || 0)).toFixed(2))
-                        })
-                      )}
-                    />
-                  )
-                },
-                {
-                  title: 'Amount', dataIndex: 'amount', width: 120, align: 'right',
-                  render: v => (
-                    <Text strong style={{ color: '#059669' }}>
-                      ₹{Number(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    </Text>
-                  )
-                },
-                {
-                  title: '', width: 40,
-                  render: (_, row) => (
-                    <Button
-                      size="small" type="text" danger
-                      icon={<DeleteOutlined />}
-                      onClick={() => setLaborItems(prev =>
-                        prev.filter(l => l.lb_key !== row.lb_key)
-                      )}
-                    />
-                  )
-                }
-              ]}
-            />
-          </Card>
-        )}
-
-        {wastageItems.length > 0 && (
-          <Card
-            title={
-              <Space>
-                <span>🗑️ Wastage / Scrap</span>
-                <Text type="secondary" style={{ fontSize: 11 }}>
-                  Total: ₹{wastageItems.reduce((s, w) => s + (w.amount || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                </Text>
-              </Space>
-            }
-            size="small"
-            style={{ marginTop: 16, border: '1px solid #fca5a5' }}
-          >
-            <Table
-              dataSource={wastageItems}
-              rowKey="wst_key"
-              size="small"
-              pagination={false}
-              columns={[
-                {
-                  title: 'Description', dataIndex: 'description', width: 300,
-                  render: (v, row) => (
-                    <Input
-                      size="small"
-                      value={v}
-                      placeholder="Enter wastage description"
-                      onChange={e => setWastageItems(prev =>
-                        prev.map(w => w.wst_key !== row.wst_key ? w : {
-                          ...w, description: e.target.value
-                        })
-                      )}
-                    />
-                  )
-                },
-                {
-                  title: 'Qty', dataIndex: 'qty', width: 80,
-                  render: (v, row) => (
-                    <InputNumber
-                      size="small" value={v} min={0}
-                      style={{ width: '100%' }}
-                      onChange={val => setWastageItems(prev =>
-                        prev.map(w => w.wst_key !== row.wst_key ? w : {
-                          ...w,
-                          qty: val,
-                          cost_amount: parseFloat(((val || 0) * (w.cost_rate || 0)).toFixed(2)),
-                          amount: parseFloat(((val || 0) * (w.rate || 0)).toFixed(2)),
-                        })
-                      )}
-                    />
-                  )
-                },
-                {
-                  title: 'Cost Rate', dataIndex: 'cost_rate', width: 120,
-                  render: (v, row) => (
-                    <InputNumber
-                      size="small" value={v} min={0} prefix="₹"
-                      style={{ width: '100%' }}
-                      onChange={val => setWastageItems(prev =>
-                        prev.map(w => w.wst_key !== row.wst_key ? w : {
-                          ...w,
-                          cost_rate: val,
-                          cost_amount: parseFloat(((w.qty || 0) * (val || 0)).toFixed(2))
-                        })
-                      )}
-                    />
-                  )
-                },
-                {
-                  title: 'Rate', dataIndex: 'rate', width: 120,
-                  render: (v, row) => (
-                    <InputNumber
-                      size="small" value={v} min={0} prefix="₹"
-                      style={{ width: '100%' }}
-                      onChange={val => setWastageItems(prev =>
-                        prev.map(w => w.wst_key !== row.wst_key ? w : {
-                          ...w,
-                          rate: val,
-                          amount: parseFloat(((w.qty || 0) * (val || 0)).toFixed(2))
-                        })
-                      )}
-                    />
-                  )
-                },
-                {
-                  title: 'Amount', dataIndex: 'amount', width: 120, align: 'right',
-                  render: v => (
-                    <Text strong style={{ color: '#dc2626' }}>
-                      ₹{Number(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    </Text>
-                  )
-                },
-                {
-                  title: '', width: 40,
-                  render: (_, row) => (
-                    <Button
-                      size="small" type="text" danger
-                      icon={<DeleteOutlined />}
-                      onClick={() => setWastageItems(prev =>
-                        prev.filter(w => w.wst_key !== row.wst_key)
-                      )}
-                    />
-                  )
-                }
-              ]}
-            />
-          </Card>
-        )}
-
-        <Row gutter={24} style={{ marginTop: 24 }}>
-          <Col span={12}>
-            <Tabs size="small" items={[
-              { key: 'cn', label: 'Customer Notes', children: <Form.Item name="customer_note"><TextArea rows={4} /></Form.Item> },
-              { key: 'in', label: 'Internal Notes', children: <Form.Item name="internal_notes"><TextArea rows={4} /></Form.Item> },
-            ]} />
-          </Col>
-          <Col span={12}>
-            <div style={{ background: '#f8fafc', padding: '16px 24px', borderRadius: 8, border: '1px solid #e2e8f0' }}>
-              <Row justify="space-between" style={{ marginBottom: 8 }}><Col>Sub-total I (Glass)</Col><Col>{fmt(totals.subI)}</Col></Row>
-              <Row justify="space-between" style={{ marginBottom: 8 }}><Col><Text type="secondary">Process Charges (all products)</Text></Col><Col><Text>{fmt(totals.procTotal)}</Text></Col></Row>
-              {totals.hwTotal > 0 && (
-                <Row justify="space-between" style={{ marginBottom: 8 }}><Col>Hardware</Col><Col>{fmt(totals.hwTotal)}</Col></Row>
-              )}
-              {totals.lbTotal > 0 && (
-                <Row justify="space-between" style={{ marginBottom: 8 }}><Col>Labor</Col><Col>{fmt(totals.lbTotal)}</Col></Row>
-              )}
-              {totals.wstTotal > 0 && (
-                <Row justify="space-between" style={{ marginBottom: 8 }}>
-                  <Col><Text style={{ color: '#dc2626' }}>Wastage</Text></Col>
-                  <Col><Text style={{ color: '#dc2626' }}>{fmt(totals.wstTotal)}</Text></Col>
-                </Row>
-              )}
-              <Row justify="space-between" align="middle" style={{ marginBottom: 8 }}>
-                <Col span={12}>
-                  <Form.Item name="dc_charges" label="D/C Charges (Selling)" labelCol={{ span: 14 }} wrapperCol={{ span: 10 }} style={{ marginBottom: 0 }}>
-                    <InputNumber style={{ width: '100%' }} prefix="₹" />
-                  </Form.Item>
-                </Col>
-                <Col span={12}>
-                  <Form.Item name="dc_cost" label="D/C Cost" labelCol={{ span: 10 }} wrapperCol={{ span: 14 }} style={{ marginBottom: 0 }}>
-                    <InputNumber style={{ width: '100%' }} prefix="₹" />
-                  </Form.Item>
-                </Col>
-              </Row>
-              <Row justify="space-between" style={{ marginBottom: 8, fontWeight: 600 }}><Col>Sub-total II</Col><Col>{fmt(totals.subII)}</Col></Row>
-              <Form.Item name="discount_amount" label="Discount" labelCol={{ span: 12 }} wrapperCol={{ span: 12 }} style={{ marginBottom: 8 }}>
-                <InputNumber style={{ width: '100%' }} prefix="₹" />
-              </Form.Item>
-              <Row justify="space-between" style={{ marginBottom: 12, fontWeight: 600, fontSize: 15 }}><Col>Sub-total III</Col><Col>{fmt(totals.subIII)}</Col></Row>
-
-              <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span>GST Type</span>
-                <Radio.Group
-                  value={gstMode}
-                  onChange={e => setGstMode(e.target.value)}
-                  buttonStyle="solid"
-                  size="small"
-                >
-                  <Radio.Button value="cgst_sgst">CGST/SGST</Radio.Button>
-                  <Radio.Button value="igst">IGST</Radio.Button>
-                  <Radio.Button value="off">No GST</Radio.Button>
-                </Radio.Group>
-              </div>
-
-              {gstMode === 'cgst_sgst' && (
-                <>
-                  <Row justify="space-between" style={{ marginBottom: 8 }}><Col>CGST (9%)</Col><Col>{fmt(totals.cgst)}</Col></Row>
-                  <Row justify="space-between" style={{ marginBottom: 8 }}><Col>SGST (9%)</Col><Col>{fmt(totals.sgst)}</Col></Row>
-                </>
-              )}
-              {gstMode === 'igst' && (
-                <Row justify="space-between" style={{ marginBottom: 8 }}><Col>IGST (18%)</Col><Col>{fmt(totals.igst)}</Col></Row>
-              )}
-              {gstMode === 'off' && (
-                <Row justify="space-between" style={{ marginBottom: 8 }}><Col><Text type="secondary">No GST Applied</Text></Col><Col></Col></Row>
-              )}
-
-              <Divider style={{ margin: '12px 0' }} />
-              <Row justify="space-between" style={{ marginBottom: 16 }}><Col><b style={{ fontSize: 18, color: '#0f172a' }}>Grand Total</b></Col><Col><b style={{ fontSize: 18, color: '#16a34a' }}>{fmt(totals.grandTotal)}</b></Col></Row>
-
-              <Form.Item name="advance_received" label="Advance Received" labelCol={{ span: 12 }} wrapperCol={{ span: 12 }} style={{ marginBottom: 8 }}>
-                <InputNumber style={{ width: '100%' }} prefix="₹" />
-              </Form.Item>
-              <Row justify="space-between" style={{ marginTop: 8 }}><Col><b style={{ fontSize: 16 }}>Balance Due</b></Col><Col><b style={{ fontSize: 16, color: totals.balance > 0 ? '#dc2626' : '#16a34a' }}>{fmt(totals.balance)}</b></Col></Row>
+            <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
+              <Button type="dashed" icon={<PlusOutlined />} style={{ borderColor: '#d97706', color: '#d97706', borderRadius: 8 }} onClick={() => setHardwareItems(prev => [...prev, emptyHardware()])}>
+                + Add Hardware
+              </Button>
             </div>
+
+            {/* Labour Card */}
+            <LabourCard
+              laborItems={laborItems}
+              setLaborItems={setLaborItems}
+              getUomRates={getUomRates}
+            />
+            <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
+              <Button type="dashed" icon={<PlusOutlined />} style={{ borderColor: '#7c3aed', color: '#7c3aed', borderRadius: 8 }} onClick={() => setLaborItems(prev => [...prev, emptyLabor()])}>
+                + Add Labor Charge
+              </Button>
+            </div>
+
+            {/* Wastage Card */}
+            <WastageCard
+              wastageItems={wastageItems}
+              setWastageItems={setWastageItems}
+            />
+            <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
+              <Button type="dashed" icon={<PlusOutlined />} style={{ borderColor: '#e11d48', color: '#e11d48', borderRadius: 8 }} onClick={() => setWastageItems(prev => [...prev, emptyWastage()])}>
+                + Add Wastage
+              </Button>
+            </div>
+
+            {/* Notes Card */}
+            <NotesCard />
+
+            {/* Cost Analysis Card */}
+            <CostAnalysisCard
+              groups={groups}
+              products={products}
+            />
           </Col>
 
-
-          <Modal
-            title={
-              <Space>
-                <LineChartOutlined style={{ color: '#6366f1' }} />
-                <span>Cost vs Selling Comparison — {compWizard?.product_name}</span>
-              </Space>
-            }
-            open={compWizard !== null}
-            onCancel={() => { setCompWizard(null); setWizardCostPrice(null) }}
-            footer={
-              <Space>
-                <Button
-                  type="primary"
-                  style={{ background: '#6366f1', borderColor: '#6366f1' }}
-                  disabled={!wizardCostPrice || wizardCostPrice <= 0}
-                  onClick={() => {
-                    if (compWizard?.group_key && wizardCostPrice > 0) {
-                      // Only save CP — does NOT change selling rate
-                      updateGroup(compWizard.group_key, 'manual_cost_price', wizardCostPrice)
-                      message.success(`Cost price ₹${wizardCostPrice}/sqft saved`)
-                    }
-                    setCompWizard(null)
-                    setWizardCostPrice(null)
-                  }}
-                >
-                  💾 Save Cost Price
-                </Button>
-                <Button onClick={() => { setCompWizard(null); setWizardCostPrice(null) }}>
-                  Close
-                </Button>
-              </Space>
-            }
-            width={800}
-          >
-            {compWizard && (
-              <>
-                <Row gutter={16} style={{ marginBottom: 16 }}>
-                  <Col span={12}>
-                    <Card size="small" style={{ background: '#f0fdf4', borderColor: '#86efac' }}>
-                      <Text type="secondary">Selling Rate</Text>
-                      <div style={{ fontSize: 20, fontWeight: 700, color: '#16a34a' }}>
-                        ₹ {compWizard.selling_rate}/sqft
-                      </div>
-                    </Card>
-                  </Col>
-                  <Col span={12}>
-                    <Card size="small" style={{ background: '#fff7ed', borderColor: '#fed7aa' }}>
-                      <Text type="secondary">Cost Price (editable)</Text>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
-                        <InputNumber
-                          value={wizardCostPrice !== null && wizardCostPrice !== undefined ? wizardCostPrice : compWizard.cost_price}
-                          min={0}
-                          prefix="₹"
-                          addonAfter="/sqft"
-                          style={{ width: '100%' }}
-                          onChange={val => {
-                            setWizardCostPrice(val)
-                            const newCostPrice = val || 0
-                            const newRows = compWizard.rows.map(r => {
-                              const glass_cost = parseFloat((parseFloat(r.charged_sqft) * newCostPrice).toFixed(2))
-                              const cost_amount = parseFloat((glass_cost + (r.cep_cost || 0)).toFixed(2))
-                              const margin_amount = parseFloat((r.selling_amount - cost_amount).toFixed(2))
-                              const margin_pct = cost_amount > 0 ? parseFloat(((margin_amount / cost_amount) * 100).toFixed(2)) : 100
-                              return { ...r, glass_cost, cost_amount, margin_amount, margin_pct }
-                            })
-                            const totalCost = newRows.reduce((s, r) => s + r.cost_amount, 0)
-                            const totalCepCost = newRows.reduce((s, r) => s + (r.cep_cost || 0), 0)
-                            const totalMargin = compWizard.totalSelling - totalCost
-                            const totalMarginPct = totalCost > 0 ? parseFloat(((totalMargin / totalCost) * 100).toFixed(2)) : 100
-                            setCompWizard(prev => ({
-                              ...prev,
-                              // DO NOT update cost_price here — keeps original auto-calc
-                              rows: newRows,
-                              totalCost,
-                              totalCepCost,
-                              totalMargin,
-                              totalMarginPct
-                            }))
-                          }}
-                        />
-                      </div>
-                      <Text type="secondary" style={{ fontSize: 11, marginTop: 4, display: 'block' }}>Edit to recalculate margin</Text>
-                    </Card>
-                  </Col>
-                </Row>
-
-                {compWizard?.cep_on && (
-                  <div style={{ background: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: 8, padding: '8px 14px', marginBottom: 12, fontSize: 12, color: '#6d28d9', display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span>🔵</span>
-                    <strong>CEP (Polish - 4 sides)</strong> cost is included: Actual running ft × ₹{compWizard.cep_cost_rate}/rft (charged inch to inch, no ceiling)
-                  </div>
-                )}
-
-                <Table
-                  dataSource={compWizard.rows}
-                  pagination={false}
-                  size="small"
-                  scroll={{ x: 'max-content' }}
-                  columns={[
-                    {
-                      title: 'Size', key: 'size', width: 100,
-                      render: (_, r) => <Text strong style={{ fontSize: 12 }}>{r.label}. {r.width_display} × {r.height_display}</Text>
-                    },
-                    { title: 'Qty', dataIndex: 'quantity', width: 40 },
-                    {
-                      title: 'Charged Sqft', dataIndex: 'selling_sqft', width: 90,
-                      render: v => <Text>{v}</Text>
-                    },
-                    {
-                      title: 'Cost Sqft', dataIndex: 'charged_sqft', width: 90,
-                      render: v => <Text type="secondary">{v}</Text>
-                    },
-                    {
-                      title: 'Actual Rft', dataIndex: 'actual_rft', width: 80,
-                      render: v => <Text type="secondary">{v}</Text>
-                    },
-                    {
-                      title: 'Selling Amt', dataIndex: 'selling_amount', width: 100, align: 'right',
-                      render: v => <Text strong style={{ color: '#16a34a' }}>₹{Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Text>
-                    },
-                    {
-                      title: 'Glass Cost', dataIndex: 'glass_cost', width: 100, align: 'right',
-                      render: v => <Text style={{ color: '#ea580c' }}>₹{Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Text>
-                    },
-                    ...(compWizard?.cep_on ? [{
-                      title: <span>CEP Cost<br /><Text type="secondary" style={{ fontSize: 10, fontWeight: 400 }}>Rft × ₹{compWizard.cep_cost_rate}</Text></span>,
-                      dataIndex: 'cep_cost', width: 100, align: 'right',
-                      render: v => <Text style={{ color: '#7c3aed' }}>₹{Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Text>
-                    }] : []),
-                    {
-                      title: 'Total Cost', dataIndex: 'cost_amount', width: 110, align: 'right',
-                      render: v => <Text strong style={{ color: '#dc2626' }}>₹{Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Text>
-                    },
-                    {
-                      title: 'Margin', dataIndex: 'margin_amount', width: 110, align: 'right',
-                      render: (v, r) => (
-                        <Text strong style={{ color: r.margin_pct >= 20 ? '#16a34a' : r.margin_pct >= 10 ? '#f59e0b' : '#dc2626' }}>
-                          ₹{Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                          <br />
-                          <Text style={{ fontSize: 11, color: 'inherit' }}>({r.margin_pct}%)</Text>
-                        </Text>
-                      )
-                    },
-                  ]}
-                />
-
-                <Divider style={{ margin: '12px 0' }} />
-                <Row gutter={[12, 8]}>
-                  <Col span={6}>
-                    <Text type="secondary">Glass Selling</Text>
-                    <div style={{ fontSize: 15, fontWeight: 700, color: '#16a34a' }}>
-                      ₹{compWizard.glassSellingTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    </div>
-                  </Col>
-                  {(compWizard.totalProcSelling || 0) > 0 && (
-                    <Col span={6}>
-                      <Text type="secondary">Process Charges</Text>
-                      <div style={{ fontSize: 15, fontWeight: 700, color: '#6366f1' }}>
-                        ₹{(compWizard.totalProcSelling || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                      </div>
-                      <Text type="secondary" style={{ fontSize: 10 }}>Cost est. @70%</Text>
-                    </Col>
-                  )}
-                  <Col span={6}>
-                    <Text type="secondary">Glass Cost (excl. CEP)</Text>
-                    <div style={{ fontSize: 15, fontWeight: 700, color: '#ea580c' }}>
-                      ₹{(compWizard.totalCost - (compWizard.totalCepCost || 0))
-                        .toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    </div>
-                  </Col>
-                  {compWizard.cep_on && (
-                    <Col span={6}>
-                      <Text type="secondary">CEP Cost (₹{compWizard.cep_cost_rate}/rft)</Text>
-                      <div style={{ fontSize: 15, fontWeight: 700, color: '#7c3aed' }}>
-                        ₹{(compWizard.totalCepCost || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                      </div>
-                    </Col>
-                  )}
-                  <Col span={6}>
-                    <Text type="secondary">Total Glass Cost</Text>
-                    <div style={{ fontSize: 15, fontWeight: 700, color: '#dc2626' }}>
-                      ₹{compWizard.totalCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    </div>
-                    <Text type="secondary" style={{ fontSize: 10 }}>Glass + CEP</Text>
-                  </Col>
-                  <Col span={6}>
-                    <Text type="secondary">Margin</Text>
-                    <div style={{
-                      fontSize: 15, fontWeight: 700,
-                      color: compWizard.totalMargin >= 0 ? '#16a34a' : '#dc2626'
-                    }}>
-                      ₹{compWizard.totalMargin.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    </div>
-                  </Col>
-                  <Col span={6}>
-                    <Text type="secondary">Margin %</Text>
-                    <div style={{
-                      fontSize: 22, fontWeight: 800,
-                      color: compWizard.totalMarginPct >= 20 ? '#16a34a' :
-                             compWizard.totalMarginPct >= 10 ? '#f59e0b' : '#dc2626'
-                    }}>
-                      {compWizard.totalMarginPct}%
-                    </div>
-                  </Col>
-                </Row>
-              </>
-            )}
-          </Modal>
+          {/* Right Summary Sidebar */}
+          <Col xs={24} lg={6}>
+            <StickySummary
+              totals={totals}
+              gstMode={gstMode}
+              setGstMode={setGstMode}
+            />
+          </Col>
         </Row>
       </Form>
 
+      {/* ── Modal: Cost vs Selling (Per-Product) ── */}
+      <Modal title={<Space><LineChartOutlined style={{ color: '#6366f1' }} /><span>Cost vs Selling — {compWizard?.product_name}</span></Space>}
+        open={compWizard !== null} onCancel={() => { flushWizardRowsToSizes(); setCompWizard(null); setWizardCostPrice(null) }} width={820}
+        footer={<Space>
+          <Button style={{ borderColor: '#10b981', color: '#10b981' }} disabled={!wizardCostPrice || wizardCostPrice <= 0}
+            onClick={() => { flushWizardRowsToSizes(); if (compWizard?.group_key && wizardCostPrice > 0) { updateGroup(compWizard.group_key, 'manual_cost_price', wizardCostPrice); message.success(`Cost price ₹${wizardCostPrice}/sqft saved`) } setCompWizard(null); setWizardCostPrice(null) }}>
+            Save Cost Price Only
+          </Button>
+          <Button onClick={() => { flushWizardRowsToSizes(); setCompWizard(null); setWizardCostPrice(null) }}>Close</Button>
+        </Space>}>
+        {compWizard && (<>
+          <Row gutter={16} style={{ marginBottom: 16 }}>
+            <Col span={12}><Card size="small" style={{ background: '#f0fdf4', borderColor: '#86efac' }}><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><Text type="secondary">Selling Rate (Current)</Text><Tag color="green" style={{ fontSize: 10, margin: 0 }}>LOCKED</Tag></div><div style={{ fontSize: 20, fontWeight: 700, color: '#16a34a' }}>₹{compWizard.selling_rate}/sqft</div><Text type="secondary" style={{ fontSize: 10, display: 'block', marginTop: 2 }}>Cost ceiling changes do NOT affect this</Text></Card></Col>
+            <Col span={12}><Card size="small" style={{ background: '#fff7ed', borderColor: '#fed7aa' }}><Text type="secondary">Cost Price (editable, fully loaded)</Text><div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+              <InputNumber value={wizardCostPrice !== null && wizardCostPrice !== undefined ? wizardCostPrice : compWizard.cost_price} min={0} prefix="₹" addonAfter="/sqft" style={{ width: '100%' }}
+                onChange={val => {
+                  setWizardCostPrice(val); const newCost = val || 0
+                  const newRows = compWizard.rows.map(r => { const glass_cost = parseFloat(((r.cost_charged_w && r.cost_charged_h ? (r.cost_charged_w * r.cost_charged_h * r.quantity) / 144 : parseFloat(r.charged_sqft)) * newCost).toFixed(2)); const cost_amount = parseFloat((glass_cost + (r.cep_cost || 0) + (r.proc_cost || 0)).toFixed(2)); const margin_amount = parseFloat((r.selling_amount - cost_amount).toFixed(2)); const margin_pct = cost_amount > 0 ? parseFloat(((margin_amount / cost_amount) * 100).toFixed(2)) : 100; return { ...r, glass_cost, cost_amount, margin_amount, margin_pct } })
+                  const totalCost = newRows.reduce((s, r) => s + r.cost_amount, 0); const totalCepCost = newRows.reduce((s, r) => s + (r.cep_cost || 0), 0); const totalMargin = compWizard.totalSelling - totalCost; const totalMarginPct = totalCost > 0 ? parseFloat(((totalMargin / totalCost) * 100).toFixed(2)) : 100
+                  setCompWizard(prev => ({ ...prev, rows: newRows, totalCost, totalCepCost, totalMargin, totalMarginPct, cost_base_overridden: true }))
+                }} />
+            </div>
+            {compWizard.cost_addon > 0 && !compWizard.cost_base_overridden && (
+              <Text type="secondary" style={{ fontSize: 11, display: 'block', marginTop: 4, color: '#9a3412' }}>
+                Base ₹{compWizard.cost_base.toFixed(2)} + Tgh addon ₹{compWizard.cost_addon.toFixed(2)} = ₹{(compWizard.cost_base + compWizard.cost_addon).toFixed(2)}/sqft
+              </Text>
+            )}
+            <Text type="secondary" style={{ fontSize: 11, display: 'block', marginTop: 4 }}>Edit to recalculate margin live</Text></Card></Col>
+          </Row>
+
+          {compWizard.cep_on && (
+            <div style={{ background: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: 8, padding: '8px 14px', marginBottom: 12, fontSize: 12, color: '#6d28d9', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <strong>CEP (Polish - 4 sides)</strong> cost:
+              <Select size="small" value={[5,7,15].includes(compWizard.cep_cost_rate) ? compWizard.cep_cost_rate : 'custom'} style={{ width: 110 }}
+                options={[{ value: 5, label: '₹5/rft' }, { value: 7, label: '₹7/rft' }, { value: 15, label: '₹15/rft' }, { value: 'custom', label: 'Custom' }]}
+                onChange={val => {
+                  if (val === 'custom') { setCompWizard(prev => ({ ...prev, cep_cost_rate: 'custom' })); if (compWizard.group_key) updateGroup(compWizard.group_key, 'wizard_cep_cost_rate', 'custom'); return }
+                  const newRate = typeof val === 'number' ? val : null; if (compWizard.group_key) updateGroup(compWizard.group_key, 'wizard_cep_cost_rate', newRate)
+                  const newRows = compWizard.rows.map(r => { const cep_cost = parseFloat((parseFloat(r.actual_rft) * (typeof newRate === 'number' ? newRate : 5)).toFixed(2)); const cost_amount = parseFloat((r.glass_cost + cep_cost + (r.proc_cost || 0)).toFixed(2)); const margin_amount = parseFloat((r.selling_amount - cost_amount).toFixed(2)); const margin_pct = cost_amount > 0 ? parseFloat(((margin_amount / cost_amount) * 100).toFixed(2)) : 100; return { ...r, cep_cost, cost_amount, margin_amount, margin_pct } })
+                  const totalCost = newRows.reduce((s, r) => s + r.cost_amount, 0); const totalCepCost = newRows.reduce((s, r) => s + (r.cep_cost || 0), 0); const totalMargin = compWizard.totalSelling - totalCost; const totalMarginPct = totalCost > 0 ? parseFloat(((totalMargin / totalCost) * 100).toFixed(2)) : 100
+                  setCompWizard(prev => ({ ...prev, rows: newRows, totalCost, totalCepCost, totalMargin, totalMarginPct, cep_cost_rate: newRate }))
+                }} />
+              {(compWizard.cep_cost_rate === 'custom' || (![5, 7, 15].includes(compWizard.cep_cost_rate) && compWizard.cep_cost_rate != null)) && (
+                <InputNumber size="small" min={0} prefix="₹" placeholder="Enter rate" style={{ width: 120 }}
+                  value={typeof compWizard.cep_cost_rate === 'number' ? compWizard.cep_cost_rate : undefined}
+                  onChange={val => {
+                    const newRate = typeof val === 'number' ? val : 'custom'; if (compWizard.group_key) updateGroup(compWizard.group_key, 'wizard_cep_cost_rate', newRate)
+                    const newRows = compWizard.rows.map(r => { const cep_cost = parseFloat((parseFloat(r.actual_rft) * (typeof newRate === 'number' ? newRate : 5)).toFixed(2)); const cost_amount = parseFloat((r.glass_cost + cep_cost + (r.proc_cost || 0)).toFixed(2)); const margin_amount = parseFloat((r.selling_amount - cost_amount).toFixed(2)); const margin_pct = cost_amount > 0 ? parseFloat(((margin_amount / cost_amount) * 100).toFixed(2)) : 100; return { ...r, cep_cost, cost_amount, margin_amount, margin_pct } })
+                    const totalCost = newRows.reduce((s, r) => s + r.cost_amount, 0); const totalCepCost = newRows.reduce((s, r) => s + (r.cep_cost || 0), 0); const totalMargin = compWizard.totalSelling - totalCost; const totalMarginPct = totalCost > 0 ? parseFloat(((totalMargin / totalCost) * 100).toFixed(2)) : 100
+                    setCompWizard(prev => ({ ...prev, rows: newRows, totalCost, totalCepCost, totalMargin, totalMarginPct, cep_cost_rate: newRate }))
+                  }} />
+              )}
+              <Text style={{ color: '#6d28d9', fontSize: 12 }}>× Actual running ft per size</Text>
+            </div>
+          )}
+
+          <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '8px 14px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+            <Text style={{ fontSize: 12, fontWeight: 600, color: '#374151' }}>Cost Ceiling:</Text>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              <Text style={{ fontSize: 12, color: '#6b7280' }}>W:</Text>
+              <Select size="small" value={compWizard.cost_ceil_w} style={{ width: 140 }}
+                options={[{ value: 3, label: '3" (Tight)' }, { value: 6, label: '6" (Standard)' }, { value: 'plus30mm', label: '+30mm' }, { value: 'custom', label: 'Custom mm' }]}
+                onChange={val => {
+                  const effectiveCostPrice = wizardCostPrice ?? compWizard?.cost_price ?? 0
+                  const customMm = compWizard.cost_ceil_w_custom_mm || 30
+                  const costCeilFn = (x, c) => c === 'plus30mm' ? x + (30 / 25.4) : c === 'custom' ? x + (customMm / 25.4) : Math.ceil(x / c) * c
+                  const newRows = compWizard.rows.map(row => { const cost_charged_w = parseFloat(costCeilFn(row._w_raw || 0, val).toFixed(4)); const cost_charged_h = row.cost_charged_h || 0; const qty = row.quantity || 1; const charged_sqft = (cost_charged_w * cost_charged_h * qty) / 144; const glass_cost = parseFloat((charged_sqft * effectiveCostPrice).toFixed(2)); const cep_cost = parseFloat((parseFloat(row.actual_rft) * (typeof compWizard.cep_cost_rate === 'number' ? compWizard.cep_cost_rate : 5)).toFixed(2)); const cost_amount = parseFloat((glass_cost + cep_cost + (row.proc_cost || 0)).toFixed(2)); const margin_amount = parseFloat((row.selling_amount - cost_amount).toFixed(2)); const margin_pct = cost_amount > 0 ? parseFloat(((margin_amount / cost_amount) * 100).toFixed(2)) : 100; return { ...row, cost_ceil_w: val, cost_charged_w, charged_sqft: charged_sqft.toFixed(3), glass_cost, cep_cost, cost_amount, margin_amount, margin_pct } })
+                  const totalCost = newRows.reduce((s, r) => s + r.cost_amount, 0); const totalCepCost = newRows.reduce((s, r) => s + (r.cep_cost || 0), 0); const totalMargin = compWizard.totalSelling - totalCost; const totalMarginPct = totalCost > 0 ? parseFloat(((totalMargin / totalCost) * 100).toFixed(2)) : 100
+                  setCompWizard(prev => ({ ...prev, rows: newRows, totalCost, totalCepCost, totalMargin, totalMarginPct, cost_ceil_w: val }))
+                  if (compWizard.group_key) updateGroup(compWizard.group_key, 'wizard_cost_ceil_w', val)
+                }} />
+              {compWizard.cost_ceil_w === 'custom' && (
+                <InputNumber
+                  size="small"
+                  value={compWizard.cost_ceil_w_custom_mm ?? 30}
+                  min={1} max={500}
+                  addonAfter="mm"
+                  style={{ width: 110 }}
+                  onChange={val => {
+                    const mm = val || 30
+                    const effectiveCostPrice = wizardCostPrice ?? compWizard?.cost_price ?? 0
+                    const costCeilFn = (x) => x + (mm / 25.4)
+                    const newRows = compWizard.rows.map(row => { const cost_charged_w = parseFloat(costCeilFn(row._w_raw || 0).toFixed(4)); const cost_charged_h = row.cost_charged_h || 0; const qty = row.quantity || 1; const charged_sqft = (cost_charged_w * cost_charged_h * qty) / 144; const glass_cost = parseFloat((charged_sqft * effectiveCostPrice).toFixed(2)); const cep_cost = parseFloat((parseFloat(row.actual_rft) * (typeof compWizard.cep_cost_rate === 'number' ? compWizard.cep_cost_rate : 5)).toFixed(2)); const cost_amount = parseFloat((glass_cost + cep_cost + (row.proc_cost || 0)).toFixed(2)); const margin_amount = parseFloat((row.selling_amount - cost_amount).toFixed(2)); const margin_pct = cost_amount > 0 ? parseFloat(((margin_amount / cost_amount) * 100).toFixed(2)) : 100; return { ...row, cost_charged_w, charged_sqft: charged_sqft.toFixed(3), glass_cost, cep_cost, cost_amount, margin_amount, margin_pct } })
+                    const totalCost = newRows.reduce((s, r) => s + r.cost_amount, 0); const totalCepCost = newRows.reduce((s, r) => s + (r.cep_cost || 0), 0); const totalMargin = compWizard.totalSelling - totalCost; const totalMarginPct = totalCost > 0 ? parseFloat(((totalMargin / totalCost) * 100).toFixed(2)) : 100
+                    setCompWizard(prev => ({ ...prev, rows: newRows, totalCost, totalCepCost, totalMargin, totalMarginPct, cost_ceil_w_custom_mm: mm }))
+                    if (compWizard.group_key) updateGroup(compWizard.group_key, 'wizard_cost_ceil_w_custom_mm', mm)
+                  }}
+                />
+              )}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              <Text style={{ fontSize: 12, color: '#6b7280' }}>H:</Text>
+              <Select size="small" value={compWizard.cost_ceil_h} style={{ width: 140 }}
+                options={[{ value: 3, label: '3" (Tight)' }, { value: 6, label: '6" (Standard)' }, { value: 'plus30mm', label: '+30mm' }, { value: 'custom', label: 'Custom mm' }]}
+                onChange={val => {
+                  const effectiveCostPrice = wizardCostPrice ?? compWizard?.cost_price ?? 0
+                  const customMm = compWizard.cost_ceil_h_custom_mm || 30
+                  const costCeilFn = (x, c) => c === 'plus30mm' ? x + (30 / 25.4) : c === 'custom' ? x + (customMm / 25.4) : Math.ceil(x / c) * c
+                  const newRows = compWizard.rows.map(row => { const cost_charged_w = row.cost_charged_w || 0; const cost_charged_h = parseFloat(costCeilFn(row._h_raw || 0, val).toFixed(4)); const qty = row.quantity || 1; const charged_sqft = (cost_charged_w * cost_charged_h * qty) / 144; const glass_cost = parseFloat((charged_sqft * effectiveCostPrice).toFixed(2)); const cep_cost = parseFloat((parseFloat(row.actual_rft) * (typeof compWizard.cep_cost_rate === 'number' ? compWizard.cep_cost_rate : 5)).toFixed(2)); const cost_amount = parseFloat((glass_cost + cep_cost + (row.proc_cost || 0)).toFixed(2)); const margin_amount = parseFloat((row.selling_amount - cost_amount).toFixed(2)); const margin_pct = cost_amount > 0 ? parseFloat(((margin_amount / cost_amount) * 100).toFixed(2)) : 100; return { ...row, cost_ceil_h: val, cost_charged_h, charged_sqft: charged_sqft.toFixed(3), glass_cost, cep_cost, cost_amount, margin_amount, margin_pct } })
+                  const totalCost = newRows.reduce((s, r) => s + r.cost_amount, 0); const totalCepCost = newRows.reduce((s, r) => s + (r.cep_cost || 0), 0); const totalMargin = compWizard.totalSelling - totalCost; const totalMarginPct = totalCost > 0 ? parseFloat(((totalMargin / totalCost) * 100).toFixed(2)) : 100
+                  setCompWizard(prev => ({ ...prev, rows: newRows, totalCost, totalCepCost, totalMargin, totalMarginPct, cost_ceil_h: val }))
+                  if (compWizard.group_key) updateGroup(compWizard.group_key, 'wizard_cost_ceil_h', val)
+                }} />
+              {compWizard.cost_ceil_h === 'custom' && (
+                <InputNumber
+                  size="small"
+                  value={compWizard.cost_ceil_h_custom_mm ?? 30}
+                  min={1} max={500}
+                  addonAfter="mm"
+                  style={{ width: 110 }}
+                  onChange={val => {
+                    const mm = val || 30
+                    const effectiveCostPrice = wizardCostPrice ?? compWizard?.cost_price ?? 0
+                    const costCeilFn = (x) => x + (mm / 25.4)
+                    const newRows = compWizard.rows.map(row => { const cost_charged_w = row.cost_charged_w || 0; const cost_charged_h = parseFloat(costCeilFn(row._h_raw || 0).toFixed(4)); const qty = row.quantity || 1; const charged_sqft = (cost_charged_w * cost_charged_h * qty) / 144; const glass_cost = parseFloat((charged_sqft * effectiveCostPrice).toFixed(2)); const cep_cost = parseFloat((parseFloat(row.actual_rft) * (typeof compWizard.cep_cost_rate === 'number' ? compWizard.cep_cost_rate : 5)).toFixed(2)); const cost_amount = parseFloat((glass_cost + cep_cost + (row.proc_cost || 0)).toFixed(2)); const margin_amount = parseFloat((row.selling_amount - cost_amount).toFixed(2)); const margin_pct = cost_amount > 0 ? parseFloat(((margin_amount / cost_amount) * 100).toFixed(2)) : 100; return { ...row, cost_charged_h, charged_sqft: charged_sqft.toFixed(3), glass_cost, cep_cost, cost_amount, margin_amount, margin_pct } })
+                    const totalCost = newRows.reduce((s, r) => s + r.cost_amount, 0); const totalCepCost = newRows.reduce((s, r) => s + (r.cep_cost || 0), 0); const totalMargin = compWizard.totalSelling - totalCost; const totalMarginPct = totalCost > 0 ? parseFloat(((totalMargin / totalCost) * 100).toFixed(2)) : 100
+                    setCompWizard(prev => ({ ...prev, rows: newRows, totalCost, totalCepCost, totalMargin, totalMarginPct, cost_ceil_h_custom_mm: mm }))
+                    if (compWizard.group_key) updateGroup(compWizard.group_key, 'wizard_cost_ceil_h_custom_mm', mm)
+                  }}
+                />
+              )}
+            </div>
+          </div>
+
+          <Table dataSource={compWizard.rows} pagination={false} size="small" scroll={{ x: 'max-content' }}
+            columns={[
+              { title: 'Size', key: 'size', width: 130, render: (_, r) => <Text strong style={{ fontSize: 12 }}>{r.label}. {r.width_display} × {r.height_display}</Text> },
+              { title: 'Qty', dataIndex: 'quantity', width: 45 },
+              { title: 'Charged Sqft', dataIndex: 'selling_sqft', width: 90, render: v => <Text>{v}</Text> },
+              { title: 'Cost Sqft', dataIndex: 'charged_sqft', width: 90, render: v => <Text type="secondary">{v}</Text> },
+              { title: 'Actual Rft', dataIndex: 'actual_rft', width: 80, render: v => <Text type="secondary">{v}</Text> },
+              { title: 'Cost Chg W', key: 'cost_chg_w', width: 90, align: 'center', render: (_, r) => <InputNumber size="small" value={r.cost_charged_w ? parseFloat(r.cost_charged_w.toFixed(3)) : null} min={0} step={0.5} style={{ width: '100%', borderColor: '#6366f1' }} onChange={val => { const effectiveCostPrice = wizardCostPrice ?? compWizard?.cost_price ?? 0; setCompWizard(prev => { const newRows = prev.rows.map(row => { if (row.key !== r.key) return row; const cost_charged_w = val || 0, cost_charged_h = row.cost_charged_h || 0, qty = row.quantity || 1, charged_sqft = (cost_charged_w * cost_charged_h * qty) / 144, glass_cost = parseFloat((charged_sqft * effectiveCostPrice).toFixed(2)), cep_cost = typeof prev.cep_cost_rate === 'number' ? parseFloat((parseFloat(row.actual_rft) * prev.cep_cost_rate).toFixed(2)) : row.cep_cost || 0, cost_amount = parseFloat((glass_cost + cep_cost + (row.proc_cost || 0)).toFixed(2)), margin_amount = parseFloat((row.selling_amount - cost_amount).toFixed(2)), margin_pct = cost_amount > 0 ? parseFloat(((margin_amount / cost_amount) * 100).toFixed(2)) : 100; return { ...row, cost_charged_w, charged_sqft: charged_sqft.toFixed(3), glass_cost, cep_cost, cost_amount, margin_amount, margin_pct } }); const totalCost = newRows.reduce((s, row) => s + row.cost_amount, 0), totalCepCost = newRows.reduce((s, row) => s + (row.cep_cost || 0), 0), totalMargin = prev.totalSelling - totalCost, totalMarginPct = totalCost > 0 ? parseFloat(((totalMargin / totalCost) * 100).toFixed(2)) : 100; return { ...prev, rows: newRows, totalCost, totalCepCost, totalMargin, totalMarginPct } }) }} /> },
+              { title: 'Cost Chg H', key: 'cost_chg_h', width: 90, align: 'center', render: (_, r) => <InputNumber size="small" value={r.cost_charged_h ? parseFloat(r.cost_charged_h.toFixed(3)) : null} min={0} step={0.5} style={{ width: '100%', borderColor: '#6366f1' }} onChange={val => { const effectiveCostPrice = wizardCostPrice ?? compWizard?.cost_price ?? 0; setCompWizard(prev => { const newRows = prev.rows.map(row => { if (row.key !== r.key) return row; const cost_charged_w = row.cost_charged_w || 0, cost_charged_h = val || 0, qty = row.quantity || 1, charged_sqft = (cost_charged_w * cost_charged_h * qty) / 144, glass_cost = parseFloat((charged_sqft * effectiveCostPrice).toFixed(2)), cep_cost = typeof prev.cep_cost_rate === 'number' ? parseFloat((parseFloat(row.actual_rft) * prev.cep_cost_rate).toFixed(2)) : row.cep_cost || 0, cost_amount = parseFloat((glass_cost + cep_cost + (row.proc_cost || 0)).toFixed(2)), margin_amount = parseFloat((row.selling_amount - cost_amount).toFixed(2)), margin_pct = cost_amount > 0 ? parseFloat(((margin_amount / cost_amount) * 100).toFixed(2)) : 100; return { ...row, cost_charged_h, charged_sqft: charged_sqft.toFixed(3), glass_cost, cep_cost, cost_amount, margin_amount, margin_pct } }); const totalCost = newRows.reduce((s, row) => s + row.cost_amount, 0), totalCepCost = newRows.reduce((s, row) => s + (row.cep_cost || 0), 0), totalMargin = prev.totalSelling - totalCost, totalMarginPct = totalCost > 0 ? parseFloat(((totalMargin / totalCost) * 100).toFixed(2)) : 100; return { ...prev, rows: newRows, totalCost, totalCepCost, totalMargin, totalMarginPct } }) }} /> },
+              { title: 'Selling Amt', dataIndex: 'selling_amount', width: 100, align: 'right', render: v => <Text strong style={{ color: '#16a34a' }}>₹{Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Text> },
+              { title: 'Glass Cost', dataIndex: 'glass_cost', width: 100, align: 'right', render: v => <Text style={{ color: '#ea580c' }}>₹{Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Text> },
+              { title: 'Proc Cost', dataIndex: 'proc_cost', width: 90, align: 'right', render: v => <Text style={{ color: '#f59e0b' }}>₹{Number(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Text> },
+              ...(compWizard.cep_on ? [{ title: <span>CEP Cost<br /><Text type="secondary" style={{ fontSize: 10, fontWeight: 400 }}>Rft × ₹{compWizard.cep_cost_rate}</Text></span>, dataIndex: 'cep_cost', width: 100, align: 'right', render: v => <Text style={{ color: '#7c3aed' }}>₹{Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Text> }] : []),
+              { title: 'Total Cost', dataIndex: 'cost_amount', width: 100, align: 'right', render: v => <Text strong style={{ color: '#dc2626' }}>₹{Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Text> },
+            ]} />
+
+          <Divider style={{ margin: '12px 0' }} />
+          <Row gutter={[12, 8]}>
+            <Col span={6}><Text type="secondary">Glass Selling</Text><div style={{ fontSize: 15, fontWeight: 700, color: '#16a34a' }}>₹{compWizard.glassSellingTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div></Col>
+            {(compWizard.totalProcSelling || 0) > 0 && <Col span={6}><Text type="secondary">Selling Process Charges</Text><div style={{ fontSize: 15, fontWeight: 700, color: '#6366f1' }}>₹{(compWizard.totalProcSelling || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div></Col>}
+            {(compWizard.rows?.reduce((s, r) => s + (r.proc_cost || 0), 0) || 0) > 0 && <Col span={6}><Text type="secondary">Costing Process Charges</Text><div style={{ fontSize: 15, fontWeight: 700, color: '#f59e0b' }}>₹{(compWizard.rows?.reduce((s, r) => s + (r.proc_cost || 0), 0) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div></Col>}
+            <Col span={6}><Text type="secondary">Total Cost</Text><div style={{ fontSize: 15, fontWeight: 700, color: '#dc2626' }}>₹{compWizard.totalCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div><Text type="secondary" style={{ fontSize: 10 }}>Glass + CEP + Process</Text></Col>
+            <Col span={6}><Text type="secondary">Margin</Text><div style={{ fontSize: 15, fontWeight: 700, color: compWizard.totalMargin >= 0 ? '#16a34a' : '#dc2626' }}>₹{compWizard.totalMargin.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div></Col>
+            <Col span={6}><Text type="secondary">Margin %</Text><div style={{ fontSize: 22, fontWeight: 800, color: compWizard.totalMarginPct >= 20 ? '#16a34a' : compWizard.totalMarginPct >= 10 ? '#f59e0b' : '#dc2626' }}>{compWizard.totalMarginPct}%</div></Col>
+          </Row>
+        </>)}
+      </Modal>
     </MasterForm>
   )
 }
