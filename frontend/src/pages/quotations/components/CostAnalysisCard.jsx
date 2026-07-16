@@ -38,8 +38,14 @@ const CostAnalysisCard = ({
       <div style={{ padding: '12px 16px' }}>
         <Collapse size="small" style={{ border: 'none', background: 'transparent' }} ghost>
           {groups.map((group, gi) => {
+            // Selling = glass subtotals + GROUP processes + SIZE processes.
+            // Size-process selling missing tha jabki cost side (sz.cost_amount)
+            // proc cost include karta hai — isi mismatch se margin galat
+            // negative dikhta tha (e.g. -7.47% jabki asli +23.87%)
             const groupSubtotal = group.sizes.reduce((s, x) => s + (x.subtotal || 0), 0) +
-              (group.processes || []).reduce((s, p) => s + (p.amount || 0), 0)
+              (group.processes || []).reduce((s, p) => s + (p.amount || 0), 0) +
+              group.sizes.reduce((s, x) =>
+                s + (x.size_processes || []).reduce((ss, sp) => ss + (sp.amount || 0), 0), 0)
             const prod = products.find(p => p.id === group.product_id)
             
             let costPerSqft = group.manual_cost_price || 0
@@ -80,7 +86,9 @@ const CostAnalysisCard = ({
                 return s + ((p.qty_area || 0) * procCostRate)
               }, 0)
             const groupMarginAmt = groupSubtotal - groupCost
-            const groupMarginPct = groupSubtotal > 0 ? ((groupMarginAmt / groupSubtotal) * 100).toFixed(2) : '100'
+            // ÷ cost (markup) — wahi client-approved formula jo Cost Wizard,
+            // Cost vs Selling modal aur sidebar EST. MARGIN use karte hain
+            const groupMarginPct = groupCost > 0 ? ((groupMarginAmt / groupCost) * 100).toFixed(2) : '100'
             const isProfitable = parseFloat(groupMarginPct) >= 20
             const isMedium = parseFloat(groupMarginPct) >= 10 && parseFloat(groupMarginPct) < 20
 
