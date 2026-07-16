@@ -486,9 +486,9 @@ const WorkshopOrderForm = () => {
         line.act_w_mm ? `${line.act_w_mm}mm` : '—',
         line.act_h_mm ? `${line.act_h_mm}mm` : '—',
         line.qty || 1,
-        line.cep ? '✓' : '—',
+        line.cep ? 'YES' : 'NO',
         line.process_label || '—',
-        line.is_toughened ? '✓' : '—',
+        line.is_toughened ? 'YES' : 'NO',
         line.remark || '—',
       ])
 
@@ -516,6 +516,25 @@ const WorkshopOrderForm = () => {
           8: { cellWidth: 45 },
           9: { cellWidth: 12, halign: 'center' },
           10: { cellWidth: 'auto' },
+        },
+        didParseCell: (data) => {
+          // CEP (col 7) & Tgh (col 9): YES → ZapfDingbats tick ✔ (green),
+          // NO → cross ✘ (light grey). Helvetica mein ✓ glyph nahi hai —
+          // wahi pehle garbled apostrophe print hota tha.
+          if (data.section === 'body' && (data.column.index === 7 || data.column.index === 9)) {
+            const v = data.cell.raw
+            if (v === 'YES') {
+              data.cell.text = ['4']            // ZapfDingbats '4' = ✔
+              data.cell.styles.font = 'zapfdingbats'
+              data.cell.styles.textColor = [22, 163, 74]
+              data.cell.styles.fontSize = 8.5
+            } else if (v === 'NO') {
+              data.cell.text = ['8']            // ZapfDingbats '8' = ✘
+              data.cell.styles.font = 'zapfdingbats'
+              data.cell.styles.textColor = [203, 213, 225]
+              data.cell.styles.fontSize = 8.5
+            }
+          }
         },
         margin: { left: margin, right: margin },
       })
