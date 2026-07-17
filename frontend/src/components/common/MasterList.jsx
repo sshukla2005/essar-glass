@@ -53,7 +53,12 @@ const MasterList = ({
 
   // ── Fetch data ────────────────────────────────────────────────────────────
   const { data, isLoading, isFetching } = useQuery({
-    queryKey: [queryKey, page, pageSize, search, isActive, extraFilters, apiFilters],
+    // NOTE: never put JSX in a queryKey — TanStack serializes it and React
+    // elements recurse into the fiber tree (stack overflow). Only include
+    // extraFilters when it's a plain filter-params object (legacy dual-use).
+    queryKey: [queryKey, page, pageSize, search, isActive,
+      (typeof extraFilters === 'object' && !React.isValidElement(extraFilters) ? extraFilters : null),
+      apiFilters],
     queryFn:  () => api.list({
       page,
       page_size: pageSize,

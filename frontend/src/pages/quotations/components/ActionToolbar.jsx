@@ -93,7 +93,7 @@ const ActionToolbar = ({
           </Button>
         )}
 
-        {isEdit && !isSO && (
+        {isEdit && onCostAnalysis && (
           <Button 
             icon={<LineChartOutlined style={{ color: '#6366f1' }} />} 
             onClick={onCostAnalysis} 

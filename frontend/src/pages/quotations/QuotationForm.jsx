@@ -1086,36 +1086,36 @@ const QuotationForm = () => {
       }
       const soData = {
         ...form.getFieldsValue(),
-        lines: groups.flatMap(group =>
-          group.sizes.map(size => ({
-            description: group.description || `${group.glass_thickness}mm ${group.glass_type} ${group.glass_category}`,
-            product_id: group.product_id || null,
-            width_mm: size.width_inch ? Math.round(size.width_inch * 25.4) : null,
-            height_mm: size.height_inch ? Math.round(size.height_inch * 25.4) : null,
-            cep: (size.cep_charges || 0) > 0 || group.cep,
-            pricing_method: group.pricing_method || 'per_sqft',
-            quantity: size.quantity || 1,
-            unit_price: group.rate || 0,
-            subtotal: size.subtotal || 0,
-            is_toughened: group.is_toughened || group.glass_type === 'Toughened',
-            processes: (group.processes || []).map(p => ({
-              process_id: p.process_id,
-              process_name: getProcessName(p.process_id),
-              charge_type: p.charge_type,
-              rate: p.rate,
-              qty_area: p.qty_area,
-              amount: p.amount,
-            })),
-            size_processes: (size.size_processes || []).map(p => ({
-              process_id: p.process_id,
-              process_name: getProcessName(p.process_id),
-              charge_type: p.charge_type,
-              rate: p.rate,
-              qty_area: p.qty_area,
-              amount: p.amount,
-            })),
-          }))
-        ),
+        lines: (() => {
+          const flat = getFlatLines()
+          let li = 0
+          return groups.flatMap(group =>
+            group.sizes.map(size => {
+              const base = flat[li++] || {}
+              return {
+                ...base,
+                description: group.description || `${group.glass_thickness}mm ${group.glass_type} ${group.glass_category}`,
+                product_id: group.product_id || null,
+                width_mm: size.width_inch ? Math.round(size.width_inch * 25.4) : null,
+                height_mm: size.height_inch ? Math.round(size.height_inch * 25.4) : null,
+                cep: (size.cep_charges || 0) > 0 || group.cep,
+                pricing_method: group.pricing_method || 'per_sqft',
+                quantity: size.quantity || 1,
+                unit_price: group.rate || 0,
+                subtotal: size.subtotal || 0,
+                is_toughened: group.is_toughened || group.glass_type === 'Toughened',
+                processes: (group.processes || []).map(({ proc_key, ...p }) => ({
+                  ...p,
+                  process_name: getProcessName(p.process_id),
+                })),
+                size_processes: (size.size_processes || []).map(({ sproc_key, ...p }) => ({
+                  ...p,
+                  process_name: getProcessName(p.process_id),
+                })),
+              }
+            })
+          )
+        })(),
         groups: groups,
         processes: [],
         hardware_items: hardwareItems,

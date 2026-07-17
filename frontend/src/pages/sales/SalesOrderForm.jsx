@@ -135,6 +135,9 @@ const SalesOrderForm = () => {
   const [gstMode, setGstMode] = useState('cgst_sgst')
   const [compWizard, setCompWizard] = useState(null)
   const [wizardCostPrice, setWizardCostPrice] = useState(null)
+  const [globalComparison, setGlobalComparison] = useState(null)
+  const [marginTarget, setMarginTarget] = useState(null)
+  const unit = soUnit
 
   const { data: record, isLoading } = useQuery({
     queryKey: ['sales_orders', id], queryFn: () => salesOrderApi.get(id).then(r => r.data), enabled: isEdit,
@@ -300,6 +303,19 @@ const SalesOrderForm = () => {
         charged_h_inch: line.charged_h_inch || 0,
         _charged_w_manual: line._charged_w_manual || false,
         _charged_h_manual: line._charged_h_manual || false,
+        cost_ceil_w: line.cost_ceil_w ?? undefined,
+        cost_ceil_h: line.cost_ceil_h ?? undefined,
+        cost_charged_w: line.cost_charged_w ?? undefined,
+        cost_charged_h: line.cost_charged_h ?? undefined,
+        cost_charged_sqft: line.cost_charged_sqft ?? undefined,
+        _cost_charged_w_manual: line._cost_charged_w_manual || false,
+        _cost_charged_h_manual: line._cost_charged_h_manual || false,
+        glass_cost: line.glass_cost ?? 0,
+        cep_cost: line.cep_cost ?? 0,
+        proc_cost: line.proc_cost ?? 0,
+        cost_amount: line.cost_amount ?? 0,
+        margin_amount: line.margin_amount ?? 0,
+        margin_pct: line.margin_pct ?? 0,
         cep_rft: line.cep_rft || 0,
         cep_charges: line.cep_charges || 0,
         tgh_sqmt: line.tgh_sqmt || 0,
@@ -338,19 +354,20 @@ const SalesOrderForm = () => {
         if (field === 'glass_type') {
           updated.is_toughened = (value === 'Toughened')
         }
-        if (!g.custom_costing) {
-          const cat = updated.glass_category
-          const thick = updated.glass_thickness
-          if (cat && thick) {
-            const baseRate = calcRateFromMatrix(cat, thick)
-            updated.base_glass_rate = baseRate
+        const cat = updated.glass_category
+        const thick = updated.glass_thickness
+        const hasProtectedCustomRate = updated.custom_costing && (g.rate || 0) > 0
+
+        if (cat && thick) {
+          const baseRate = calcRateFromMatrix(cat, thick)
+          updated.base_glass_rate = baseRate
+          if (!hasProtectedCustomRate) {
             updated.rate = baseRate
           }
         }
         // First pass — calculate sizes to get tgh_rate_addon
         updated.sizes = g.sizes.map(s => calcGroupSize(updated, s))
-        // If toughened — add avg tgh_rate_addon to rate
-        if (updated.is_toughened || updated.glass_type === 'Toughened') {
+        if (!hasProtectedCustomRate && (updated.is_toughened || updated.glass_type === 'Toughened')) {
           const avgAddon = updated.sizes.length > 0
             ? updated.sizes.reduce((s, sz) => s + (sz.tgh_rate_addon || 0), 0) / updated.sizes.length
             : 0
@@ -368,8 +385,12 @@ const SalesOrderForm = () => {
       if (field === 'ceiling_inches') {
         updated.sizes = g.sizes.map(s => calcGroupSize(updated, s))
       }
-
-      if (field === 'ceiling_w_inches' || field === 'ceiling_h_inches') {
+      if (
+        field === 'ceiling_w_inches' ||
+        field === 'ceiling_h_inches' ||
+        field === 'ceiling_w_custom_mm' ||
+        field === 'ceiling_h_custom_mm'
+      ) {
         updated.sizes = g.sizes.map(s => calcGroupSize(updated, s))
       }
 
@@ -377,26 +398,26 @@ const SalesOrderForm = () => {
         updated.sizes = g.sizes.map(s => calcGroupSize(updated, s))
       }
 
-      if (['rate', 'rate_rft', 'pricing_method', 'discount_pct', 'tax_rate'].includes(field)) {
+      if ([
+        'rate', 'rate_rft', 'pricing_method', 'discount_pct', 'tax_rate',
+        'manual_cost_price', 'wizard_cost_ceil_w', 'wizard_cost_ceil_h', 'wizard_cep_cost_rate',
+        'wizard_cost_ceil_w_custom_mm', 'wizard_cost_ceil_h_custom_mm'
+      ].includes(field)) {
         updated.sizes = g.sizes.map(s => calcGroupSize(updated, s))
       }
 
       if (field === 'product_id') {
         const prod = products.find(p => p.id === value)
         if (prod) {
-          if (!g.custom_costing) {
-            try {
-              const matrix = JSON.parse(localStorage.getItem('glass_rate_matrix') || '{}')
-              const baseRate = matrix?.base_rates?.[prod.glass_category]
-              if (baseRate && prod.thickness_mm) {
-                updated.rate = parseFloat((parseFloat(prod.thickness_mm) * baseRate / 10.764).toFixed(2))
-              } else {
-                updated.rate = prod.sale_price || 0
-              }
-            } catch {
+          try {
+            const matrix = JSON.parse(localStorage.getItem('glass_rate_matrix') || '{}')
+            const baseRate = matrix?.base_rates?.[prod.glass_category]
+            if (baseRate && prod.thickness_mm) {
+              updated.rate = parseFloat((parseFloat(prod.thickness_mm) * baseRate / 10.764).toFixed(2))
+            } else {
               updated.rate = prod.sale_price || 0
             }
-          } else {
+          } catch {
             updated.rate = prod.sale_price || 0
           }
           updated.description = prod.name
@@ -434,6 +455,10 @@ const SalesOrderForm = () => {
         updated.sizes = g.sizes.map(s => calcGroupSize(updated, s))
       }
 
+      if (field === 'cep_polish_rate' || field === 'cep_polish_rate_custom') {
+        updated.sizes = g.sizes.map(s => calcGroupSize(updated, s))
+      }
+
       return updated
     }))
   }
@@ -444,6 +469,8 @@ const SalesOrderForm = () => {
       const updatedSizes = g.sizes.map(s => {
         if (s.size_key !== skey) return s
         const updated = { ...s, [field]: value }
+        if (field === 'width_inch') updated._charged_w_manual = false
+        if (field === 'height_inch') updated._charged_h_manual = false
         return calcGroupSize(g, updated)
       })
       let updatedGroup = { ...g, sizes: updatedSizes }
@@ -524,6 +551,8 @@ const SalesOrderForm = () => {
     qty_area: 0,
     rate: 0,
     amount: 0,
+    cost_rate: 0,
+    cost_amount: 0,
   })
 
   const addSizeProcess = (gkey, skey) => {
@@ -587,9 +616,12 @@ const SalesOrderForm = () => {
                   updated.amount = 0
                 }
               }
-              if (field === 'qty_area' || field === 'rate') {
+              if (field === 'qty_area' || field === 'rate' || field === 'cost_rate') {
                 updated.amount = parseFloat(
                   ((updated.qty_area || 0) * (updated.rate || 0)).toFixed(2)
+                )
+                updated.cost_amount = parseFloat(
+                  ((updated.qty_area || 0) * (updated.cost_rate || 0)).toFixed(2)
                 )
               }
               return updated
@@ -628,12 +660,19 @@ const SalesOrderForm = () => {
               if (pm.charge_type === 'fixed') updated.qty_area = 1
 
               updated.amount = parseFloat(((updated.qty_area || 0) * pm.rate).toFixed(2))
+              updated.cost_rate = (typeof pm.cost_rate === 'number' && pm.cost_rate >= 0)
+                ? pm.cost_rate
+                : parseFloat((pm.rate * 0.70).toFixed(2))
             }
           }
 
-          if (field === 'qty_area' || field === 'rate') {
+          if (field === 'qty_area' || field === 'rate' || field === 'cost_rate') {
             updated.amount = parseFloat(
               ((updated.qty_area || 0) * (updated.rate || 0)).toFixed(2)
+            )
+            const gpCostRate = updated.cost_rate ?? ((updated.rate || 0) * 0.70)
+            updated.cost_amount = parseFloat(
+              ((updated.qty_area || 0) * gpCostRate).toFixed(2)
             )
           }
 
@@ -641,6 +680,106 @@ const SalesOrderForm = () => {
         })
       }
     }))
+  }
+
+  const calculateSellingPriceForTargetMargin = (cost, targetMarginPct) => {
+    if (!cost || cost <= 0) return 0
+    const t = parseFloat(targetMarginPct)
+    if (isNaN(t) || t <= 0) return cost
+    return parseFloat((cost * (1 + t / 100)).toFixed(2))
+  }
+
+  const applyTrueMarginToAll = (targetMarginPct) => {
+    if (!targetMarginPct || targetMarginPct <= 0 || targetMarginPct >= 100) {
+      message.error('True Margin must be between 1% and 99%')
+      return
+    }
+
+    setGroups(prev => prev.map(g => {
+      const { loadedCost: totalGlassCostRate, baseCost: baseCostRate } = getGroupLoadedCostRate(g, products)
+
+      const totalGlassCost = g.sizes.reduce((sum, sz) => sum + (sz.glass_cost || 0), 0)
+      const totalEffectiveQty = g.sizes.reduce((sum, sz) => sum + (sz.effective_qty || sz.total_sqft || 0.001), 0)
+      const totalGlassSelling = totalGlassCost * (1 + targetMarginPct / 100)
+      
+      const newRateFallback = totalGlassCostRate > 0 ? calculateSellingPriceForTargetMargin(totalGlassCostRate, targetMarginPct) : g.rate
+      const newRate = totalGlassCost > 0
+        ? (totalEffectiveQty > 0 ? parseFloat((totalGlassSelling / totalEffectiveQty).toFixed(2)) : g.rate)
+        : newRateFallback
+
+      const updatedProcesses = (g.processes || []).map(p => {
+        const procCostRate = p.cost_rate ?? (p.rate * 0.70)
+        const newProcRate = procCostRate > 0
+          ? calculateSellingPriceForTargetMargin(procCostRate, targetMarginPct)
+          : (p.rate || 0)
+        const newAmt = parseFloat(((p.qty_area || 0) * newProcRate).toFixed(2))
+        return { ...p, cost_rate: procCostRate, rate: newProcRate, amount: newAmt }
+      })
+
+      const updatedSizesWithProcs = g.sizes.map(s => {
+        const newSizeProcs = (s.size_processes || []).map(sp => {
+          const spCostRate = sp.cost_rate ?? (sp.rate * 0.70)
+          const newSpRate = spCostRate > 0
+            ? calculateSellingPriceForTargetMargin(spCostRate, targetMarginPct)
+            : (sp.rate || 0)
+          const newSpAmt = parseFloat(((sp.qty_area || 0) * newSpRate).toFixed(2))
+          return { ...sp, cost_rate: spCostRate, rate: newSpRate, amount: newSpAmt }
+        })
+        return { ...s, size_processes: newSizeProcs }
+      })
+
+      const updatedG = {
+        ...g,
+        rate: newRate,
+        custom_costing: true,
+        target_margin: null,
+        manual_cost_price: totalGlassCostRate,
+        processes: updatedProcesses,
+        sizes: updatedSizesWithProcs
+      }
+
+      if (g.cep) {
+        const cepCostRate = (typeof g.wizard_cep_cost_rate === 'number' && g.wizard_cep_cost_rate >= 0) ? g.wizard_cep_cost_rate : 5
+        const newCepPolishRateCustom = calculateSellingPriceForTargetMargin(cepCostRate, targetMarginPct)
+        updatedG.cep_polish_rate = 'custom'
+        updatedG.cep_polish_rate_custom = newCepPolishRateCustom
+      }
+
+      updatedG.sizes = updatedG.sizes.map(s => calcGroupSize(updatedG, s))
+
+      return updatedG
+    }))
+
+    setHardwareItems(prev => prev.map(h => {
+      const cost = h.cost_amount || (h.qty || 0) * (h.cost_rate || 0)
+      if (!cost || cost <= 0) return h
+      const newSellingAmt = calculateSellingPriceForTargetMargin(cost, targetMarginPct)
+      const qty = h.qty || 1
+      const newRate = parseFloat((newSellingAmt / qty).toFixed(4))
+      return { ...h, rate: newRate, amount: parseFloat(newSellingAmt.toFixed(2)) }
+    }))
+
+    setLaborItems(prev => prev.map(l => {
+      const cost = l.cost_amount || (l.qty || 0) * (l.cost_rate || 0)
+      if (!cost || cost <= 0) return l
+      const newSellingAmt = calculateSellingPriceForTargetMargin(cost, targetMarginPct)
+      const qty = l.qty || 1
+      const newRate = parseFloat((newSellingAmt / qty).toFixed(4))
+      return { ...l, rate: newRate, amount: parseFloat(newSellingAmt.toFixed(2)) }
+    }))
+
+    setWastageItems(prev => prev.map(w => {
+      const cost = w.cost_amount || (w.qty || 0) * (w.cost_rate || 0)
+      if (!cost || cost <= 0) return w
+      const newSellingAmt = calculateSellingPriceForTargetMargin(cost, targetMarginPct)
+      const qty = w.qty || 1
+      const newRate = parseFloat((newSellingAmt / qty).toFixed(4))
+      return { ...w, rate: newRate, amount: parseFloat(newSellingAmt.toFixed(2)) }
+    }))
+
+    message.success(`✓ All components updated to ${targetMarginPct}% margin (DC Charges unchanged, GST excluded)`)
+    setGlobalComparison(null)
+    setMarginTarget(null)
   }
 
   const getFlatLines = () => {
@@ -652,6 +791,8 @@ const SalesOrderForm = () => {
         ceiling_inches: g.ceiling_inches,
         ceiling_w_inches: g.ceiling_w_inches ?? g.ceiling_inches ?? 6,
         ceiling_h_inches: g.ceiling_h_inches ?? g.ceiling_inches ?? 6,
+        ceiling_w_custom_mm: g.ceiling_w_custom_mm ?? 30,
+        ceiling_h_custom_mm: g.ceiling_h_custom_mm ?? 30,
         is_toughened: g.is_toughened,
         product_id: g.product_id,
         description: g.description,
@@ -662,16 +803,14 @@ const SalesOrderForm = () => {
         wizard_cost_ceil_h: g.wizard_cost_ceil_h ?? 3,
         wizard_cost_ceil_w_custom_mm: g.wizard_cost_ceil_w_custom_mm ?? 30,
         wizard_cost_ceil_h_custom_mm: g.wizard_cost_ceil_h_custom_mm ?? 30,
-        wizard_cep_cost_rate: g.wizard_cep_cost_rate ?? 5,
-        ceiling_w_custom_mm: g.ceiling_w_custom_mm ?? 30,
-        ceiling_h_custom_mm: g.ceiling_h_custom_mm ?? 30,
-        cep_polish_rate: g.cep_polish_rate ?? 15,
-        cep_polish_rate_custom: g.cep_polish_rate_custom ?? null,
         artwork_master_id: g.artwork_master_id || null,
         artwork_name: g.artwork_name || null,
         artwork_file_data: g.artwork_file_data || null,
+        wizard_cep_cost_rate: g.wizard_cep_cost_rate ?? 5,
         rate_rft: g.rate_rft,
         cep: g.cep,
+        cep_polish_rate: g.cep_polish_rate || 15,
+        cep_polish_rate_custom: g.cep_polish_rate_custom ?? null,
         pricing_method: g.pricing_method,
         discount_pct: g.discount_pct,
         tax_rate: g.tax_rate,
@@ -691,6 +830,19 @@ const SalesOrderForm = () => {
         charged_h_inch: s.charged_h_inch,
         _charged_w_manual: s._charged_w_manual || false,
         _charged_h_manual: s._charged_h_manual || false,
+        cost_ceil_w: s.cost_ceil_w ?? null,
+        cost_ceil_h: s.cost_ceil_h ?? null,
+        cost_charged_w: s.cost_charged_w ?? null,
+        cost_charged_h: s.cost_charged_h ?? null,
+        cost_charged_sqft: s.cost_charged_sqft ?? null,
+        _cost_charged_w_manual: s._cost_charged_w_manual || false,
+        _cost_charged_h_manual: s._cost_charged_h_manual || false,
+        glass_cost: s.glass_cost ?? 0,
+        cep_cost: s.cep_cost ?? 0,
+        proc_cost: s.proc_cost ?? 0,
+        cost_amount: s.cost_amount ?? 0,
+        margin_amount: s.margin_amount ?? 0,
+        margin_pct: s.margin_pct ?? 0,
         cep_rft: s.cep_rft,
         cep_charges: s.cep_charges,
         tgh_sqmt: s.tgh_sqmt,
@@ -720,37 +872,7 @@ const SalesOrderForm = () => {
         delivery_date: record.delivery_date ? dayjs(record.delivery_date) : null,
       })
 
-      if (record.groups?.length) {
-        const mappedGroups = record.groups.map(g => ({
-          ...emptyGroup(),
-          ...g,
-          group_key: Date.now() + Math.random(),
-          sizes: (g.sizes || []).map(s => ({
-            ...emptySize(),
-            ...s,
-            size_key: Date.now() + Math.random(),
-          })),
-          processes: (g.processes || []).map(p => ({
-            ...emptyGroupProcess(),
-            ...p,
-            proc_key: Date.now() + Math.random(),
-          }))
-        }))
-        mappedGroups.forEach(g => {
-          g.sizes = g.sizes.map(s => {
-            const autoW = parseFloat(getAutoChargedDim(g, s.width_inch || 0, 'w').toFixed(4))
-            const autoH = parseFloat(getAutoChargedDim(g, s.height_inch || 0, 'h').toFixed(4))
-            if (!s._charged_w_manual && s.charged_w_inch > 0 && Math.abs(s.charged_w_inch - autoW) > 0.01) {
-              s._charged_w_manual = true
-            }
-            if (!s._charged_h_manual && s.charged_h_inch > 0 && Math.abs(s.charged_h_inch - autoH) > 0.01) {
-              s._charged_h_manual = true
-            }
-            return calcGroupSize(g, s)
-          })
-        })
-        setGroups(mappedGroups)
-      } else if (record.lines?.length) {
+      if (record.lines?.length) {
         const reconstructed = reconstructGroups(record.lines)
         if (record.groups?.length) {
           reconstructed.forEach((g, idx) => {
@@ -892,6 +1014,9 @@ const SalesOrderForm = () => {
       const sizes = g.sizes.map((s, i) => {
         const r = compWizard.rows[i]
         if (!r) return s
+        // A row counts as manually edited only if its value differs from
+        // what the current ceiling would produce — ceiling changes alone
+        // must NOT set the manual flag, or ceilings would stop working.
         const autoW = parseFloat(ceilFn(r._w_raw || 0, r.cost_ceil_w || 3, g.wizard_cost_ceil_w_custom_mm || 30).toFixed(4))
         const autoH = parseFloat(ceilFn(r._h_raw || 0, r.cost_ceil_h || 3, g.wizard_cost_ceil_h_custom_mm || 30).toFixed(4))
         const wManual = (r.cost_charged_w > 0) && Math.abs(r.cost_charged_w - autoW) > 0.001
@@ -904,6 +1029,7 @@ const SalesOrderForm = () => {
           cost_charged_h: r.cost_charged_h,
           _cost_charged_w_manual: wManual,
           _cost_charged_h_manual: hManual,
+          // separate field — never touch s.charged_sqft (selling side)
           cost_charged_sqft: parseFloat(r.charged_sqft) || 0,
           glass_cost: r.glass_cost || 0,
           cep_cost: r.cep_cost || 0,
@@ -918,26 +1044,33 @@ const SalesOrderForm = () => {
   }
 
   const openComparisonWizard = (group) => {
+    // Always reset to null first — ensures fresh calc every open
     setWizardCostPrice(null)
     setCompWizard(null)
 
+    // Seed with the FULLY LOADED cost (base + toughening addon if applicable),
+    // not just the base — this is what the InputNumber displays and edits,
+    // and what (Cost Price) × (Charged Sqft) must equal Total Glass Cost.
     const { loadedCost: costPerSqft, baseCost: wizardBaseCost, addon: wizardCostAddon } = getGroupLoadedCostRate(group, products)
     setWizardCostPrice(costPerSqft)
 
-    const CEP_COST_RATE = 5
+    const CEP_COST_RATE = 5  // ₹5 per running foot (client confirmed)
 
     const rows = group.sizes.map((s, i) => {
       const w = s.width_inch || 0
       const h = s.height_inch || 0
       const qty = s.quantity || 1
 
+      // ── SELLING SIDE ──
       const selling_sqft = s.total_sqft || 0
       const selling_amount = s.subtotal || 0
 
+      // ── COST SIDE ──
       const cost_ceil_w = s.cost_ceil_w || group.wizard_cost_ceil_w || 3
       const cost_ceil_h = s.cost_ceil_h || group.wizard_cost_ceil_h || 3
       const cost_charged_w = s.cost_charged_w !== undefined ? s.cost_charged_w : w
       const cost_charged_h = s.cost_charged_h !== undefined ? s.cost_charged_h : h
+      // persisted COST-side sqft; falls back to selling charged_sqft on first-ever open
       const charged_sqft = (s.cost_charged_sqft !== undefined && s.cost_charged_sqft !== null)
         ? s.cost_charged_sqft : (s.charged_sqft || 0)
       const glass_cost = s.glass_cost || 0
@@ -974,24 +1107,30 @@ const SalesOrderForm = () => {
       }
     })
 
+    // Per-product wizard: keep glass, CEP, and process costs fully separate
     const glassSellingTotal = rows.reduce((s, r) => s + r.selling_amount, 0)
+    // glass_cost only — NOT cost_amount (which includes cep+proc) so the
+    // footer label "Glass Cost (excl. CEP)" shows the correct base number
     const glassCostTotal = rows.reduce((s, r) => s + (r.glass_cost || 0), 0)
     const totalCepCost = rows.reduce((s, r) => s + (r.cep_cost || 0), 0)
     const totalSizeProcCost = rows.reduce((s, r) => s + (r.proc_cost || 0), 0)
 
+    // Group-level processes — use the editable cost_rate; 70% of selling only as fallback
     const procSelling = (group.processes || []).reduce((s, p) => s + (p.amount || 0), 0)
     const groupProcCost = parseFloat(((group.processes || []).reduce((s, p) => {
       const cr = p.cost_rate ?? ((p.rate || 0) * 0.70)
       return s + (p.qty_area || 0) * cr
     }, 0)).toFixed(2))
 
+    // Size-level processes selling amount
     const sizeProcSelling = (group.sizes || [])
       .flatMap(s => s.size_processes || [])
       .reduce((s, p) => s + (p.amount || 0), 0)
 
     const totalProcSelling = procSelling + sizeProcSelling
 
-    const totalSelling = parseFloat((glassSellingTotal).toFixed(2))
+    // totalCost = glass only + CEP + size proc actual cost + group proc 70% estimate
+    const totalSelling = parseFloat((glassSellingTotal + totalProcSelling).toFixed(2))
     const totalCost = parseFloat((glassCostTotal + totalCepCost + totalSizeProcCost + groupProcCost).toFixed(2))
 
     const totalMargin = parseFloat((totalSelling - totalCost).toFixed(2))
@@ -1005,16 +1144,140 @@ const SalesOrderForm = () => {
       cost_addon: wizardCostAddon,
       selling_rate: group.rate,
       cep_on: group.cep,
-      cep_cost_rate: (typeof group.wizard_cep_cost_rate === 'number' || group.wizard_cep_cost_rate === 'custom') ? group.wizard_cep_cost_rate : 5,
+      cep_cost_rate: (typeof group.wizard_cep_cost_rate === 'number' && group.wizard_cep_cost_rate >= 0) ? group.wizard_cep_cost_rate : (group.wizard_cep_cost_rate === 'custom' ? 'custom' : CEP_COST_RATE),
       cost_ceil_w: group.wizard_cost_ceil_w || 3,
       cost_ceil_h: group.wizard_cost_ceil_h || 3,
-      cost_ceil_w_custom_mm: group.wizard_cost_ceil_w_custom_mm || 30,
-      cost_ceil_h_custom_mm: group.wizard_cost_ceil_h_custom_mm || 30,
       rows,
       glassSellingTotal,
       totalProcSelling,
-      totalSelling, totalCost, totalCepCost, totalMargin, totalMarginPct,
+      totalSelling, totalCost, totalCepCost,
+      // Store glass-only cost separately so the footer can show it
+      // without accidentally absorbing proc costs via totalCost - totalCepCost
+      glassCostOnly: glassCostTotal,
+      totalMargin, totalMarginPct,
       group_key: group.group_key,
+    })
+  }
+
+  const openGlobalComparison = () => {
+    const CEP_COST_RATE = 5
+    const allRows = []
+    let rowIndex = 0
+
+    groups.forEach((group, gi) => {
+      group.sizes?.forEach((s, si) => {
+        const w = s.width_inch || 0
+        const h = s.height_inch || 0
+        const qty = s.quantity || 1
+
+        const glass_cost = s.glass_cost || 0
+        const cep_cost = s.cep_cost || 0
+        const proc_cost = s.proc_cost || 0
+        // Cost Amt = glass + CEP, matching Selling Amt (s.subtotal) which
+        // includes cep_charges. proc_cost stays OUT — process selling is
+        // not in the row's Selling Amt (processes are separate rows).
+        const cost_amount = parseFloat((glass_cost + cep_cost).toFixed(2))
+        const selling_amount = s.subtotal || 0
+        const margin_amount = parseFloat((selling_amount - cost_amount).toFixed(2))
+        const margin_pct = cost_amount > 0
+          ? parseFloat(((margin_amount / cost_amount) * 100).toFixed(2))
+          : 100
+        const charged_sqft = s.charged_sqft || 0
+
+        // Resolve cost per sqft for display
+        let costPerSqft = group.manual_cost_price || 0
+        if (!costPerSqft) {
+          const prod = products.find(p => p.id === group.product_id)
+          if (prod?.cost_price) {
+            costPerSqft = prod.cost_price
+          } else if (group.glass_category && group.glass_thickness) {
+            try {
+              const matrix = JSON.parse(localStorage.getItem('glass_rate_matrix') || '{}')
+              const costRate = matrix?.cost_rates?.[group.glass_category]
+              if (costRate) costPerSqft = parseFloat((parseFloat(group.glass_thickness) * costRate / 10.764).toFixed(2))
+            } catch { }
+          }
+          if (!costPerSqft && (group.base_glass_rate || group.rate) > 0) {
+            costPerSqft = parseFloat(((group.base_glass_rate || group.rate) * 0.70).toFixed(2))
+          }
+        }
+
+        allRows.push({
+          key: rowIndex++,
+          is_first_in_group: si === 0,
+          group_no: gi + 1,
+          group_name: group.description || `Group ${gi + 1}`,
+          size_label: String.fromCharCode(97 + si),
+          width_display: unit === 'inch' ? `${toFraction(w)}"` : `${(w * 25.4).toFixed(1)}mm`,
+          height_display: unit === 'inch' ? `${toFraction(h)}"` : `${(h * 25.4).toFixed(1)}mm`,
+          quantity: qty,
+          selling_rate: group.rate,
+          cost_per_sqft: costPerSqft,
+          selling_sqft: (s.total_sqft || 0).toFixed(3),
+          charged_sqft: charged_sqft.toFixed(3),
+          glass_cost,
+          cep_cost,
+          proc_cost,
+          selling_amount,
+          cost_amount,
+          margin_amount,
+          margin_pct,
+          cep_on: group.cep,
+        })
+      })
+    })
+
+    const glassSellingTotal = allRows.reduce((s, r) => s + r.selling_amount, 0)
+    // glass only — cost_amount now includes CEP, so sum glass_cost directly
+    const glassCostTotal = allRows.reduce((s, r) => s + (r.glass_cost || 0), 0)
+    const glassCepTotal = allRows.reduce((s, r) => s + (r.cep_cost || 0), 0)
+    const glassProcTotal = allRows.reduce((s, r) => s + (r.proc_cost || 0), 0)
+    const glassTotalCost = parseFloat((glassCostTotal + glassCepTotal + glassProcTotal).toFixed(2))
+    // Include hardware, labor, wastage, and DC
+    const hwSell = hardwareItems.reduce((s, h) => s + (h.amount || 0), 0)
+    const hwCost = hardwareItems.reduce((s, h) => s + (h.cost_amount || (h.qty || 0) * (h.cost_rate || 0)), 0)
+    const lbSell = laborItems.reduce((s, l) => s + (l.amount || 0), 0)
+    const lbCost = laborItems.reduce((s, l) => s + (l.cost_amount || (l.qty || 0) * (l.cost_rate || 0)), 0)
+    const wstSell = wastageItems.reduce((s, w) => s + (w.amount || 0), 0)
+    const wstCost = wastageItems.reduce((s, w) => s + (w.cost_amount || (w.qty || 0) * (w.cost_rate || 0)), 0)
+    // Process SELLING — group + size processes. These rows are displayed in the
+    // breakdown and their COSTS are already in totals, but their selling was
+    // never added to the Grand Total (bug: GT showed 19,460 instead of 20,690).
+    const procSellTotal = groups.reduce((s, g) =>
+      s + (g.processes || []).reduce((ss, p) => ss + (p.amount || 0), 0)
+      + g.sizes.reduce((ss, sz) =>
+        ss + (sz.size_processes || []).reduce((sss, sp) => sss + (sp.amount || 0), 0), 0), 0)
+    // Group process COST (est @70% when no cost_rate) — displayed as rows but
+    // was missing from grand total cost (glassProcTotal covers size procs only)
+    const groupProcCost = groups.reduce((s, g) =>
+      s + (g.processes || []).reduce((ss, p) =>
+        ss + (p.qty_area || 0) * (p.cost_rate ?? ((p.rate || 0) * 0.70)), 0), 0)
+    const dcSell = parseFloat(dcCharges || 0)
+    const subBeforeGst = glassSellingTotal + procSellTotal + hwSell + lbSell + wstSell + dcSell
+    let gstAmt = 0
+    if (gstMode === 'igst') gstAmt = parseFloat((subBeforeGst * 0.18).toFixed(2))
+    else if (gstMode === 'cgst_sgst') gstAmt = parseFloat((subBeforeGst * 0.18).toFixed(2))
+    const totalSelling = parseFloat((subBeforeGst + gstAmt).toFixed(2))
+    const costBeforeGst = glassTotalCost + groupProcCost + hwCost + lbCost + wstCost + dcCost
+    // GST on cost ONLY when a GST mode is actually selected — same whitelist
+    // as the selling side. (The Summary "None" button sets gstMode='off', so
+    // the old `!== 'none'` check wrongly applied 18% even with GST off.)
+    const costGst = (gstMode === 'igst' || gstMode === 'cgst_sgst')
+      ? parseFloat((costBeforeGst * 0.18).toFixed(2)) : 0
+    const totalCost = parseFloat((costBeforeGst + costGst).toFixed(2))
+
+    // Margin excludes DC and GST
+    const sellableTotal = glassSellingTotal + procSellTotal + hwSell + lbSell + wstSell
+    const sellableCost = glassTotalCost + groupProcCost + hwCost + lbCost + wstCost
+    const totalMargin = parseFloat((sellableTotal - sellableCost).toFixed(2))
+    const totalMarginPct = sellableCost > 0
+      ? parseFloat(((totalMargin / sellableCost) * 100).toFixed(2)) : 100
+
+    setGlobalComparison({
+      allRows, totalSelling, totalCost, totalMargin, totalMarginPct,
+      glassSellingTotal, glassCostTotal, glassCepTotal, glassProcTotal, glassTotalCost,
+      hwSell, hwCost, lbSell, lbCost, wstSell, wstCost, dcSell, dcCost, gstAmt, costGst,
+      costBeforeGst
     })
   }
 
@@ -1311,6 +1574,7 @@ const SalesOrderForm = () => {
         type="sales_order"
         status={status}
         isEdit={isEdit}
+        onCostAnalysis={openGlobalComparison}
         onGeneratePDF={async () => {
           const recordData = {
             ...form.getFieldsValue(),
@@ -1676,6 +1940,553 @@ const SalesOrderForm = () => {
             <Col span={6}><Text type="secondary">Margin %</Text><div style={{ fontSize: 22, fontWeight: 800, color: compWizard.totalMarginPct >= 20 ? '#16a34a' : compWizard.totalMarginPct >= 10 ? '#f59e0b' : '#dc2626' }}>{compWizard.totalMarginPct}%</div></Col>
           </Row>
         </>)}
+      </Modal>
+
+      {/* ── Modal: Overall Cost Analysis ── */}
+      <Modal
+        title={
+          <Space>
+            <LineChartOutlined style={{ color: '#6366f1' }} />
+            <span>Cost vs Selling — Full Sales Order Analysis</span>
+          </Space>
+        }
+        open={globalComparison !== null}
+        onCancel={() => setGlobalComparison(null)}
+        footer={
+          <Button onClick={() => setGlobalComparison(null)}>Close</Button>
+        }
+        width={1050}
+      >
+        {globalComparison && (
+          <>
+            {/* True Margin Panel */}
+            <div style={{
+              background: '#f0f4ff', border: '1px solid #c7d2fe', borderRadius: 8,
+              padding: '12px 16px', marginBottom: 16,
+              display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap',
+            }}>
+              <Text strong style={{ color: '#4338ca' }}>🎯 True Margin (%):</Text>
+              <InputNumber
+                value={marginTarget} min={1} max={99} step={0.5} placeholder="e.g. 20"
+                addonAfter="%" style={{ width: 160 }}
+                onChange={val => setMarginTarget(val > 99 ? 99 : val < 0 ? 0 : val)} />
+              {marginTarget > 0 && (
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  Every component: Selling = Cost × (1 + {marginTarget}/100) &nbsp;|&nbsp; DC Charges unchanged &nbsp;|&nbsp; GST excluded
+                </Text>
+              )}
+              {marginTarget > 0 && (
+                <Button
+                  type="primary"
+                  style={{ background: '#4f46e5', borderColor: '#4f46e5', fontWeight: 600 }}
+                  onClick={() => applyTrueMarginToAll(marginTarget)}
+                >
+                  ✓ Apply {marginTarget}% to All Items
+                </Button>
+              )}
+            </div>
+
+            <Table
+              dataSource={globalComparison.allRows}
+              pagination={false}
+              size="small"
+              scroll={{ x: 'max-content' }}
+              rowClassName={(record) =>
+                record.group_no % 2 === 0 ? 'row-group-even' : 'row-group-odd'
+              }
+              onRow={(record) => ({
+                style: record.is_first_in_group ? { borderTop: '2px solid #6366f1' } : {}
+              })}
+              columns={[
+                {
+                  title: '#', key: 'group_no', width: 180,
+                  render: (_, r) => r.is_first_in_group ? (
+                    <Text strong style={{ color: '#6366f1', fontSize: 12 }}>
+                      {r.group_no}) {r.group_name}
+                    </Text>
+                  ) : null,
+                },
+                {
+                  title: 'Size', key: 'size', width: 140,
+                  render: (_, r) => (
+                    <Text style={{ fontSize: 12 }}>
+                      {r.size_label}. {r.width_display} × {r.height_display}
+                    </Text>
+                  )
+                },
+                { title: 'Qty', dataIndex: 'quantity', width: 45, align: 'center' },
+                {
+                  title: 'Charged Sqft', dataIndex: 'selling_rate', width: 90, align: 'right',
+                  render: v => `₹${v}/sqft`
+                },
+                {
+                  title: 'Cost Rate', dataIndex: 'cost_per_sqft', width: 90, align: 'right',
+                  render: v => <Text style={{ color: '#ea580c' }}>₹{v}/sqft</Text>
+                },
+                {
+                  title: 'Selling Amt', dataIndex: 'selling_amount', width: 110, align: 'right',
+                  render: v => (
+                    <Text strong style={{ color: '#16a34a' }}>
+                      ₹{Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </Text>
+                  )
+                },
+                {
+                  title: 'Cost Amt', dataIndex: 'cost_amount', width: 110, align: 'right',
+                  render: v => (
+                    <Text strong style={{ color: '#dc2626' }}>
+                      ₹{Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </Text>
+                  )
+                },
+                {
+                  title: 'Margin', dataIndex: 'margin_amount', width: 130, align: 'right',
+                  render: (v, r) => (
+                    <Text strong style={{ color: r.margin_pct >= 20 ? '#16a34a' : r.margin_pct >= 10 ? '#f59e0b' : '#dc2626' }}>
+                      ₹{Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      <br />
+                      <span style={{ fontSize: 11 }}>({r.margin_pct}%)</span>
+                    </Text>
+                  )
+                },
+                ...(marginTarget > 0 ? [
+                  {
+                    title: (
+                      <span style={{ color: '#6366f1' }}>
+                        New Rate<br />
+                        <Text type="secondary" style={{ fontSize: 10 }}>@ {marginTarget}% margin</Text>
+                      </span>
+                    ),
+                    key: 'new_rate', width: 110, align: 'right',
+                    render: (_, r) => {
+                      if (!marginTarget) return <Text type="secondary">—</Text>
+                      const newRate = r.cost_per_sqft > 0
+                        ? parseFloat((r.cost_per_sqft * (1 + marginTarget / 100)).toFixed(2))
+                        : r.selling_rate
+                      return <Text strong style={{ color: '#6366f1' }}>₹{newRate}/sqft</Text>
+                    }
+                  },
+                  {
+                    title: (
+                      <span style={{ color: '#6366f1' }}>
+                        New Amount<br />
+                        <Text type="secondary" style={{ fontSize: 10 }}>@ {marginTarget}% margin</Text>
+                      </span>
+                    ),
+                    key: 'new_amount', width: 120, align: 'right',
+                    render: (_, r) => {
+                      if (!marginTarget) return <Text type="secondary">—</Text>
+                      const newRate = r.cost_per_sqft > 0
+                        ? parseFloat((r.cost_per_sqft * (1 + marginTarget / 100)).toFixed(2))
+                        : r.selling_rate
+                      const newAmount = parseFloat((parseFloat(r.selling_sqft) * newRate).toFixed(2))
+                      return (
+                        <Text strong style={{ color: '#0ea5e9' }}>
+                          ₹{newAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </Text>
+                      )
+                    }
+                  }
+                ] : []),
+              ]}
+
+            />
+
+            {/* Hardware & Labor Breakdown */}
+            {(hardwareItems.length > 0 || laborItems.length > 0) && (
+              <div style={{ marginTop: 20 }}>
+                <Divider orientation="left">
+                  <Text strong style={{ fontSize: 13, color: '#6366f1' }}>
+                    🛠️ Hardware & Labor Costing Breakdown
+                  </Text>
+                </Divider>
+                <Table
+                  size="small"
+                  pagination={false}
+                  dataSource={[
+                    ...hardwareItems.map(h => ({
+                      key: h.hw_key,
+                      type: 'Hardware',
+                      description: h.description || '(No description)',
+                      qty: h.qty || 0,
+                      uom: h.uom || '—',
+                      cost_rate: h.cost_rate || 0,
+                      selling_rate: h.rate || 0,
+                      cost_amount: h.cost_amount || (h.qty || 0) * (h.cost_rate || 0),
+                      selling_amount: h.amount || (h.qty || 0) * (h.rate || 0),
+                    })),
+                    ...laborItems.map(l => ({
+                      key: l.lb_key,
+                      type: 'Labor',
+                      description: l.description || '(No description)',
+                      qty: l.qty || 0,
+                      uom: l.uom || '—',
+                      cost_rate: l.cost_rate || 0,
+                      selling_rate: l.rate || 0,
+                      cost_amount: l.cost_amount || (l.qty || 0) * (l.cost_rate || 0),
+                      selling_amount: l.amount || (l.qty || 0) * (l.rate || 0),
+                    })),
+                    ...wastageItems.map(w => ({
+                      key: w.wst_key,
+                      type: 'Wastage',
+                      description: w.description || '(No description)',
+                      qty: w.qty || 0,
+                      uom: 'sqft',
+                      cost_rate: w.cost_rate || 0,
+                      selling_rate: w.rate || 0,
+                      cost_amount: w.cost_amount || (w.qty || 0) * (w.cost_rate || 0),
+                      selling_amount: w.amount || (w.qty || 0) * (w.cost_rate || 0),
+                    })),
+                    ...(totals.dcCharges > 0 || totals.dcCost > 0 ? [{
+                      key: 'dc_charges',
+                      type: 'DC',
+                      description: 'Delivery / Transport Charges',
+                      qty: 1,
+                      uom: 'fixed',
+                      cost_rate: totals.dcCost || 0,
+                      selling_rate: totals.dcCharges || 0,
+                      cost_amount: totals.dcCost || 0,
+                      selling_amount: totals.dcCharges || 0,
+                    }] : []),
+                  ]}
+                  columns={[
+                    {
+                      title: 'Type', dataIndex: 'type', width: 100,
+                      render: t => (
+                        <Tag color={
+                          t === 'Hardware' ? 'blue' :
+                            t === 'Labor' ? 'orange' :
+                              t === 'Wastage' ? 'red' :
+                                t === 'DC' ? 'purple' : 'default'
+                        }>{t}</Tag>
+                      )
+                    },
+                    { title: 'Description', dataIndex: 'description' },
+                    { title: 'Qty', dataIndex: 'qty', width: 60, align: 'right' },
+                    { title: 'UOM', dataIndex: 'uom', width: 70 },
+                    {
+                      title: 'Cost Rate', dataIndex: 'cost_rate', width: 100, align: 'right',
+                      render: v => <Text style={{ color: '#f59e0b' }}>₹{Number(v).toFixed(2)}</Text>
+                    },
+                    {
+                      title: 'Selling Rate', dataIndex: 'selling_rate', width: 100, align: 'right',
+                      render: v => <Text style={{ color: '#10b981' }}>₹{Number(v).toFixed(2)}</Text>
+                    },
+                    {
+                      title: 'Cost Amt', dataIndex: 'cost_amount', width: 110, align: 'right',
+                      render: v => (
+                        <Text strong style={{ color: '#dc2626' }}>
+                          ₹{Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </Text>
+                      )
+                    },
+                    {
+                      title: 'Selling Amt', dataIndex: 'selling_amount', width: 110, align: 'right',
+                      render: v => (
+                        <Text strong style={{ color: '#16a34a' }}>
+                          ₹{Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </Text>
+                      )
+                    },
+                    {
+                      title: 'Margin', width: 130, align: 'right',
+                      render: (_, r) => {
+                        const margin = r.selling_amount - r.cost_amount
+                        const pct = r.cost_amount > 0
+                          ? ((margin / r.cost_amount) * 100).toFixed(1)
+                          : '100'
+                        return (
+                          <Text strong style={{ color: margin >= 0 ? '#16a34a' : '#dc2626' }}>
+                            ₹{margin.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            <br />
+                            <span style={{ fontSize: 10 }}>({pct}%)</span>
+                          </Text>
+                        )
+                      }
+                    }
+                  ]}
+                  summary={() => {
+                    const hwSell = hardwareItems.reduce((s, h) => s + (h.amount || 0), 0)
+                    const hwCost = hardwareItems.reduce((s, h) => s + (h.cost_amount || (h.qty || 0) * (h.cost_rate || 0)), 0)
+                    const lbSell = laborItems.reduce((s, l) => s + (l.amount || 0), 0)
+                    const lbCost = laborItems.reduce((s, l) => s + (l.cost_amount || (l.qty || 0) * (l.cost_rate || 0)), 0)
+                    const wstSell = wastageItems.reduce((s, w) => s + (w.amount || 0), 0)
+                    const wstCost = wastageItems.reduce((s, w) => s + (w.cost_amount || (w.qty || 0) * (w.cost_rate || 0)), 0)
+                    const totalHwLbSell = hwSell + lbSell + wstSell
+                    const totalHwLbCost = hwCost + lbCost + wstCost
+                    const totalHwLbMargin = totalHwLbSell - totalHwLbCost
+                    const totalHwLbPct = totalHwLbCost > 0
+                      ? ((totalHwLbMargin / totalHwLbCost) * 100).toFixed(1)
+                      : '100'
+                    return (
+                      <Table.Summary.Row style={{ background: '#f8fafc', fontWeight: 600 }}>
+                        <Table.Summary.Cell colSpan={6}>
+                          <Text strong>HW + Labor + Wastage Subtotal</Text>
+                        </Table.Summary.Cell>
+                        <Table.Summary.Cell align="right">
+                          <Text strong style={{ color: '#dc2626' }}>
+                            ₹{totalHwLbCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </Text>
+                        </Table.Summary.Cell>
+                        <Table.Summary.Cell align="right">
+                          <Text strong style={{ color: '#16a34a' }}>
+                            ₹{totalHwLbSell.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </Text>
+                        </Table.Summary.Cell>
+                        <Table.Summary.Cell align="right">
+                          <Text strong style={{ color: totalHwLbMargin >= 0 ? '#16a34a' : '#dc2626' }}>
+                            ₹{totalHwLbMargin.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            <br />
+                            <span style={{ fontSize: 10 }}>({totalHwLbPct}%)</span>
+                          </Text>
+                        </Table.Summary.Cell>
+                      </Table.Summary.Row>
+                    )
+                  }}
+                />
+              </div>
+            )}
+
+            {/* Grand Total Breakdown interleaved div */}
+            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 16px', marginTop: 12 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, fontSize: 11, fontWeight: 600, color: '#9ca3af', borderBottom: '1px solid #f1f5f9', paddingBottom: 4 }}>
+                <span style={{ flex: 1 }}>Grand Total Breakdown</span>
+                <span style={{ minWidth: 90, textAlign: 'right' }}>Selling</span>
+                <span style={{ minWidth: 90, textAlign: 'right' }}>Cost</span>
+              </div>
+              {(() => {
+                const ceil3 = x => Math.ceil(x / 3) * 3
+                const rows = []
+
+                // 1) Glass group rows and their processes
+                groups.forEach((group, gi) => {
+                  // subtotal includes cep_charges — subtract it so the parent row
+                  // shows base glass selling only. CEP is shown on its own sub-row below.
+                  const sell = group.sizes?.reduce((s, x) => s + (x.subtotal || 0) - (x.cep_charges || 0), 0) || 0
+
+                  // Cost price lookup logic — fully loaded (base + addon, or
+                  // manual_cost_price as-is if it's already the loaded total)
+                  let costPerSqft = getGroupLoadedCostRate(group, products).loadedCost
+
+                  // Use already-computed per-size values — single source of truth
+                  const groupGlassCost = parseFloat(
+                    (group.sizes?.reduce((s, sz) => s + (sz.glass_cost || 0), 0) || 0).toFixed(2)
+                  )
+                  const groupCepCost = parseFloat(
+                    (group.sizes?.reduce((s, sz) => s + (sz.cep_cost || 0), 0) || 0).toFixed(2)
+                  )
+                  const groupCepSell = parseFloat(
+                    (group.sizes?.reduce((s, sz) => s + (sz.cep_charges || 0), 0) || 0).toFixed(2)
+                  )
+
+                  rows.push(
+                    <div key={`group-${gi}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4, fontSize: 12 }}>
+                      <span style={{ color: '#374151', flex: 1 }}>{gi + 1}) {group.description || `Group ${gi + 1}`}</span>
+                      <span style={{ color: '#16a34a', minWidth: 90, textAlign: 'right' }}>₹{Number(sell).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                      <span style={{ color: '#dc2626', minWidth: 90, textAlign: 'right' }}>₹{groupGlassCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                  )
+
+                  // CEP as its own sub-row, separated from base glass cost
+                  if (group.cep && groupCepCost > 0) {
+                    rows.push(
+                      <div key={`cep-${gi}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4, fontSize: 11, color: '#0891b2', paddingLeft: 20, borderLeft: '2px solid #bae6fd', marginLeft: 8 }}>
+                        <span style={{ flex: 1 }}>└ CEP (Polish)</span>
+                        <span style={{ minWidth: 90, textAlign: 'right' }}>₹{groupCepSell.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                        <span style={{ minWidth: 90, textAlign: 'right' }}>₹{groupCepCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                      </div>
+                    )
+                  }
+
+                  // Group processes — no cost_rate field, use 70% estimate
+                  const groupProcesses = (group.processes || [])
+                  // Size processes — use actual cost_amount (cost_rate × qty_area)
+                  const sizeProcesses = (group.sizes?.flatMap(s => s.size_processes || []) || [])
+
+                  groupProcesses.forEach((p, pi) => {
+                    if (p.amount > 0) {
+                      rows.push(
+                        <div key={`proc-${gi}-${pi}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4, fontSize: 11, color: '#6366f1', paddingLeft: 20, borderLeft: '2px solid #e9d5ff', marginLeft: 8 }}>
+                          <span style={{ flex: 1 }}>└ {p.process_name || p.name || 'Process'} <span style={{ color: '#9ca3af', fontSize: 10 }}>(est. @70%)</span></span>
+                          <span style={{ minWidth: 90, textAlign: 'right' }}>₹{Number(p.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                          <span style={{ minWidth: 90, textAlign: 'right' }}>₹{Number(p.amount * 0.70).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                        </div>
+                      )
+                    }
+                  })
+
+                  sizeProcesses.forEach((p, pi) => {
+                    if (p.amount > 0) {
+                      const actualCost = p.cost_amount || ((p.qty_area || 0) * (p.cost_rate || 0))
+                      rows.push(
+                        <div key={`sproc-${gi}-${pi}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4, fontSize: 11, color: '#6366f1', paddingLeft: 20, borderLeft: '2px solid #e9d5ff', marginLeft: 8 }}>
+                          <span style={{ flex: 1 }}>└ {p.process_name || p.name || 'Process'}</span>
+                          <span style={{ minWidth: 90, textAlign: 'right' }}>₹{Number(p.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                          <span style={{ minWidth: 90, textAlign: 'right' }}>₹{Number(actualCost).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                        </div>
+                      )
+                    }
+                  })
+                })
+
+                // 2) Hardware rows
+                hardwareItems.forEach((h, hi) => {
+                  const sell = h.amount || 0
+                  const cost = h.cost_amount || (h.qty * h.cost_rate) || 0
+                  rows.push(
+                    <div key={`hw-${hi}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4, fontSize: 12 }}>
+                      <span style={{ color: '#374151', flex: 1 }}>
+                        <span style={{ color: '#6b7280', fontSize: 11, marginRight: 6 }}>[HW]</span>
+                        {h.description || '(No description)'}
+                      </span>
+                      <span style={{ color: '#16a34a', minWidth: 90, textAlign: 'right' }}>₹{Number(sell).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                      <span style={{ color: '#dc2626', minWidth: 90, textAlign: 'right' }}>₹{Number(cost).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                  )
+                })
+
+                // 3) Labor rows
+                laborItems.forEach((l, li) => {
+                  const sell = l.amount || 0
+                  const cost = l.cost_amount || (l.qty * l.cost_rate) || 0
+                  rows.push(
+                    <div key={`labor-${li}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4, fontSize: 12 }}>
+                      <span style={{ color: '#374151', flex: 1 }}>
+                        <span style={{ color: '#6b7280', fontSize: 11, marginRight: 6 }}>[Labor]</span>
+                        {l.description || '(No description)'}
+                      </span>
+                      <span style={{ color: '#16a34a', minWidth: 90, textAlign: 'right' }}>₹{Number(sell).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                      <span style={{ color: '#dc2626', minWidth: 90, textAlign: 'right' }}>₹{Number(cost).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                  )
+                })
+
+                // 4) Wastage rows
+                wastageItems.forEach((w, wi) => {
+                  const sell = w.amount || 0
+                  const cost = w.cost_amount || (w.qty * w.cost_rate) || 0
+                  rows.push(
+                    <div key={`wastage-${wi}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4, fontSize: 12 }}>
+                      <span style={{ color: '#374151', flex: 1 }}>
+                        <span style={{ color: '#6b7280', fontSize: 11, marginRight: 6 }}>[Wastage]</span>
+                        {w.description || '(No description)'}
+                      </span>
+                      <span style={{ color: '#16a34a', minWidth: 90, textAlign: 'right' }}>₹{Number(sell).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                      <span style={{ color: '#dc2626', minWidth: 90, textAlign: 'right' }}>₹{Number(cost).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                  )
+                })
+
+                // 5) DC Charges row
+                if (totals.dcCharges > 0 || totals.dcCost > 0) {
+                  rows.push(
+                    <div key="dc-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4, fontSize: 12 }}>
+                      <span style={{ color: '#374151', flex: 1 }}>D/C Charges</span>
+                      <span style={{ color: '#16a34a', minWidth: 90, textAlign: 'right' }}>₹{Number(totals.dcCharges || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                      <span style={{ color: '#dc2626', minWidth: 90, textAlign: 'right' }}>₹{Number(totals.dcCost || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                  )
+                }
+
+                // 6) GST row
+                if (globalComparison.gstAmt > 0) {
+                  rows.push(
+                    <div key="gst-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4, fontSize: 12 }}>
+                      <span style={{ color: '#374151', flex: 1 }}>GST (18%)</span>
+                      <span style={{ color: '#16a34a', minWidth: 90, textAlign: 'right' }}>₹{Number(globalComparison.gstAmt || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                      <span style={{ color: '#dc2626', minWidth: 90, textAlign: 'right' }}>₹{Number(globalComparison.costGst || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                  )
+                }
+
+                return rows
+              })()}
+              <Divider style={{ margin: '8px 0' }} />
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontWeight: 700, fontSize: 13 }}>
+                <span style={{ flex: 1 }}>
+                  Grand Total (incl. GST)
+                </span>
+                <span style={{ color: '#16a34a', minWidth: 90, textAlign: 'right' }}>₹{Number(globalComparison.totalSelling).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                <span style={{ color: '#dc2626', minWidth: 90, textAlign: 'right' }}>₹{Number(globalComparison.totalCost).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+              </div>
+            </div>
+
+            {/* ── Overall Analysis / True Margin Panel ── */}
+            {(() => {
+              // Compute pre-GST selling totals for margin analysis
+              // (DC charges excluded from margin per spec)
+              const glassSell = groups.reduce((s, g) =>
+                s + g.sizes.reduce((ss, sz) => ss + (sz.subtotal || 0), 0), 0)
+              const procSell = groups.reduce((s, g) =>
+                s + (g.processes || []).reduce((ss, p) => ss + (p.amount || 0), 0)
+                + g.sizes.reduce((ss, sz) =>
+                  ss + (sz.size_processes || []).reduce((sss, sp) => sss + (sp.amount || 0), 0), 0), 0)
+              const hwSell = hardwareItems.reduce((s, h) => s + (h.amount || 0), 0)
+              const lbSell = laborItems.reduce((s, l) => s + (l.amount || 0), 0)
+              const wstSell = wastageItems.reduce((s, w) => s + (w.amount || 0), 0)
+              const totalSellBeforeGst = glassSell + procSell + hwSell + lbSell + wstSell
+
+              // Cost (same as totals useMemo, without GST) — use the pre-GST
+              // cost so "True Margin (excl. GST)" is genuinely GST-free on
+              // both sides, matching its label
+              const trueCost = (globalComparison.costBeforeGst ?? globalComparison.totalCost) - (totals.dcCost || 0)
+              const trueMarginAmt = totalSellBeforeGst - trueCost
+              const truePct = trueCost > 0
+                ? parseFloat(((trueMarginAmt / trueCost) * 100).toFixed(2))
+                : 100
+              const color = truePct >= 20 ? '#4ade80'
+                : truePct >= 10 ? '#fbbf24' : '#f87171'
+
+              return (
+                <div style={{
+                  marginTop: 12,
+                  background: '#0f172a',
+                  borderRadius: 10,
+                  padding: '16px 20px',
+                  border: '1px solid #1e293b',
+                }}>
+                  {/* Top row: metric tiles */}
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    flexWrap: 'wrap',
+                    gap: 16,
+                    marginBottom: 16,
+                  }}>
+                    <div>
+                      <div style={{ color: '#94a3b8', fontSize: 11 }}>Total Selling (excl. GST & DC)</div>
+                      <div style={{ color: '#4ade80', fontSize: 16, fontWeight: 700 }}>
+                        ₹{totalSellBeforeGst.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </div>
+                      <div style={{ color: '#64748b', fontSize: 10 }}>Glass + Processes + HW + Labor + Wastage</div>
+                    </div>
+                    <div>
+                      <div style={{ color: '#94a3b8', fontSize: 11 }}>Total Cost (excl. DC)</div>
+                      <div style={{ color: '#f87171', fontSize: 16, fontWeight: 700 }}>
+                        ₹{trueCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </div>
+                      <div style={{ color: '#64748b', fontSize: 10 }}>Glass + HW + Labor + Wastage</div>
+                    </div>
+                    <div>
+                      <div style={{ color: '#94a3b8', fontSize: 11 }}>True Margin (excl. GST)</div>
+                      <div style={{ color, fontSize: 16, fontWeight: 700 }}>
+                        ₹{trueMarginAmt.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ color: '#94a3b8', fontSize: 11 }}>True Margin %</div>
+                      <div style={{ color, fontSize: 30, fontWeight: 800, lineHeight: 1 }}>
+                        {truePct}%
+                      </div>
+                      <div style={{ color: '#475569', fontSize: 10 }}>= (Selling − Cost) ÷ Cost</div>
+                    </div>
+                  </div>
+                </div>
+              )
+            })()}
+          </>
+        )}
       </Modal>
     </MasterForm>
   )
