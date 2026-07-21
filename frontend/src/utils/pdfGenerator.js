@@ -337,8 +337,9 @@ const drawHeader = (doc, company, docTitle) => {
 
   // 6. Draw Left Column logo / monogram
   // Bounding box: width = 28mm, height = boxH - 4mm
+  const gstinForBadge = cleanVal(company.gstin || company.gst)
   const maxLogoW = 28
-  const maxLogoH = boxH - 4
+  const maxLogoH = gstinForBadge ? (boxH - 12) : (boxH - 4)
   const fitImage = (imgW, imgH, maxW, maxH) => {
     const ratio = imgW / imgH
     let w = maxW
@@ -367,7 +368,9 @@ const drawHeader = (doc, company, docTitle) => {
       }
       const dims = fitImage(imgW, imgH, maxLogoW, maxLogoH)
       const xImg = 10 + 2 + (maxLogoW - dims.w) / 2
-      const yImg = yStart + 2 + (maxLogoH - dims.h) / 2
+      const yImg = gstinForBadge
+        ? yStart + 9.5 + (maxLogoH - dims.h) / 2
+        : yStart + 2 + (maxLogoH - dims.h) / 2
       const format = getFormat(company.logo)
       doc.addImage(company.logo, format, xImg, yImg, dims.w, dims.h)
       primaryDrawSuccess = true
@@ -380,10 +383,24 @@ const drawHeader = (doc, company, docTitle) => {
     // Monogram fallback
     const initials = (company.name || 'E').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
     const xBox = 10 + (32 - 18) / 2
-    const yBox = yStart + (boxH - 18) / 2
+    const yBox = gstinForBadge
+      ? yStart + 9.5 + (boxH - 9.5 - 18) / 2
+      : yStart + (boxH - 18) / 2
     drawCard(doc, xBox, yBox, 18, 18, C.primaryLight, C.primary, 1.0)
     setFont(doc, 10, 'bold', C.primary)
     drawText(doc, initials, xBox + 9, yBox + 10.5, { align: 'center' })
+  }
+
+  // ── GST REGISTERED badge (only when a GSTIN exists) ──
+  if (gstinForBadge) {
+    const badgeW = 26, badgeH = 8
+    const bx = 10 + (32 - badgeW) / 2         // centered in the 32mm left column
+    const by = yStart + 1.5                    // pinned near the top of the header box
+    drawCard(doc, bx, by, badgeW, badgeH, [22, 101, 52], [15, 81, 42], 1.0)  // green seal
+    setFont(doc, 5.2, 'bold', C.white)
+    drawText(doc, 'GST REGISTERED', bx + badgeW / 2, by + 3.4, { align: 'center' })
+    setFont(doc, 4.2, 'normal', [220, 235, 225])
+    drawText(doc, 'GOVT. OF INDIA', bx + badgeW / 2, by + 6.4, { align: 'center' })
   }
 
   // 7. Draw Right Column (secondary logo if present)
@@ -1679,7 +1696,14 @@ export const generateQuotationPDF = async (quotation) => {
     y = checkPageBreak(doc, y, summaryHeight + 22 + 28, pageNum, quotation)
     
     y = drawFinalSummaryBlock(doc, totalsRows, toWords(Math.round(grand)), quotation, y) + SP_16
-    
+
+    // Bank details (only if the company has any bank info) — mirrors the SO PDF
+    const hasBank = company.bank_name || company.bank_ac_no || company.bank_ifsc
+    if (hasBank) {
+      y = checkPageBreak(doc, y, 22 + 22 + 28, pageNum, quotation)
+      y = drawBankDetails(doc, company, y) + SP_16
+    }
+
     // Check page break for signature strip + terms
     y = checkPageBreak(doc, y, 22 + 28, pageNum, quotation)
     y = drawSignatureStrip(doc, company, y) + SP_16

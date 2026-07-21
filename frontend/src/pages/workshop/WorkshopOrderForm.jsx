@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Form, Input, Select, Row, Col, Divider, DatePicker, Button, Table, Steps, Space, Tag, Checkbox, Card, Badge, App, Typography, InputNumber, Switch, Modal } from 'antd'
-import { PlusOutlined, DeleteOutlined, ToolOutlined, FireOutlined, FileTextOutlined, CheckCircleOutlined, PlayCircleOutlined } from '@ant-design/icons'
+import { PlusOutlined, DeleteOutlined, ToolOutlined, FireOutlined, FileTextOutlined, CheckCircleOutlined, PlayCircleOutlined, DownloadOutlined } from '@ant-design/icons'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import dayjs from 'dayjs'
@@ -43,6 +43,10 @@ const WorkshopOrderForm = () => {
   const [form] = Form.useForm()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+
+  const [isDirty, setIsDirty] = useState(false)
+  const [leavePrompt, setLeavePrompt] = useState(null)
+  const hydratedRef = useRef(false)
   const [lines, setLines] = useState([])
   const [selectedJobworkVendor, setSelectedJobworkVendor] = useState(null)
   const [artworkMaster, setArtworkMaster] = useState(getArtworkMaster)
@@ -104,6 +108,7 @@ const WorkshopOrderForm = () => {
     if (!isEdit) {
       form.setFieldValue('order_date', dayjs())
       form.setFieldValue('priority', 'normal')
+      hydratedRef.current = true
     }
   }, [])
 
@@ -172,6 +177,7 @@ const WorkshopOrderForm = () => {
         setArtworkMaps([{ name: 'Map 1', image: record.artwork_image, panels: [] }])
       }
       setActiveMap(0)
+      setTimeout(() => { hydratedRef.current = true }, 0)
     }
   }, [record, form, processMasters])
 
@@ -180,6 +186,26 @@ const WorkshopOrderForm = () => {
       lines.filter(l => l.has_process).map(l => l.key)
     )
   }, [lines])
+
+  // ── Dirty watcher ─────────────────────────────────────────
+  useEffect(() => {
+    if (hydratedRef.current) setIsDirty(true)
+  }, [lines, selectedJobworkVendor, artworkMaps, activeMap])
+
+  // ── Browser close / refresh guard ─────────────────────────
+  useEffect(() => {
+    const handler = (e) => {
+      if (isDirty) { e.preventDefault(); e.returnValue = '' }
+    }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [isDirty])
+
+  // ── In-app navigation guard ───────────────────────────────
+  const guardedNavigate = (path, options) => {
+    if (!isDirty) { navigate(path, options); return }
+    setLeavePrompt({ path, options })
+  }
 
   const buildWoLinesFromGroups = (soGroups, soLines) => {
     // Prefer groups (richer data)
@@ -377,6 +403,7 @@ const WorkshopOrderForm = () => {
     mutationFn: (data) => isEdit ? workshopOrderApi.update(id, data) : workshopOrderApi.create(data),
     onSuccess: (res) => {
       message.success(`Workshop Order ${isEdit ? 'updated' : 'created'}`)
+      setIsDirty(false)
       queryClient.invalidateQueries({ queryKey: ['workshop_orders'] })
       if (!isEdit && res?.data?.id) navigate(`/workshop/orders/${res.data.id}/edit`)
     },
@@ -404,6 +431,7 @@ const WorkshopOrderForm = () => {
       values.artwork_panels = cleanMaps
       values.artwork_image = cleanMaps[0]?.image || null
       await saveMutation.mutateAsync(values)
+      setIsDirty(false)
       if (andNew) { form.resetFields(); setLines([]); navigate('/workshop/orders/new') }
     } catch (err) { }
   }
@@ -1103,18 +1131,18 @@ const WorkshopOrderForm = () => {
   return (
     <MasterForm title="Workshop Order" isEdit={isEdit} isLoading={isLoading} isSaving={saveMutation.isPending}
       breadcrumbs={[{ label: 'Workshop' }, { label: 'Workshop Orders', path: '/workshop/orders' }, { label: isEdit ? record?.wo_number || 'Edit' : 'New' }]}
-      onSave={() => handleSave(false)} onSaveNew={() => handleSave(true)} onDiscard={() => navigate('/workshop/orders')}>
+      onSave={() => handleSave(false)} onSaveNew={() => handleSave(true)} onDiscard={() => guardedNavigate('/workshop/orders')} onBack={() => guardedNavigate('/workshop/orders')}>
 
       {/* Smart Buttons */}
       {isEdit && (
         <div style={{ marginBottom: 16, display: 'flex', gap: 8 }}>
           {record?.so_id && (
-            <Button icon={<FileTextOutlined />} onClick={() => navigate(`/sales-orders/${record.so_id}/edit`)}>
+            <Button icon={<FileTextOutlined />} onClick={() => guardedNavigate(`/sales-orders/${record.so_id}/edit`)}>
               📋 SO: {record.so_number || `#${record.so_id}`}
             </Button>
           )}
           <Badge count={tbData?.total || 0}>
-            <Button icon={<FireOutlined />} onClick={() => navigate(`/workshop/toughening?wo_id=${id}`)}>🔥 Toughening Batches</Button>
+            <Button icon={<FireOutlined />} onClick={() => guardedNavigate(`/workshop/toughening?wo_id=${id}`)}>🔥 Toughening Batches</Button>
           </Badge>
         </div>
       )}
@@ -1126,6 +1154,25 @@ const WorkshopOrderForm = () => {
         </Col>
         <Col xs={24} lg={12} style={{ textAlign: 'right' }}>
           <Space wrap>
+            {/* Always-available download — works at every status, like the quotation */}
+            <Button
+              icon={<DownloadOutlined />}
+              disabled={!isEdit}
+              loading={exportLoading === 'pdf'}
+              onClick={async () => {
+                const hide = message.loading('Generating Workshop Order PDF...', 0)
+                try {
+                  await generateWOPdf()
+                } catch (err) {
+                  message.error('PDF generation failed: ' + (err?.message || 'Unknown error'))
+                } finally {
+                  hide()
+                }
+              }}
+              style={{ borderColor: '#6366f1', color: '#6366f1' }}
+            >
+              Download PDF
+            </Button>
             {status === 'draft' && (
               <Button
                 type="primary"
@@ -1141,13 +1188,13 @@ const WorkshopOrderForm = () => {
 
             {lines.some(l => l.is_toughened) && (
               <Button type="primary" style={{ background: '#dc2626' }} onClick={() => {
-                navigate('/workshop/toughening/new', { state: { from_wo: id, lines: lines.filter(l => l.is_toughened) } })
+                guardedNavigate('/workshop/toughening/new', { state: { from_wo: id, lines: lines.filter(l => l.is_toughened) } })
               }}>Create Toughening Challan</Button>
             )}
 
             {lines.some(l => l.is_toughened) && (
               <Button onClick={() => {
-                navigate('/purchase-orders/new', {
+                guardedNavigate('/purchase-orders/new', {
                   state: {
                     from_wo: id,
                     vendor_name: selectedJobworkVendor,
@@ -1162,7 +1209,7 @@ const WorkshopOrderForm = () => {
         </Col>
       </Row>
 
-      <Form form={form} layout="vertical" initialValues={{ priority: 'normal', instructions: '', required_by: undefined, wo_number: '' }}>
+      <Form form={form} layout="vertical" initialValues={{ priority: 'normal', instructions: '', required_by: undefined, wo_number: '' }} onValuesChange={() => { if (hydratedRef.current) setIsDirty(true) }}>
         <Row gutter={16}>
           <Col span={6}>
             <Form.Item name="so_id" label="Sales Order" rules={[{ required: true }]}>
@@ -1579,6 +1626,37 @@ const WorkshopOrderForm = () => {
             You can download again any time after starting.
           </p>
         </div>
+      </Modal>
+
+      {/* ── Unsaved Changes Leave Guard ── */}
+      <Modal
+        open={leavePrompt !== null}
+        title="Unsaved changes"
+        onCancel={() => setLeavePrompt(null)}
+        footer={[
+          <Button key="stay" onClick={() => setLeavePrompt(null)}>Stay</Button>,
+          <Button key="discard" danger onClick={() => {
+            setIsDirty(false)
+            const prompt = leavePrompt
+            setLeavePrompt(null)
+            if (typeof prompt === 'string') navigate(prompt)
+            else if (prompt?.path) navigate(prompt.path, prompt.options)
+          }}>Leave without saving</Button>,
+          <Button key="save" type="primary" loading={saveMutation.isPending}
+            onClick={async () => {
+              try {
+                await handleSave(false)
+                const prompt = leavePrompt
+                setLeavePrompt(null)
+                if (typeof prompt === 'string') navigate(prompt)
+                else if (prompt?.path) navigate(prompt.path, prompt.options)
+              } catch {
+                setLeavePrompt(null)
+              }
+            }}>Save &amp; Leave</Button>,
+        ].filter(Boolean)}
+      >
+        <p>You have unsaved changes. If you leave now, all changes will be lost.</p>
       </Modal>
 
     </MasterForm>

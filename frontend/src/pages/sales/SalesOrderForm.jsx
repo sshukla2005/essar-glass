@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Form, Row, Col, Divider, Button, Space, Tag, Badge, App, Modal, Typography, Table, InputNumber, Select, Card } from 'antd'
 import { PlusOutlined, ShoppingCartOutlined, FileTextOutlined, CarOutlined, DollarOutlined, ToolOutlined, DownloadOutlined, AimOutlined, LineChartOutlined } from '@ant-design/icons'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
@@ -125,6 +125,10 @@ const SalesOrderForm = () => {
   const [form] = Form.useForm()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+
+  const [isDirty, setIsDirty] = useState(false)
+  const [leavePrompt, setLeavePrompt] = useState(null)
+  const hydratedRef = useRef(false)
 
   const [soUnit, setSoUnit] = useState('inch')
   const [dropdownConfig] = useState(getDropdownConfig())
@@ -857,6 +861,7 @@ const SalesOrderForm = () => {
   useEffect(() => {
     if (!isEdit) {
       form.setFieldValue('order_date', dayjs())
+      hydratedRef.current = true
     }
   }, [])
 
@@ -936,6 +941,7 @@ const SalesOrderForm = () => {
         })))
       }
       setGstMode(record.gst_mode || (record.is_inter_state ? 'igst' : 'cgst_sgst'))
+      setTimeout(() => { hydratedRef.current = true }, 0)
     }
   }, [record, form])
 
@@ -1001,6 +1007,26 @@ const SalesOrderForm = () => {
       hwCostTotal, lbCostTotal, wstCostTotal
     }
   }, [groups, hardwareItems, laborItems, wastageItems, dcCharges, dcCost, discountAmt, advanceRec, gstMode, products])
+
+  // ── Dirty watcher ─────────────────────────────────────────
+  useEffect(() => {
+    if (hydratedRef.current) setIsDirty(true)
+  }, [groups, hardwareItems, laborItems, wastageItems, gstMode, soUnit])
+
+  // ── Browser close / refresh guard ─────────────────────────
+  useEffect(() => {
+    const handler = (e) => {
+      if (isDirty) { e.preventDefault(); e.returnValue = '' }
+    }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [isDirty])
+
+  // ── In-app navigation guard ───────────────────────────────
+  const guardedNavigate = (path, options) => {
+    if (!isDirty) { navigate(path, options); return }
+    setLeavePrompt({ path, options })
+  }
 
   const flushWizardRowsToSizes = () => {
     if (!compWizard?.group_key || !Array.isArray(compWizard.rows)) return
@@ -1284,6 +1310,7 @@ const SalesOrderForm = () => {
   const saveMutation = useMutation({
     onSuccess: (res) => {
       message.success(`SO ${isEdit ? 'updated' : 'created'}`)
+      setIsDirty(false)
       queryClient.invalidateQueries({ queryKey: ['sales_orders'] })
       if (!isEdit && res?.data?.id) navigate(`/sales-orders/${res.data.id}/edit`)
     },
@@ -1379,6 +1406,7 @@ const SalesOrderForm = () => {
       }
 
       await saveMutation.mutateAsync(values)
+      setIsDirty(false)
       if (andNew) { form.resetFields(); setGroups([emptyGroup()]); navigate('/sales-orders/new') }
     } catch (err) { }
   }
@@ -1467,18 +1495,18 @@ const SalesOrderForm = () => {
   return (
     <MasterForm title="Sales Order" isEdit={isEdit} isLoading={isLoading} isSaving={saveMutation.isPending}
       breadcrumbs={[{ label: 'Sales' }, { label: 'Sales Orders', path: '/sales-orders' }, { label: isEdit ? record?.so_number || 'Edit' : 'New' }]}
-      onSave={() => handleSave(false)} onSaveNew={() => handleSave(true)} onDiscard={() => navigate('/sales-orders')}>
+      onSave={() => handleSave(false)} onSaveNew={() => handleSave(true)} onDiscard={() => guardedNavigate('/sales-orders')} onBack={() => guardedNavigate('/sales-orders')}>
 
       {isEdit && (
         <div style={{ marginBottom: 16, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {record?.quotation_id && (
-            <Button icon={<FileTextOutlined />} onClick={() => navigate(`/quotations/${record.quotation_id}/edit`)}>Quotation</Button>
+            <Button icon={<FileTextOutlined />} onClick={() => guardedNavigate(`/quotations/${record.quotation_id}/edit`)}>Quotation</Button>
           )}
           {record?.crm_lead_id && (
             <Button
               size="small"
               icon={<AimOutlined />}
-              onClick={() => navigate(`/crm/leads/${record.crm_lead_id}/edit`)}
+              onClick={() => guardedNavigate(`/crm/leads/${record.crm_lead_id}/edit`)}
               style={{ borderColor: '#8b5cf6', color: '#8b5cf6' }}
             >
               CRM Lead
@@ -1488,8 +1516,8 @@ const SalesOrderForm = () => {
             <Button
               icon={<ShoppingCartOutlined />}
               onClick={() => linkedPo?.id
-                ? navigate(`/purchase-orders/${linkedPo.id}/edit`)
-                : navigate(`/purchase-orders/new?so_id=${soId}`)}
+                ? guardedNavigate(`/purchase-orders/${linkedPo.id}/edit`)
+                : guardedNavigate(`/purchase-orders/new?so_id=${soId}`)}
             >
               Purchase Orders
             </Button>
@@ -1498,8 +1526,8 @@ const SalesOrderForm = () => {
             <Button
               icon={<CarOutlined />}
               onClick={() => linkedDc?.id
-                ? navigate(`/delivery-challans/${linkedDc.id}/edit`)
-                : navigate(`/delivery-challans/new?so_id=${soId}`)}
+                ? guardedNavigate(`/delivery-challans/${linkedDc.id}/edit`)
+                : guardedNavigate(`/delivery-challans/new?so_id=${soId}`)}
             >
               Deliveries
             </Button>
@@ -1508,8 +1536,8 @@ const SalesOrderForm = () => {
             <Button
               icon={<DollarOutlined />}
               onClick={() => linkedInv?.id
-                ? navigate(`/invoices/${linkedInv.id}/edit`)
-                : navigate(`/invoices/new?so_id=${soId}`)}
+                ? guardedNavigate(`/invoices/${linkedInv.id}/edit`)
+                : guardedNavigate(`/invoices/new?so_id=${soId}`)}
             >
               Invoices
             </Button>
@@ -1519,8 +1547,8 @@ const SalesOrderForm = () => {
               <Button
                 icon={<ToolOutlined />}
                 onClick={() => linkedWo?.id
-                  ? navigate(`/workshop/orders/${linkedWo.id}/edit`)
-                  : navigate(`/workshop/orders/new?so_id=${soId}`)}
+                  ? guardedNavigate(`/workshop/orders/${linkedWo.id}/edit`)
+                  : guardedNavigate(`/workshop/orders/new?so_id=${soId}`)}
               >
                 Workshop Orders
               </Button>
@@ -1648,7 +1676,7 @@ const SalesOrderForm = () => {
                 color: wo.status === 'completed' ? '#15803d' : '#92400e',
                 fontWeight: 600,
               }}
-              onClick={() => navigate(`/workshop/orders/${wo.id}/edit`)}
+              onClick={() => guardedNavigate(`/workshop/orders/${wo.id}/edit`)}
             >
               {wo.wo_number} — {wo.status?.toUpperCase()}
             </Button>
@@ -1658,7 +1686,7 @@ const SalesOrderForm = () => {
             type="primary"
             icon={<PlusOutlined />}
             style={{ background: '#6366f1', borderColor: '#6366f1' }}
-            onClick={() => navigate(`/workshop/orders/new?so_id={id}`)}
+            onClick={() => guardedNavigate(`/workshop/orders/new?so_id=${id}`)}
           >
             + New WO
           </Button>
@@ -2487,6 +2515,37 @@ const SalesOrderForm = () => {
             })()}
           </>
         )}
+      </Modal>
+
+      {/* ── Unsaved Changes Leave Guard ── */}
+      <Modal
+        open={leavePrompt !== null}
+        title="Unsaved changes"
+        onCancel={() => setLeavePrompt(null)}
+        footer={[
+          <Button key="stay" onClick={() => setLeavePrompt(null)}>Stay</Button>,
+          <Button key="discard" danger onClick={() => {
+            setIsDirty(false)
+            const prompt = leavePrompt
+            setLeavePrompt(null)
+            if (typeof prompt === 'string') navigate(prompt)
+            else if (prompt?.path) navigate(prompt.path, prompt.options)
+          }}>Leave without saving</Button>,
+          <Button key="save" type="primary" loading={saveMutation.isPending}
+            onClick={async () => {
+              try {
+                await handleSave(false)
+                const prompt = leavePrompt
+                setLeavePrompt(null)
+                if (typeof prompt === 'string') navigate(prompt)
+                else if (prompt?.path) navigate(prompt.path, prompt.options)
+              } catch {
+                setLeavePrompt(null)
+              }
+            }}>Save &amp; Leave</Button>,
+        ].filter(Boolean)}
+      >
+        <p>You have unsaved changes. If you leave now, all changes will be lost.</p>
       </Modal>
     </MasterForm>
   )
