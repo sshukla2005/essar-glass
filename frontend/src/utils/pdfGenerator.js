@@ -931,8 +931,10 @@ const calculateGroupHeight = (group, hasCep) => {
   h += 11 // two-tier header
   h += sizes.length * 6.5
   
-  const sizeProcs = sizes.flatMap(s => s.size_processes || []).filter(p => (p.amount || 0) > 0)
-  const grpProcs = (group.processes || []).filter(p => (p.amount || 0) > 0)
+  const isRealProc = (p) => (p.process_id != null || p.process_name || p.name) &&
+    (((p.qty_area ?? p.qty) || 0) > 0 || (p.rate || 0) > 0 || (p.amount || 0) > 0)
+  const sizeProcs = sizes.flatMap(s => s.size_processes || []).filter(isRealProc)
+  const grpProcs = (group.processes || []).filter(isRealProc)
   const allProcs = [...sizeProcs, ...grpProcs]
   
   if (allProcs.length > 0) {
@@ -950,8 +952,10 @@ const calculateGroupHeight = (group, hasCep) => {
 // ── Draw Glass Card (Splits Dynamically across pages) ──
 const drawGroupCard = (doc, group, groupNo, hasCep, cols, startY, pageNum, quotation) => {
   const sizes = group.sizes || []
-  const sizeProcs = sizes.flatMap(s => s.size_processes || []).filter(p => (p.amount || 0) > 0)
-  const grpProcs = (group.processes || []).filter(p => (p.amount || 0) > 0)
+  const isRealProc = (p) => (p.process_id != null || p.process_name || p.name) &&
+    (((p.qty_area ?? p.qty) || 0) > 0 || (p.rate || 0) > 0 || (p.amount || 0) > 0)
+  const sizeProcs = sizes.flatMap(s => s.size_processes || []).filter(isRealProc)
+  const grpProcs = (group.processes || []).filter(isRealProc)
   const allProcs = [...sizeProcs, ...grpProcs]
   
   const groupHeight = calculateGroupHeight(group, hasCep)
@@ -1829,8 +1833,10 @@ const drawSOItemsCard = (doc, lines, hasCep, cols, startY, pageNum, so) => {
 
 const drawSOGroupCard = (doc, group, groupNo, hasCep, cols, startY, pageNum, so) => {
   const sizes = group.sizes || []
-  const sizeProcs = sizes.flatMap(s => s.size_processes || []).filter(p => (p.amount || 0) > 0)
-  const grpProcs = (group.processes || []).filter(p => (p.amount || 0) > 0)
+  const isRealProc = (p) => (p.process_id != null || p.process_name || p.name) &&
+    (((p.qty_area ?? p.qty) || 0) > 0 || (p.rate || 0) > 0 || (p.amount || 0) > 0)
+  const sizeProcs = sizes.flatMap(s => s.size_processes || []).filter(isRealProc)
+  const grpProcs = (group.processes || []).filter(isRealProc)
   const allProcs = [...sizeProcs, ...grpProcs]
   
   const groupHeight = calculateGroupHeight(group, hasCep)

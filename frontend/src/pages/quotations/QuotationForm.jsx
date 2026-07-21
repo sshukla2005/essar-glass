@@ -358,6 +358,11 @@ const QuotationForm = () => {
   const products = Array.isArray(productsData) ? productsData : (productsData?.items || [])
   const processMasters = Array.isArray(processMastersData) ? processMastersData : (processMastersData?.items || [])
 
+  const getProcessName = (process_id) => {
+    const m = (processMasters || []).find(x => x.id === process_id)
+    return m?.name || 'Process'
+  }
+
   // Query linked SO when quotation is already converted
   const { data: linkedSoData } = useQuery({
     queryKey: ['so-by-quote', id],
@@ -1041,8 +1046,16 @@ const QuotationForm = () => {
         custom_costing: g.custom_costing,
         manual_rate: g.manual_rate,
         cep_rft_multiplier: g.cep_rft_multiplier,
-        processes: idx === 0 ? (g.processes || []).map(({ proc_key, ...rest }) => rest) : [],
-        size_processes: (s.size_processes || []).map(({ sproc_key, ...rest }) => rest),
+        processes: idx === 0 ? (g.processes || []).map(({ proc_key, ...rest }) => ({
+          ...rest,
+          process_name: rest.process_name || getProcessName(rest.process_id),
+          amount: rest.amount ?? parseFloat(((rest.qty_area || 0) * (rest.rate || 0)).toFixed(2)),
+        })) : [],
+        size_processes: (s.size_processes || []).map(({ sproc_key, ...rest }) => ({
+          ...rest,
+          process_name: rest.process_name || getProcessName(rest.process_id),
+          amount: rest.amount ?? parseFloat((((rest.qty_area ?? rest.qty) || 0) * (rest.rate || 0)).toFixed(2)),
+        })),
         width_inch: s.width_inch,
         height_inch: s.height_inch,
         quantity: s.quantity,
@@ -1080,10 +1093,6 @@ const QuotationForm = () => {
 
   const convertMutation = useMutation({
     mutationFn: async () => {
-      const getProcessName = (process_id) => {
-        const pm = processMasters.find(p => p.id === process_id)
-        return pm?.name || ''
-      }
       const soData = {
         ...form.getFieldsValue(),
         lines: (() => {
