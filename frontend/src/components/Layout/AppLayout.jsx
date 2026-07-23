@@ -298,9 +298,14 @@ const AppLayout = () => {
                   size="small"
                   value={activeCompanyId || 'all'}
                   style={{ width: 160 }}
-                  onChange={val => {
-                    setActiveCompany(val === 'all' ? null : val)
-                    window.location.reload()
+                  onChange={async (val) => {
+                    const targetId = val === 'all' ? null : val
+                    const ok = await setActiveCompany(targetId)
+                    if (!ok) {
+                      message.error('Failed to switch company — please try again.')
+                    }
+                    // queryClient.clear() inside setActiveCompany already causes
+                    // React Query to re-fetch all lists; no page reload needed.
                   }}
                   options={[
                     { value: 'all', label: '🌐 All Companies' },

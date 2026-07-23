@@ -7,7 +7,7 @@ class Invoice(Base, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "invoices"
 
     id               = Column(Integer, primary_key=True, index=True)
-    invoice_number   = Column(String(20),  unique=True, nullable=False)
+    invoice_number   = Column(String(20),  nullable=False, index=True)  # unique per-company (see migration)
     customer_id      = Column(Integer, ForeignKey("customers.id"),
                               nullable=True)
     so_id            = Column(Integer, ForeignKey("sales_orders.id"),

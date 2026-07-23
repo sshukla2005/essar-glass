@@ -39,6 +39,40 @@ const LoginPage = () => {
       localStorage.setItem('auth_token', data.access_token)
       localStorage.setItem('auth_user', JSON.stringify(data.user))
 
+      // ── Superadmin: ensure a concrete company scope is always set ──────
+      // If the login token carries active_company_id = null the backend's
+      // apply_company_filter skips filtering entirely and the user sees ALL
+      // companies' data.  Immediately switch to home_company_id (or the
+      // first available company) so the JWT is always scoped.
+      if (data.user?.role === 'superadmin' && !data.active_company_id) {
+        const fallbackId =
+          data.user?.home_company_id ||
+          data.user?.company_id ||
+          null
+
+        if (fallbackId) {
+          try {
+            const switchRes = await fetch(
+              'http://localhost:8000/api/v1/auth/switch-company',
+              {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  Authorization: `Bearer ${data.access_token}`,
+                },
+                body: JSON.stringify({ company_id: fallbackId }),
+              }
+            )
+            if (switchRes.ok) {
+              const switchData = await switchRes.json()
+              // Replace the initial token with the scoped one
+              localStorage.setItem('auth_token', switchData.access_token)
+              localStorage.setItem('active_company_id', String(fallbackId))
+            }
+          } catch {}
+        }
+      }
+
       message.success(`Welcome, ${data.user.name}! 👋`)
 
       // Route based on role

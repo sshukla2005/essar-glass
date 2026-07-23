@@ -6,17 +6,17 @@ QT0001, SO0001, INV0001, etc.
 
 Existing records are NOT renumbered.
 
-Revision ID: a1b2c3d4e5f6
-Revises:
-Create Date: 2026-07-15
+Revision ID: c3d4e5f6a7b8
+Revises: b2c3d4e5f6a7
+Create Date: 2026-07-22
 
 """
 from alembic import op
 import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
-revision = 'a1b2c3d4e5f6'
-down_revision = None
+revision = 'c3d4e5f6a7b8'
+down_revision = 'b2c3d4e5f6a7'
 branch_labels = None
 depends_on = None
 
@@ -25,7 +25,10 @@ def upgrade() -> None:
     # ── Quotations ─────────────────────────────────────────────────────────
     op.drop_index('ix_quotations_quote_number', table_name='quotations', if_exists=True)
     with op.batch_alter_table('quotations') as batch_op:
-        batch_op.drop_constraint('quotations_quote_number_key', type_='unique')
+        try:
+            batch_op.drop_constraint('quotations_quote_number_key', type_='unique')
+        except Exception:
+            pass
     op.create_index(
         'ix_quotations_quote_number_company',
         'quotations',
@@ -37,7 +40,10 @@ def upgrade() -> None:
     # ── Sales Orders ───────────────────────────────────────────────────────
     op.drop_index('ix_sales_orders_so_number', table_name='sales_orders', if_exists=True)
     with op.batch_alter_table('sales_orders') as batch_op:
-        batch_op.drop_constraint('sales_orders_so_number_key', type_='unique')
+        try:
+            batch_op.drop_constraint('sales_orders_so_number_key', type_='unique')
+        except Exception:
+            pass
     op.create_index(
         'ix_sales_orders_so_number_company',
         'sales_orders',
@@ -49,7 +55,10 @@ def upgrade() -> None:
     # ── Purchase Orders ────────────────────────────────────────────────────
     op.drop_index('ix_purchase_orders_po_number', table_name='purchase_orders', if_exists=True)
     with op.batch_alter_table('purchase_orders') as batch_op:
-        batch_op.drop_constraint('purchase_orders_po_number_key', type_='unique')
+        try:
+            batch_op.drop_constraint('purchase_orders_po_number_key', type_='unique')
+        except Exception:
+            pass
     op.create_index(
         'ix_purchase_orders_po_number_company',
         'purchase_orders',
@@ -61,7 +70,10 @@ def upgrade() -> None:
     # ── Delivery Challans ──────────────────────────────────────────────────
     op.drop_index('ix_delivery_challans_dc_number', table_name='delivery_challans', if_exists=True)
     with op.batch_alter_table('delivery_challans') as batch_op:
-        batch_op.drop_constraint('delivery_challans_dc_number_key', type_='unique')
+        try:
+            batch_op.drop_constraint('delivery_challans_dc_number_key', type_='unique')
+        except Exception:
+            pass
     op.create_index(
         'ix_delivery_challans_dc_number_company',
         'delivery_challans',
@@ -73,7 +85,10 @@ def upgrade() -> None:
     # ── Invoices ───────────────────────────────────────────────────────────
     op.drop_index('ix_invoices_invoice_number', table_name='invoices', if_exists=True)
     with op.batch_alter_table('invoices') as batch_op:
-        batch_op.drop_constraint('invoices_invoice_number_key', type_='unique')
+        try:
+            batch_op.drop_constraint('invoices_invoice_number_key', type_='unique')
+        except Exception:
+            pass
     op.create_index(
         'ix_invoices_invoice_number_company',
         'invoices',
@@ -85,7 +100,10 @@ def upgrade() -> None:
     # ── Payments ───────────────────────────────────────────────────────────
     op.drop_index('ix_payments_payment_number', table_name='payments', if_exists=True)
     with op.batch_alter_table('payments') as batch_op:
-        batch_op.drop_constraint('payments_payment_number_key', type_='unique')
+        try:
+            batch_op.drop_constraint('payments_payment_number_key', type_='unique')
+        except Exception:
+            pass
     op.create_index(
         'ix_payments_payment_number_company',
         'payments',
@@ -97,7 +115,10 @@ def upgrade() -> None:
     # ── Workshop Orders ────────────────────────────────────────────────────
     op.drop_index('ix_workshop_orders_wo_number', table_name='workshop_orders', if_exists=True)
     with op.batch_alter_table('workshop_orders') as batch_op:
-        batch_op.drop_constraint('workshop_orders_wo_number_key', type_='unique')
+        try:
+            batch_op.drop_constraint('workshop_orders_wo_number_key', type_='unique')
+        except Exception:
+            pass
     op.create_index(
         'ix_workshop_orders_wo_number_company',
         'workshop_orders',
@@ -109,7 +130,10 @@ def upgrade() -> None:
     # ── Toughening Batches ─────────────────────────────────────────────────
     op.drop_index('ix_toughening_batches_tb_number', table_name='toughening_batches', if_exists=True)
     with op.batch_alter_table('toughening_batches') as batch_op:
-        batch_op.drop_constraint('toughening_batches_tb_number_key', type_='unique')
+        try:
+            batch_op.drop_constraint('toughening_batches_tb_number_key', type_='unique')
+        except Exception:
+            pass
     op.create_index(
         'ix_toughening_batches_tb_number_company',
         'toughening_batches',
@@ -121,7 +145,10 @@ def upgrade() -> None:
     # ── Stock Movements ────────────────────────────────────────────────────
     op.drop_index('ix_stock_movements_move_number', table_name='stock_movements', if_exists=True)
     with op.batch_alter_table('stock_movements') as batch_op:
-        batch_op.drop_constraint('stock_movements_move_number_key', type_='unique')
+        try:
+            batch_op.drop_constraint('stock_movements_move_number_key', type_='unique')
+        except Exception:
+            pass
     op.create_index(
         'ix_stock_movements_move_number_company',
         'stock_movements',
@@ -133,7 +160,10 @@ def upgrade() -> None:
     # ── CRM Leads ──────────────────────────────────────────────────────────
     op.drop_index('ix_crm_leads_lead_number', table_name='crm_leads', if_exists=True)
     with op.batch_alter_table('crm_leads') as batch_op:
-        batch_op.drop_constraint('crm_leads_lead_number_key', type_='unique')
+        try:
+            batch_op.drop_constraint('crm_leads_lead_number_key', type_='unique')
+        except Exception:
+            pass
     op.create_index(
         'ix_crm_leads_lead_number_company',
         'crm_leads',

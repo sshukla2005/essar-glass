@@ -6,7 +6,7 @@ class Vendor(Base, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "vendors"
 
     id            = Column(Integer, primary_key=True, index=True)
-    vendor_code   = Column(String(20),  unique=True, nullable=False)
+    vendor_code   = Column(String(20),  nullable=False, index=True)  # unique per-company (see migration)
     name          = Column(String(200), nullable=False, index=True)
     gstin         = Column(String(20),  nullable=True)
     address       = Column(Text,        nullable=True)

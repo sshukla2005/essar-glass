@@ -148,3 +148,18 @@ export const receivablesApi = {
     return { data: res.data }
   },
 }
+
+// ── Auth helpers ───────────────────────────────────
+export const authApi = {
+  // Returns { access_token, active_company_id, active_company, is_read_only, home_company_id, ... }
+  switchCompany: (company_id) =>
+    api.post('/api/v1/auth/switch-company', { company_id }),
+}
+
+// ── SuperAdmin Dashboard ───────────────────────────
+export const superApi = {
+  getGroupOverview: async () => {
+    const res = await api.get('/api/v1/super/group-overview')
+    return { data: res.data }
+  },
+}

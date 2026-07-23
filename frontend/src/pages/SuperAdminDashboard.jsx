@@ -1,24 +1,18 @@
-import React, { useMemo, useState } from 'react'
+import React from 'react'
 import { useQuery } from '@tanstack/react-query'
-import {
-  companyApi, quotationApi, salesOrderApi,
-  invoiceApi, customerApi, employeeApi,
-  productApi, crmLeadApi, purchaseOrderApi
-} from '../api'
+import { superApi } from '../api'
 import {
   Row, Col, Card, Typography, Tag, Table,
-  Statistic, Select, Tabs, Progress, Badge,
-  Space, Button, Divider
+  Statistic, Progress, Badge, Space, Button, Spin
 } from 'antd'
 import {
-  BarChart, Bar, LineChart, Line, XAxis, YAxis,
+  BarChart, Bar, XAxis, YAxis,
   CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   PieChart, Pie, Cell
 } from 'recharts'
 import {
-  DollarOutlined, ShoppingOutlined, FileTextOutlined,
-  TeamOutlined, RiseOutlined, BankOutlined,
-  LogoutOutlined
+  DollarOutlined, ShoppingOutlined,
+  TeamOutlined, BankOutlined, LogoutOutlined
 } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
@@ -27,149 +21,39 @@ const { Title, Text } = Typography
 
 const SuperAdminDashboard = () => {
   const navigate = useNavigate()
-  const { user, logout, setActiveCompany } = useAuth()
-  const [activeTab, setActiveTab] = useState('overview')
+  const { logout, setActiveCompany } = useAuth()
 
-  const { data: companiesData } = useQuery({
-    queryKey: ['superadmin-companies'],
-    queryFn: () => companyApi.list({ page: 1, page_size: 50 }).then(r => r.data),
-    staleTime: 60000,
-  })
-  const companies = companiesData?.items || []
-
-  const { data: allQuotationsData } = useQuery({
-    queryKey: ['superadmin-quotations'],
-    queryFn: () => quotationApi.list({ page: 1, page_size: 1000 }).then(r => r.data),
-    staleTime: 30000,
-  })
-  const { data: allSalesOrdersData } = useQuery({
-    queryKey: ['superadmin-sales-orders'],
-    queryFn: () => salesOrderApi.list({ page: 1, page_size: 1000 }).then(r => r.data),
-    staleTime: 30000,
-  })
-  const { data: allInvoicesData } = useQuery({
-    queryKey: ['superadmin-invoices'],
-    queryFn: () => invoiceApi.list({ page: 1, page_size: 1000 }).then(r => r.data),
-    staleTime: 30000,
-  })
-  const { data: allCustomersData } = useQuery({
-    queryKey: ['superadmin-customers'],
-    queryFn: () => customerApi.list({ page: 1, page_size: 1000 }).then(r => r.data),
-    staleTime: 60000,
-  })
-  const { data: allEmployeesData } = useQuery({
-    queryKey: ['superadmin-employees'],
-    queryFn: () => employeeApi.list({ page: 1, page_size: 500 }).then(r => r.data),
-    staleTime: 60000,
-  })
-  const { data: allLeadsData } = useQuery({
-    queryKey: ['superadmin-leads'],
-    queryFn: () => crmLeadApi.list({ page: 1, page_size: 1000 }).then(r => r.data),
-    staleTime: 30000,
-  })
-  const { data: allPurchaseOrdersData } = useQuery({
-    queryKey: ['superadmin-purchase-orders'],
-    queryFn: () => purchaseOrderApi.list({ page: 1, page_size: 1000 }).then(r => r.data),
+  const { data: overviewRes, isLoading } = useQuery({
+    queryKey: ['superadmin-group-overview'],
+    queryFn: () => superApi.getGroupOverview().then(r => r.data),
     staleTime: 30000,
   })
 
-  const companyMetrics = useMemo(() => {
-    const quotations     = allQuotationsData?.items     || []
-    const salesOrders    = allSalesOrdersData?.items    || []
-    const invoices       = allInvoicesData?.items       || []
-    const customers      = allCustomersData?.items      || []
-    const employees      = allEmployeesData?.items      || []
-    const leads          = allLeadsData?.items          || []
-    const purchaseOrders = allPurchaseOrdersData?.items || []
-
-    return companies.map(company => {
-      const cId = company.id
-      const cQuotes = quotations.filter(q => q.company_id === cId)
-      const cSOs    = salesOrders.filter(s => s.company_id === cId)
-      const cInvs   = invoices.filter(i => i.company_id === cId)
-      const cCusts  = customers.filter(c => c.company_id === cId)
-      const cEmps   = employees.filter(e => e.company_id === cId)
-      const cLeads  = leads.filter(l => l.company_id === cId)
-      const cPOs    = purchaseOrders.filter(p => p.company_id === cId)
-
-      const revenue = cInvs
-        .filter(i => ['paid','sent','confirmed'].includes(i.status))
-        .reduce((s, i) => s + (i.total_amount || 0), 0)
-
-      const purchaseCost = cPOs
-        .filter(p => p.status === 'received')
-        .reduce((s, p) => s + (p.total_amount || 0), 0)
-
-      const grossMargin = revenue > 0
-        ? parseFloat(((revenue - purchaseCost) / revenue * 100).toFixed(1))
-        : 0
-
-      const outstanding = cInvs
-        .filter(i => i.status === 'sent')
-        .reduce((s, i) => s + (i.total_amount || 0), 0)
-
-      const activeSOs = cSOs.filter(s =>
-        ['confirmed','in_production','ready'].includes(s.status)
-      ).length
-
-      const wonLeads = cLeads.filter(l => l.stage_id === 4).length
-
-      const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
-      const now = new Date()
-      const monthlyRevenue = Array.from({ length: 6 }, (_, i) => {
-        const d = new Date(now.getFullYear(), now.getMonth() - 5 + i, 1)
-        const mName = months[d.getMonth()]
-        const mYear = d.getFullYear()
-        const mMonth = d.getMonth()
-        const mRev = cInvs
-          .filter(inv => {
-            const id = new Date(inv.created_at)
-            return !isNaN(id) &&
-                   id.getFullYear() === mYear &&
-                   id.getMonth() === mMonth &&
-                   ['paid','sent'].includes(inv.status)
-          })
-          .reduce((s, inv) => s + (inv.total_amount || 0), 0)
-        return { month: mName, revenue: mRev }
-      })
-
-      return {
-        ...company,
-        revenue, purchaseCost, grossMargin, outstanding, activeSOs,
-        totalQuotes: cQuotes.length,
-        totalSOs: cSOs.length,
-        totalCustomers: cCusts.length,
-        totalEmployees: cEmps.length,
-        wonLeads,
-        totalLeads: cLeads.length,
-        monthlyRevenue,
-      }
-    })
-  }, [
-    companies,
-    allQuotationsData, allSalesOrdersData, allInvoicesData,
-    allCustomersData, allEmployeesData, allLeadsData, allPurchaseOrdersData
-  ])
-
-  const groupRevenueData = useMemo(() => {
-    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
-    const now = new Date()
-    return Array.from({ length: 6 }, (_, i) => {
-      const d = new Date(now.getFullYear(), now.getMonth() - 5 + i, 1)
-      const entry = { month: months[d.getMonth()] }
-      companyMetrics.forEach(c => {
-        entry[c.short_name] = c.monthlyRevenue[i]?.revenue || 0
-      })
-      return entry
-    })
-  }, [companyMetrics])
-
-  const totalGroupRevenue = companyMetrics.reduce((s,c) => s+c.revenue, 0)
+  const companyMetrics = overviewRes?.company_metrics || []
+  const groupRevenueData = overviewRes?.group_revenue_data || []
+  const totalGroupRevenue = overviewRes?.totals?.group_revenue || 0
+  const totalGroupCustomers = overviewRes?.totals?.total_customers || 0
+  const totalGroupActiveSOs = overviewRes?.totals?.active_orders || 0
+  const totalGroupOutstanding = overviewRes?.totals?.outstanding || 0
 
   const fmt = (v) => {
     if (v >= 100000) return `₹${(v/100000).toFixed(1)}L`
     if (v >= 1000)   return `₹${(v/1000).toFixed(1)}K`
-    return `₹${v.toLocaleString('en-IN')}`
+    return `₹${(v || 0).toLocaleString('en-IN')}`
+  }
+
+  if (isLoading) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center'
+      }}>
+        <Spin size="large" tip="Loading Group Overview..." />
+      </div>
+    )
   }
 
   return (
@@ -194,9 +78,9 @@ const SuperAdminDashboard = () => {
       <Row gutter={[16,16]} style={{ marginBottom: 24 }}>
         {[
           { title: 'Group Revenue', value: fmt(totalGroupRevenue), color: '#ffd700' },
-          { title: 'Total Customers', value: companyMetrics.reduce((s,c) => s+c.totalCustomers, 0), color: '#34d399', prefix: <TeamOutlined /> },
-          { title: 'Active Orders', value: companyMetrics.reduce((s,c) => s+c.activeSOs, 0), color: '#60a5fa', prefix: <ShoppingOutlined /> },
-          { title: 'Outstanding', value: fmt(companyMetrics.reduce((s,c) => s+c.outstanding, 0)), color: '#f87171', prefix: <DollarOutlined /> },
+          { title: 'Total Customers', value: totalGroupCustomers, color: '#34d399', prefix: <TeamOutlined /> },
+          { title: 'Active Orders', value: totalGroupActiveSOs, color: '#60a5fa', prefix: <ShoppingOutlined /> },
+          { title: 'Outstanding', value: fmt(totalGroupOutstanding), color: '#f87171', prefix: <DollarOutlined /> },
         ].map((kpi, i) => (
           <Col span={6} key={i}>
             <Card style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12 }}>
@@ -217,9 +101,6 @@ const SuperAdminDashboard = () => {
           <Col key={company.id} xs={24} sm={12} xl={6}>
             <Card hoverable style={{ borderRadius: 16, border: `2px solid ${company.color}`, background: 'rgba(255,255,255,0.03)', cursor: 'pointer' }}
               onClick={() => {
-                // Dashboard se company chuni → globally active karo, taaki
-                // header "Viewing" + naye documents ka Company field dono
-                // isi company pe set ho
                 setActiveCompany(company.id)
                 navigate('/', { state: { company_id: company.id } })
               }}>
@@ -246,7 +127,7 @@ const SuperAdminDashboard = () => {
                   trailColor="rgba(255,255,255,0.1)" size="small" />
               </div>
               <Row gutter={8}>
-                {[['Quotes', company.totalQuotes], ['Orders', company.totalSOs], ['Customers', company.totalCustomers]].map(([label, val]) => (
+                {[['Quotes', company.totalQuotes], ['Active Orders', company.activeSOs], ['Customers', company.totalCustomers]].map(([label, val]) => (
                   <Col span={8} style={{ textAlign: 'center' }} key={label}>
                     <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 10 }}>{label}</Text>
                     <div style={{ color: '#fff', fontWeight: 700 }}>{val}</div>
@@ -273,7 +154,7 @@ const SuperAdminDashboard = () => {
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
                 <XAxis dataKey="month" tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 12 }} />
                 <YAxis tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 12 }} tickFormatter={v => v >= 1000 ? `₹${(v/1000).toFixed(0)}K` : `₹${v}`} />
-                <Tooltip contentStyle={{ background: '#1e293b', border: '1px solid rgba(255,255,255,0.2)' }} labelStyle={{ color: '#fff' }} formatter={(v, name) => [`₹${v.toLocaleString('en-IN')}`, name]} />
+                <Tooltip contentStyle={{ background: '#1e293b', border: '1px solid rgba(255,255,255,0.2)' }} labelStyle={{ color: '#fff' }} formatter={(v, name) => [`₹${(v || 0).toLocaleString('en-IN')}`, name]} />
                 <Legend />
                 {companyMetrics.map(c => (
                   <Bar key={c.id} dataKey={c.short_name} fill={c.color} radius={[4,4,0,0]} />
@@ -291,7 +172,7 @@ const SuperAdminDashboard = () => {
                   label={({ name, percent }) => `${name} ${(percent*100).toFixed(0)}%`} labelLine={false}>
                   {companyMetrics.map((c, i) => (<Cell key={i} fill={c.color} />))}
                 </Pie>
-                <Tooltip formatter={v => [`₹${v.toLocaleString('en-IN')}`, 'Revenue']} contentStyle={{ background: '#1e293b' }} />
+                <Tooltip formatter={v => [`₹${(v || 0).toLocaleString('en-IN')}`, 'Revenue']} contentStyle={{ background: '#1e293b' }} />
               </PieChart>
             </ResponsiveContainer>
             {companyMetrics.map(c => (

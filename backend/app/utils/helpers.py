@@ -23,9 +23,25 @@ def get_next_code(
     if company_id is not None and hasattr(model, "company_id"):
         q = q.filter(model.company_id == company_id)
 
-    last = q.order_by(getattr(model, "id").desc()).first()
-    next_id = (last.id + 1) if last else 1
-    return f"{prefix}{str(next_id).zfill(4)}"
+    # Derive the next number from THIS company's existing codes, never from the
+    # global primary key — the PK is shared across companies and makes numbers
+    # jump (Company B's 2nd doc became QT0007 instead of QT0002).
+    col = getattr(model, code_field)
+    rows = q.with_entities(col).filter(col.isnot(None)).all()
+
+    max_n = 0
+    for (code,) in rows:
+        code_str = str(code or "").strip()
+        if not code_str.upper().startswith(prefix.upper()):
+            continue
+        digits = "".join(ch for ch in code_str[len(prefix):] if ch.isdigit())
+        if digits:
+            try:
+                max_n = max(max_n, int(digits))
+            except ValueError:
+                pass
+
+    return f"{prefix}{str(max_n + 1).zfill(4)}"
 
 
 def apply_company_filter(query, model, active_company_id: Optional[int]):

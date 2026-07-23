@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClientProvider } from '@tanstack/react-query'
+import { queryClient } from './queryClient'
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import { ConfigProvider, theme, App as AntApp } from 'antd'
 import AppLayout from './components/Layout/AppLayout'
@@ -103,15 +104,6 @@ import InvoiceForm from './pages/invoices/InvoiceForm'
 import CustomerLedger from './pages/invoices/CustomerLedger'
 import PaymentAccounts from './pages/settings/PaymentAccounts'
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      retry:              1,
-      staleTime:          30_000,
-      refetchOnWindowFocus: false,
-    },
-  },
-})
 
 const fixFarma = () => {
   try {

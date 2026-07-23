@@ -7,7 +7,7 @@ class StockMovement(Base, TimestampMixin):
     __tablename__ = "stock_movements"
 
     id             = Column(Integer, primary_key=True, index=True)
-    move_number    = Column(String(20),  unique=True, nullable=False)
+    move_number    = Column(String(20),  nullable=False, index=True)  # unique per-company (see migration)
     product_id     = Column(Integer, ForeignKey("products.id"),
                             nullable=True)
     movement_type  = Column(String(20),  nullable=False)

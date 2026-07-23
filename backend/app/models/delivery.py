@@ -7,7 +7,7 @@ class DeliveryChallan(Base, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "delivery_challans"
 
     id              = Column(Integer, primary_key=True, index=True)
-    dc_number       = Column(String(20),  unique=True, nullable=False)
+    dc_number       = Column(String(20),  nullable=False, index=True)  # unique per-company (see migration)
     customer_id     = Column(Integer, ForeignKey("customers.id"),
                              nullable=True)
     so_id           = Column(Integer, ForeignKey("sales_orders.id"),

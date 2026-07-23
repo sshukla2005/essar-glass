@@ -6,7 +6,7 @@ class Payment(Base, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "payments"
 
     id               = Column(Integer, primary_key=True, index=True)
-    payment_number   = Column(String(20), unique=True, nullable=False)
+    payment_number   = Column(String(20), nullable=False, index=True)  # unique per-company (see migration)
     customer_id      = Column(Integer, ForeignKey("customers.id"), nullable=False, index=True)
     so_id            = Column(Integer, ForeignKey("sales_orders.id"), nullable=True, index=True)
     amount           = Column(Float, nullable=False, default=0)

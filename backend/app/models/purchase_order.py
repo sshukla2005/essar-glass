@@ -7,7 +7,7 @@ class PurchaseOrder(Base, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "purchase_orders"
 
     id                = Column(Integer, primary_key=True, index=True)
-    po_number         = Column(String(20),  unique=True, nullable=False)
+    po_number         = Column(String(20),  nullable=False, index=True)  # unique per-company (see migration)
     vendor_id         = Column(Integer, ForeignKey("vendors.id"),
                                nullable=True)
     so_id             = Column(Integer, ForeignKey("sales_orders.id"),

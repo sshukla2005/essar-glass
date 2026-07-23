@@ -21,7 +21,7 @@ class CRMLead(Base, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "crm_leads"
 
     id                = Column(Integer, primary_key=True, index=True)
-    lead_number       = Column(String(20),  unique=True, nullable=False)
+    lead_number       = Column(String(20),  nullable=False, index=True)  # unique per-company (see migration)
     name              = Column(String(300), nullable=False)
     stage_id          = Column(Integer, ForeignKey("crm_stages.id"),
                                nullable=True)

@@ -7,7 +7,7 @@ class SalesOrder(Base, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "sales_orders"
 
     id               = Column(Integer, primary_key=True, index=True)
-    so_number        = Column(String(20),  unique=True, nullable=False)
+    so_number        = Column(String(20),  nullable=False, index=True)  # unique per-company (see migration)
     customer_id      = Column(Integer, ForeignKey("customers.id"),
                               nullable=True)
     quotation_id     = Column(Integer, ForeignKey("quotations.id"),

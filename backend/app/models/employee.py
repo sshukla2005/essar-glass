@@ -6,7 +6,7 @@ class Employee(Base, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "employees"
 
     id            = Column(Integer, primary_key=True, index=True)
-    employee_code = Column(String(20),  unique=True, nullable=False)
+    employee_code = Column(String(20),  nullable=False, index=True)  # unique per-company (see migration)
     name          = Column(String(200), nullable=False, index=True)
     designation   = Column(String(200), nullable=True)
     department    = Column(String(100), nullable=True)

@@ -7,7 +7,7 @@ class WorkshopOrder(Base, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "workshop_orders"
 
     id           = Column(Integer, primary_key=True, index=True)
-    wo_number    = Column(String(20),  unique=True, nullable=False)
+    wo_number    = Column(String(20),  nullable=False, index=True)  # unique per-company (see migration)
     so_id        = Column(Integer, ForeignKey("sales_orders.id"),
                           nullable=True)
     customer_id  = Column(Integer, ForeignKey("customers.id"),
@@ -31,7 +31,7 @@ class TougheningBatch(Base, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "toughening_batches"
 
     id              = Column(Integer, primary_key=True, index=True)
-    tb_number       = Column(String(20),  unique=True, nullable=False)
+    tb_number       = Column(String(20),  nullable=False, index=True)  # unique per-company (see migration)
     vendor_id       = Column(Integer, ForeignKey("vendors.id"),
                              nullable=True)
     sent_date       = Column(String(20),  nullable=True)

@@ -7,7 +7,7 @@ class Customer(Base, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "customers"
 
     id              = Column(Integer, primary_key=True, index=True)
-    customer_code   = Column(String(20),  unique=True, nullable=False)
+    customer_code   = Column(String(20),  nullable=False, index=True)  # unique per-company (see migration)
     name            = Column(String(200), nullable=False, index=True)
     customer_type   = Column(String(50),  default="company")
     gstin           = Column(String(20),  nullable=True)

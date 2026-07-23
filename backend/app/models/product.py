@@ -6,7 +6,7 @@ class Product(Base, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "products"
 
     id             = Column(Integer, primary_key=True, index=True)
-    internal_ref   = Column(String(20),  unique=True, nullable=False)
+    internal_ref   = Column(String(20),  nullable=False, index=True)  # unique per-company (see migration)
     name           = Column(String(200), nullable=False, index=True)
     product_type   = Column(String(50),  default="storable")
     glass_type     = Column(String(100), nullable=True)

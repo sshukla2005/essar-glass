@@ -154,7 +154,9 @@ from app.models.warehouse      import Warehouse
 from app.models.company_settings import CompanySetting
 from app.models.payment import Payment
 
+from app.routers.auth import router as auth_router
 from app.routers.settings import router as settings_router
+from app.routers.super import router as super_router
 
 PREFIX = "/api/v1"
 
@@ -163,6 +165,10 @@ app.include_router(auth_router, prefix=f"{PREFIX}")
 
 # Settings
 app.include_router(settings_router)
+
+# SuperAdmin
+app.include_router(super_router, prefix=f"{PREFIX}")
+
 
 # Auto CRUD routers
 for router_cfg in [
