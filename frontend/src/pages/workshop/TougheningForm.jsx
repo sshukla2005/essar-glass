@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { Form, Input, InputNumber, Select, Row, Col, Divider, DatePicker, Button, Table, Steps, Space, Tag, Card, Modal, Checkbox, App, Typography } from 'antd'
-import { SendOutlined, CheckCircleOutlined, PlusOutlined, InboxOutlined } from '@ant-design/icons'
+import { SendOutlined, CheckCircleOutlined, PlusOutlined, InboxOutlined, DownloadOutlined } from '@ant-design/icons'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import dayjs from 'dayjs'
 import MasterForm from '../../components/common/MasterForm'
 import { tougheningBatchApi, workshopOrderApi, vendorApi, stockMovementApi } from '../../api'
 import { getSettings } from '../../utils/glassCalc'
+import { generateTougheningChallanPDF } from '../../utils/pdfGenerator'
 
 const { TextArea } = Input
 const { Text } = Typography
@@ -31,6 +32,7 @@ const TougheningForm = () => {
   const [items, setItems] = useState([])
   const [woModalOpen, setWoModalOpen] = useState(false)
   const [selectedWoItems, setSelectedWoItems] = useState([])
+  const [pdfLoading, setPdfLoading] = useState(false)
 
   const { data: record, isLoading } = useQuery({
     queryKey: ['toughening_batches', id], queryFn: () => tougheningBatchApi.get(id).then(r => r.data), enabled: isEdit,
@@ -277,6 +279,32 @@ const TougheningForm = () => {
         </Col>
         <Col xs={24} lg={12} style={{ textAlign: 'right' }}>
           <Space wrap>
+            <Button
+              icon={<DownloadOutlined />}
+              disabled={!isEdit}
+              loading={pdfLoading}
+              onClick={async () => {
+                const hide = message.loading('Generating Job Work Challan PDF...', 0)
+                setPdfLoading(true)
+                try {
+                  const fullBatch = {
+                    ...record,
+                    ...form.getFieldsValue(),
+                    lines: items,
+                    items,
+                  }
+                  await generateTougheningChallanPDF(fullBatch)
+                } catch (err) {
+                  message.error('Failed to generate PDF: ' + (err?.message || 'Unknown error'))
+                } finally {
+                  setPdfLoading(false)
+                  hide()
+                }
+              }}
+              style={{ borderColor: '#6366f1', color: '#6366f1' }}
+            >
+              Download Challan
+            </Button>
             {status === 'draft' && <Button type="primary" icon={<SendOutlined />} onClick={() => statusMutation.mutate('sent')} style={{ background: '#3b82f6' }}>Send to Vendor</Button>}
             {status === 'sent' && <Button type="primary" icon={<InboxOutlined />} onClick={() => receiveMutation.mutate()} loading={receiveMutation.isPending} style={{ background: '#10b981' }}>Mark as Received</Button>}
             {status === 'received' && <Tag color="green" style={{ padding: '6px 12px', fontSize: 14 }}>✅ RECEIVED</Tag>}

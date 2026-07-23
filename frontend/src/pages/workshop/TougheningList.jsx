@@ -1,7 +1,9 @@
 import React from 'react'
-import { Tag } from 'antd'
+import { Tag, Button, Tooltip, message } from 'antd'
+import { DownloadOutlined } from '@ant-design/icons'
 import MasterList from '../../components/common/MasterList'
 import { tougheningBatchApi } from '../../api'
+import { generateTougheningChallanPDF } from '../../utils/pdfGenerator'
 
 const STATUS_COLORS = { draft: 'default', sent: 'processing', received: 'success' }
 
@@ -26,6 +28,33 @@ const TougheningList = () => (
     editPath={(r) => `/workshop/toughening/${r.id}/edit`}
     searchPlaceholder="Search toughening batches..."
     nameField="tb_number"
+    extraActions={(r) => (
+      <Tooltip title="Download Challan">
+        <Button
+          type="text"
+          size="small"
+          icon={<DownloadOutlined />}
+          style={{ color: '#10b981' }}
+          onClick={async () => {
+            const hide = message.loading('Generating Job Work Challan PDF...', 0)
+            try {
+              let fullBatch = r
+              if (!r.lines || !r.lines.length) {
+                try {
+                  const res = await tougheningBatchApi.get(r.id)
+                  if (res?.data) fullBatch = res.data
+                } catch {}
+              }
+              await generateTougheningChallanPDF(fullBatch)
+            } catch (err) {
+              message.error('Failed to generate PDF: ' + (err?.message || 'Unknown error'))
+            } finally {
+              hide()
+            }
+          }}
+        />
+      </Tooltip>
+    )}
   />
 )
 

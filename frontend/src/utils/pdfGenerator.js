@@ -1,4 +1,5 @@
 import { jsPDF } from 'jspdf'
+import autoTable from 'jspdf-autotable'
 import html2canvas from 'html2canvas'
 import { customerApi, vendorApi } from '../api'
 
@@ -2243,4 +2244,222 @@ export const generatePOPDF = async (po) => {
     console.error('PO PDF:', e)
     alert('PO PDF failed: ' + e.message)
   }
+}
+
+// ── Toughening Job Work Challan PDF Generator ──────────────────────
+export const generateTougheningChallanPDF = async (batch) => {
+  if (!batch) return
+
+  const company = getCompany(batch.company_id)
+
+  // Resolve vendor name
+  let vendorName = cleanVal(batch.vendor_name)
+  if (!vendorName && batch.vendor_id) {
+    try {
+      const allVendors = JSON.parse(localStorage.getItem('vendors_master') || '[]')
+      const match = allVendors.find(v => v.id === batch.vendor_id || v.value === batch.vendor_id)
+      if (match?.name || match?.label) vendorName = cleanVal(match.name || match.label)
+    } catch {}
+    if (!vendorName) {
+      try {
+        const vRes = await vendorApi.get(batch.vendor_id)
+        if (vRes?.data?.name) vendorName = cleanVal(vRes.data.name)
+      } catch {}
+    }
+  }
+
+  // Resolve items / lines
+  const rawItems = batch.lines?.length ? batch.lines : (batch.items?.length ? batch.items : [])
+
+  // Group items by description while preserving original order
+  const groupedMap = new Map()
+  rawItems.forEach(item => {
+    const descKey = (item.description || 'Unspecified').trim()
+    if (!groupedMap.has(descKey)) {
+      groupedMap.set(descKey, [])
+    }
+    groupedMap.get(descKey).push(item)
+  })
+
+  // Helper to parse thickness (MM) anywhere in description
+  const parseThickness = (descRaw) => {
+    const desc = String(descRaw || '').trim()
+    // 1) explicit "<n>mm" anywhere (start, middle or end)
+    let m = desc.match(/(\d+(?:\.\d+)?)\s*mm\b/i)
+    if (m) {
+      return {
+        mm: m[1],
+        rest: desc.replace(m[0], ' ').replace(/\s{2,}/g, ' ').trim(),
+      }
+    }
+    // 2) bare leading number, e.g. "12 Extra Clear Tough"
+    m = desc.match(/^(\d+(?:\.\d+)?)\s+/)
+    if (m) {
+      return { mm: m[1], rest: desc.slice(m[0].length).trim() }
+    }
+    return { mm: '', rest: desc }
+  }
+
+  // Construct body rows for ONE continuous autotable
+  const allBodyRows = []
+
+  // 1. Company Name — colSpan 6, centered, large bold (~16pt)
+  allBodyRows.push([{
+    content: (company.name || 'ESSAR GLASS').toUpperCase(),
+    colSpan: 6,
+    styles: { halign: 'center', fontStyle: 'bold', fontSize: 16 }
+  }])
+
+  // 2. "GSTIN NO : <company.gstin>" (colSpan 3, left) | "DATE : <formatDate(...)>" (colSpan 3, left)
+  const gstinStr = cleanVal(company.gstin || company.gst)
+  const dateStr = formatDate(batch.sent_date || batch.batch_date || new Date())
+  allBodyRows.push([
+    { content: `GSTIN NO : ${gstinStr}`, colSpan: 3, styles: { halign: 'left', fontStyle: 'bold' } },
+    { content: `DATE : ${dateStr}`, colSpan: 3, styles: { halign: 'left', fontStyle: 'bold' } }
+  ])
+
+  // 3. "MOB NO.   <company.phone>" (colSpan 3, left) | "CHALLAN SR NO.  <batch.tb_number>" (colSpan 3, left)
+  const phoneVal = cleanVal(company.phone)
+  const phone2Val = cleanVal(company.phone2)
+  const mobStr = phoneVal ? `MOB NO.   ${phoneVal}${phone2Val ? ' / ' + phone2Val : ''}` : 'MOB NO.'
+  const tbNumStr = cleanVal(batch.tb_number || '—')
+  allBodyRows.push([
+    { content: mobStr, colSpan: 3, styles: { halign: 'left', fontStyle: 'bold' } },
+    { content: `CHALLAN SR NO.  ${tbNumStr}`, colSpan: 3, styles: { halign: 'left', fontStyle: 'bold' } }
+  ])
+
+  // 4. "JOB WORK CHALLAN" — colSpan 6, centered, bold
+  allBodyRows.push([{
+    content: 'JOB WORK CHALLAN',
+    colSpan: 6,
+    styles: { halign: 'center', fontStyle: 'bold', fontSize: 12 }
+  }])
+
+  // 5. "MATERIAL BEING SENT TO  TOUGHNED , <VENDOR> FOR JOBWORK" — colSpan 6, centered, bold
+  const vendorBannerText = vendorName
+    ? `MATERIAL BEING SENT TO  TOUGHNED , ${vendorName.toUpperCase()} FOR JOBWORK`
+    : `MATERIAL BEING SENT TO  TOUGHNED  FOR JOBWORK`
+
+  allBodyRows.push([{
+    content: vendorBannerText,
+    colSpan: 6,
+    styles: { halign: 'center', fontStyle: 'bold', fontSize: 9.5 }
+  }])
+
+  // 6. Column header row: MM | DESCRIPTION | LENGTH (inch / mm) | WIDTH (inch / mm) | QTY | HSN CODE
+  allBodyRows.push([
+    { content: 'MM', styles: { fontStyle: 'bold', halign: 'center', fontSize: 9 } },
+    { content: 'DESCRIPTION', styles: { fontStyle: 'bold', halign: 'center', fontSize: 9 } },
+    { content: 'LENGTH (inch / mm)', styles: { fontStyle: 'bold', halign: 'center', fontSize: 8.5 } },
+    { content: 'WIDTH (inch / mm)', styles: { fontStyle: 'bold', halign: 'center', fontSize: 8.5 } },
+    { content: 'QTY', styles: { fontStyle: 'bold', halign: 'center', fontSize: 9 } },
+    { content: 'HSN CODE', styles: { fontStyle: 'bold', halign: 'center', fontSize: 9 } },
+  ])
+
+  // 7. One blank row (as in reference)
+  allBodyRows.push(['', '', '', '', '', ''])
+
+  // 8. Grouped data rows
+  groupedMap.forEach((itemsInGroup, groupDesc) => {
+    const parsed = parseThickness(groupDesc)
+    itemsInGroup.forEach((item, idx) => {
+      const w_mm = item.width_mm || item.act_w_mm || 0
+      const h_mm = item.height_mm || item.act_h_mm || 0
+      const qty = item.quantity || item.qty || 1
+      const hsn = item.hsn_code || item.hsn || ''
+
+      const lengthStr = w_mm ? `${toFraction(w_mm / 25.4)}" / ${Math.round(w_mm)}` : '—'
+      const widthStr = h_mm ? `${toFraction(h_mm / 25.4)}" / ${Math.round(h_mm)}` : '—'
+
+      if (idx === 0) {
+        allBodyRows.push([
+          parsed.mm,
+          parsed.rest,
+          lengthStr,
+          widthStr,
+          String(qty),
+          hsn
+        ])
+      } else {
+        allBodyRows.push([
+          '',
+          '',
+          lengthStr,
+          widthStr,
+          String(qty),
+          hsn
+        ])
+      }
+    })
+    // ONE fully blank spacer row after each group
+    allBodyRows.push(['', '', '', '', '', ''])
+  })
+
+  // 9. Filler blank rows so grid extends down page (target ~34 total grid rows before footer)
+  const currentBodyCount = allBodyRows.length
+  const footerRowsCount = 7 // FOR company (1) + 2 blanks (2) + SIGNATURE (1) + 3 trailing blanks (3)
+  const targetRowsPerPage = 34
+
+  if (currentBodyCount + footerRowsCount < targetRowsPerPage) {
+    const fillerNeeded = targetRowsPerPage - (currentBodyCount + footerRowsCount)
+    for (let i = 0; i < fillerNeeded; i++) {
+      allBodyRows.push(['', '', '', '', '', ''])
+    }
+  }
+
+  // 10. "FOR, <COMPANY NAME>" — right-aligned, bold
+  const compNameUpper = (company.name || 'ESSAR GLASS').toUpperCase()
+  allBodyRows.push([{
+    content: `FOR, ${compNameUpper}`,
+    colSpan: 6,
+    styles: { halign: 'right', fontStyle: 'bold' }
+  }])
+
+  // 11. Two blank rows
+  allBodyRows.push(['', '', '', '', '', ''])
+  allBodyRows.push(['', '', '', '', '', ''])
+
+  // 12. "SIGNATURE" — right-aligned
+  allBodyRows.push([{
+    content: 'SIGNATURE',
+    colSpan: 6,
+    styles: { halign: 'right', fontStyle: 'bold' }
+  }])
+
+  // 13. A few more blank rows to close out grid
+  allBodyRows.push(['', '', '', '', '', ''])
+  allBodyRows.push(['', '', '', '', '', ''])
+
+  // Create A4 PDF document
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+
+  autoTable(doc, {
+    theme: 'grid',
+    margin: { top: 10, left: 10, right: 10, bottom: 10 },
+    body: allBodyRows,
+    styles: {
+      fontSize: 9.5,
+      cellPadding: 2.2,
+      lineWidth: 0.2,
+      lineColor: [0, 0, 0],
+      textColor: [0, 0, 0],
+      halign: 'center',
+      valign: 'middle',
+    },
+    alternateRowStyles: {
+      fillColor: [255, 255, 255]
+    },
+    columnStyles: {
+      0: { cellWidth: 15 },
+      1: { cellWidth: 60 },
+      2: { cellWidth: 40 },
+      3: { cellWidth: 40 },
+      4: { cellWidth: 15 },
+      5: { cellWidth: 20 },
+    },
+  })
+
+  const fileName = `${batch.tb_number || 'TB'}_JobWorkChallan.pdf`
+  doc.save(fileName)
+  return doc
 }

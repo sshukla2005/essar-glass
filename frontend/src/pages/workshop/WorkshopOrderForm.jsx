@@ -414,6 +414,17 @@ const WorkshopOrderForm = () => {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['workshop_orders', id] }),
   })
 
+  const changeStatus = (next) => {
+    const label = String(next).replace(/_/g, ' ').toUpperCase()
+    Modal.confirm({
+      title: 'Change workshop order stage?',
+      content: `This will move the order to ${label}. Do you want to continue?`,
+      okText: 'Yes, change stage',
+      cancelText: 'Cancel',
+      onOk: () => statusMutation.mutate(next),
+    })
+  }
+
   const handleSave = async (andNew = false) => {
     try {
       const values = await form.validateFields()
@@ -506,30 +517,52 @@ const WorkshopOrderForm = () => {
       doc.line(margin, metaY + 24, pageW - margin, metaY + 24)
 
       // ── JOB CARDS TABLE ─────────────────────────────
-      const tableRows = lines.map((line, i) => [
-        i + 1,
-        line.description || '—',
-        line.act_w_in ? `${line.act_w_in}"` : '—',
-        line.act_h_in ? `${line.act_h_in}"` : '—',
-        line.act_w_mm ? `${line.act_w_mm}mm` : '—',
-        line.act_h_mm ? `${line.act_h_mm}mm` : '—',
-        line.qty || 1,
-        line.cep ? 'YES' : 'NO',
-        line.process_label || '—',
-        line.is_toughened ? 'YES' : 'NO',
-        line.remark || '—',
-      ])
+      const groupedRows = []
+      const seen = new Map()
+      lines.forEach((line) => {
+        const key = (line.description || 'Unspecified').trim()
+        if (!seen.has(key)) {
+          seen.set(key, true)
+          groupedRows.push([{
+            content: key.toUpperCase(),
+            colSpan: 11,
+            styles: {
+              fillColor: [227, 242, 253],
+              textColor: [13, 71, 161],
+              fontStyle: 'bold',
+              fontSize: 8.5,
+              halign: 'left',
+            },
+          }])
+        }
+        groupedRows.push([
+          groupedRows.filter(r => r.length > 1).length + 1,   // running Sr No across all sizes
+          line.description || '—',
+          line.act_w_in ? `${line.act_w_in}"` : '—',
+          line.act_h_in ? `${line.act_h_in}"` : '—',
+          line.act_w_mm ? `${line.act_w_mm}mm` : '—',
+          line.act_h_mm ? `${line.act_h_mm}mm` : '—',
+          line.qty || 1,
+          line.cep ? 'YES' : 'NO',
+          line.process_label || '—',
+          line.is_toughened ? 'YES' : 'NO',
+          line.remark || '—',
+        ])
+      })
 
       autoTable(doc, {
+        theme: 'grid',
         startY: metaY + 28,
         head: [['#', 'Description', 'W (in)', 'H (in)', 'W (mm)', 'H (mm)', 'Qty', 'CEP', 'Process', 'Tgh', 'Remark']],
-        body: tableRows,
-        styles: { fontSize: 7.5, cellPadding: 2.5 },
+        body: groupedRows,
+        styles: { fontSize: 7.5, cellPadding: 2.5, lineWidth: 0.15, lineColor: [148, 163, 184] },
         headStyles: {
           fillColor: [99, 102, 241],
           textColor: 255,
           fontStyle: 'bold',
           fontSize: 8,
+          lineWidth: 0.15,
+          lineColor: [99, 102, 241],
         },
         alternateRowStyles: { fillColor: [248, 250, 252] },
         columnStyles: {
@@ -546,6 +579,7 @@ const WorkshopOrderForm = () => {
           10: { cellWidth: 'auto' },
         },
         didParseCell: (data) => {
+          if (data.row.raw.length === 1) return
           // CEP (col 7) & Tgh (col 9): YES → ZapfDingbats tick ✔ (green),
           // NO → cross ✘ (light grey). Helvetica mein ✓ glyph nahi hai —
           // wahi pehle garbled apostrophe print hota tha.
@@ -671,11 +705,12 @@ const WorkshopOrderForm = () => {
           })
 
           autoTable(doc, {
+            theme: 'grid',
             startY: 20 + dims.h + 6,
             head: [['Panel', 'Glass Line', 'Size', 'Qty', 'Tgh', 'Note']],
             body: pmTableRows,
-            styles: { fontSize: 8.5, cellPadding: 2.5 },
-            headStyles: { fillColor: [124, 58, 237], textColor: 255, fontStyle: 'bold' },
+            styles: { fontSize: 8.5, cellPadding: 2.5, lineWidth: 0.15, lineColor: [148, 163, 184] },
+            headStyles: { fillColor: [124, 58, 237], textColor: 255, fontStyle: 'bold', lineWidth: 0.15, lineColor: [99, 102, 241] },
             alternateRowStyles: { fillColor: [245, 243, 255] },
             columnStyles: {
               0: { cellWidth: 14, halign: 'center' },
@@ -687,6 +722,7 @@ const WorkshopOrderForm = () => {
             },
             margin: { left: margin, right: margin },
             didParseCell: (data) => {
+              if (data.row.raw.length === 1) return
               if (data.section === 'body' && data.column.index === 0) {
                 const c = PANEL_COLORS[data.row.index % PANEL_COLORS.length]
                 data.cell.styles.fillColor = [
@@ -742,6 +778,7 @@ const WorkshopOrderForm = () => {
             doc.addImage(art.data, fmt, (pageW - dims.w) / 2, 20, dims.w, dims.h)
 
             autoTable(doc, {
+              theme: 'grid',
               startY: 20 + dims.h + 6,
               head: [['#', 'Glass Line (uses this artwork)', 'Size', 'Qty', 'Tgh', 'Remark']],
               body: art.rows.map((l, i) => [
@@ -752,8 +789,8 @@ const WorkshopOrderForm = () => {
                 (l.toughened || l.is_toughened) ? 'YES' : '—',
                 l.remark || '—',
               ]),
-              styles: { fontSize: 8.5, cellPadding: 2.5 },
-              headStyles: { fillColor: [99, 102, 241], textColor: 255, fontStyle: 'bold' },
+              styles: { fontSize: 8.5, cellPadding: 2.5, lineWidth: 0.15, lineColor: [148, 163, 184] },
+              headStyles: { fillColor: [99, 102, 241], textColor: 255, fontStyle: 'bold', lineWidth: 0.15, lineColor: [99, 102, 241] },
               alternateRowStyles: { fillColor: [238, 242, 255] },
               margin: { left: margin, right: margin },
             })
@@ -1183,7 +1220,7 @@ const WorkshopOrderForm = () => {
                 Start Processing
               </Button>
             )}
-            {status === 'in_progress' && <Button type="primary" icon={<CheckCircleOutlined />} onClick={() => statusMutation.mutate('completed')} style={{ background: '#10b981' }}>Mark Complete</Button>}
+            {status === 'in_progress' && <Button type="primary" icon={<CheckCircleOutlined />} onClick={() => changeStatus('completed')} style={{ background: '#10b981' }}>Mark Complete</Button>}
             {status === 'completed' && <Tag color="green" style={{ padding: '6px 12px', fontSize: 14 }}>✅ Completed</Tag>}
 
             {lines.some(l => l.is_toughened) && (
@@ -1616,7 +1653,7 @@ const WorkshopOrderForm = () => {
             onClick={() => {
               setExportWizard(false)
               setWaLink(null)
-              statusMutation.mutate('in_progress')
+              changeStatus('in_progress')
             }}
           >
             Start Processing Now
