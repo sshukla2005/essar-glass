@@ -16,8 +16,10 @@ def make_crud_router(
     response_schema,
     code_prefix: str = None,
     code_field: str  = None,
+    company_scoped: bool = True,
 ):
     router = APIRouter(prefix=prefix, tags=[tag])
+
 
     @router.get("/")
     def list_items(
@@ -35,8 +37,8 @@ def make_crud_router(
         user         = Depends(get_current_user),
     ):
         q = db.query(model)
-        # Always scope to active_company_id — no superadmin bypass
-        q = apply_company_filter(q, model, user.active_company_id)
+        if company_scoped:
+            q = apply_company_filter(q, model, user.active_company_id)
 
         if is_active is not None:
             active_bool = is_active.lower() == 'true'
@@ -75,7 +77,8 @@ def make_crud_router(
         user        = Depends(get_current_user),
     ):
         q = db.query(model)
-        q = apply_company_filter(q, model, user.active_company_id)
+        if company_scoped:
+            q = apply_company_filter(q, model, user.active_company_id)
         if hasattr(model, "is_active"):
             q = q.filter(model.is_active == True)
         return [serialize_row(o) for o in q.order_by(model.id).all()]
@@ -92,7 +95,7 @@ def make_crud_router(
 
         # Company ownership check: return 404 (not 403) so cross-company
         # record existence is not leaked to the caller.
-        if (
+        if company_scoped and (
             user.active_company_id is not None
             and hasattr(item, "company_id")
             and item.company_id is not None
@@ -110,11 +113,15 @@ def make_crud_router(
     ):
         obj_data = data.model_dump()
 
-        # ALWAYS override company_id from the token — never trust the body
-        if user.active_company_id is not None:
-            obj_data["company_id"] = user.active_company_id
-        elif not obj_data.get("company_id") and user.company_id:
-            obj_data["company_id"] = user.company_id
+        if company_scoped:
+            # ALWAYS override company_id from the token — never trust the body
+            if user.active_company_id is not None:
+                obj_data["company_id"] = user.active_company_id
+            elif not obj_data.get("company_id") and user.company_id:
+                obj_data["company_id"] = user.company_id
+        else:
+            # Shared/global catalogue (e.g. Process Masters)
+            obj_data["company_id"] = None
 
         # Auto-generate code (per-company scoped)
         if code_prefix and code_field:
@@ -167,7 +174,7 @@ def make_crud_router(
             raise HTTPException(status_code=404, detail="Not found")
 
         # Company ownership check (404 to avoid leaking existence)
-        if (
+        if company_scoped and (
             user.active_company_id is not None
             and hasattr(item, "company_id")
             and item.company_id is not None
@@ -228,7 +235,7 @@ def make_crud_router(
             raise HTTPException(status_code=404, detail="Not found")
 
         # Company ownership check
-        if (
+        if company_scoped and (
             user.active_company_id is not None
             and hasattr(item, "company_id")
             and item.company_id is not None
@@ -253,7 +260,7 @@ def make_crud_router(
             raise HTTPException(status_code=404, detail="Not found")
 
         # Company ownership check
-        if (
+        if company_scoped and (
             user.active_company_id is not None
             and hasattr(item, "company_id")
             and item.company_id is not None
@@ -277,7 +284,7 @@ def make_crud_router(
             raise HTTPException(status_code=404, detail="Not found")
 
         # Company ownership check
-        if (
+        if company_scoped and (
             user.active_company_id is not None
             and hasattr(item, "company_id")
             and item.company_id is not None

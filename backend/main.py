@@ -188,12 +188,18 @@ for router_cfg in [
     ("/inventory",    "Inventory",   StockMovement,  "SM",   "move_number"),
     ("/workshop",     "Workshop",    WorkshopOrder,  "WO",   "wo_number"),
     ("/toughening",   "Toughening",  TougheningBatch,"TB",   "tb_number"),
-    ("/process-masters", "Process Masters", ProcessMaster, None, None),
+    # NOTE: Process Masters are intentionally a shared global catalogue across all companies
+    ("/process-masters", "Process Masters", ProcessMaster, None, None, False),
     ("/warehouses",      "Warehouses",      Warehouse,     None, None),
     ("/users",        "Users",       User,           None,   None),
     ("/payments",     "Payments",    Payment,        "PMT",  "payment_number"),
 ]:
-    prefix, tag, model, code_pref, code_fld = router_cfg
+    if len(router_cfg) == 6:
+        prefix, tag, model, code_pref, code_fld, company_scoped = router_cfg
+    else:
+        prefix, tag, model, code_pref, code_fld = router_cfg
+        company_scoped = True
+
     from pydantic import BaseModel
     class DynCreate(BaseModel):
         model_config = {"extra": "allow"}
@@ -208,6 +214,7 @@ for router_cfg in [
         response_schema=DynCreate,
         code_prefix=code_pref,
         code_field=code_fld,
+        company_scoped=company_scoped,
     )
     app.include_router(r)
 
