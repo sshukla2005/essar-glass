@@ -2346,12 +2346,12 @@ export const generateTougheningChallanPDF = async (batch) => {
     styles: { halign: 'center', fontStyle: 'bold', fontSize: 9.5 }
   }])
 
-  // 6. Column header row: MM | DESCRIPTION | LENGTH (inch / mm) | WIDTH (inch / mm) | QTY | HSN CODE
+  // 6. Column header row: MM | DESCRIPTION | LENGTH (mm) | WIDTH (mm) | QTY | HSN CODE
   allBodyRows.push([
     { content: 'MM', styles: { fontStyle: 'bold', halign: 'center', fontSize: 9 } },
     { content: 'DESCRIPTION', styles: { fontStyle: 'bold', halign: 'center', fontSize: 9 } },
-    { content: 'LENGTH (inch / mm)', styles: { fontStyle: 'bold', halign: 'center', fontSize: 8.5 } },
-    { content: 'WIDTH (inch / mm)', styles: { fontStyle: 'bold', halign: 'center', fontSize: 8.5 } },
+    { content: 'LENGTH (mm)', styles: { fontStyle: 'bold', halign: 'center', fontSize: 8.5 } },
+    { content: 'WIDTH (mm)', styles: { fontStyle: 'bold', halign: 'center', fontSize: 8.5 } },
     { content: 'QTY', styles: { fontStyle: 'bold', halign: 'center', fontSize: 9 } },
     { content: 'HSN CODE', styles: { fontStyle: 'bold', halign: 'center', fontSize: 9 } },
   ])
@@ -2368,8 +2368,8 @@ export const generateTougheningChallanPDF = async (batch) => {
       const qty = item.quantity || item.qty || 1
       const hsn = item.hsn_code || item.hsn || ''
 
-      const lengthStr = w_mm ? `${toFraction(w_mm / 25.4)}" / ${Math.round(w_mm)}` : '—'
-      const widthStr = h_mm ? `${toFraction(h_mm / 25.4)}" / ${Math.round(h_mm)}` : '—'
+      const lengthStr = w_mm ? `${Math.round(w_mm)}` : '—'
+      const widthStr = h_mm ? `${Math.round(h_mm)}` : '—'
 
       if (idx === 0) {
         allBodyRows.push([
@@ -2451,11 +2451,11 @@ export const generateTougheningChallanPDF = async (batch) => {
     },
     columnStyles: {
       0: { cellWidth: 15 },
-      1: { cellWidth: 60 },
-      2: { cellWidth: 40 },
-      3: { cellWidth: 40 },
+      1: { cellWidth: 85 },
+      2: { cellWidth: 25 },
+      3: { cellWidth: 25 },
       4: { cellWidth: 15 },
-      5: { cellWidth: 20 },
+      5: { cellWidth: 25 },
     },
   })
 

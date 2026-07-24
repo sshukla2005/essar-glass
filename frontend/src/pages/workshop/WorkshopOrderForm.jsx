@@ -537,7 +537,7 @@ const WorkshopOrderForm = () => {
         }
         groupedRows.push([
           groupedRows.filter(r => r.length > 1).length + 1,   // running Sr No across all sizes
-          line.description || '—',
+          '',
           line.act_w_in ? `${line.act_w_in}"` : '—',
           line.act_h_in ? `${line.act_h_in}"` : '—',
           line.act_w_mm ? `${line.act_w_mm}mm` : '—',
