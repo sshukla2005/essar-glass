@@ -43,10 +43,11 @@ const CompanySelector = ({ form, required = true }) => {
   return (
     <Form.Item
       name="company_id"
-      label="Company"
+      label={<span>Company <span style={{ fontWeight: 400, fontSize: 11, color: '#94a3b8' }}>(set by the company you are viewing)</span></span>}
       rules={required ? [{ required: true, message: 'Select company' }] : []}
     >
       <Select
+        disabled
         placeholder="Select company"
         options={companies.map(c => ({
           value: c.id,

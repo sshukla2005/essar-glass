@@ -2142,7 +2142,7 @@ const drawPOItemsCard = (doc, lines, cols, startY, pageNum, po) => {
     const w = line.width_inch || (line.width_mm ? line.width_mm / 25.4 : 0)
     const h = line.height_inch || (line.height_mm ? line.height_mm / 25.4 : 0)
     const qty = line.quantity || 1
-    const area = line.charged_sqft || line.total_sqft || 0
+    const area = line.sqft ?? line.charged_sqft ?? line.total_sqft ?? 0
     const rft = parseFloat(((w + h) * 2 / 12 * qty).toFixed(3))
     const amt = line.subtotal || line.line_total || 0
     tQty += qty; tArea += area; tRft += rft; tAmt += amt
@@ -2156,7 +2156,7 @@ const drawPOItemsCard = (doc, lines, cols, startY, pageNum, po) => {
     
     const chargedW = line.charged_w_inch || w
     const chargedH = line.charged_h_inch || h
-    const rate = line.rate || 0
+    const rate = line.unit_price ?? line.rate ?? 0
     
     const vals = [
       String(i + 1),
