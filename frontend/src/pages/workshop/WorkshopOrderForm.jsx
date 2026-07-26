@@ -14,6 +14,7 @@ import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import ExcelJS from 'exceljs'
 import { saveAs } from 'file-saver'
+import FractionInput, { toFraction } from '../quotations/components/FractionInput'
 
 const { TextArea } = Input
 const { Text } = Typography
@@ -353,8 +354,8 @@ const WorkshopOrderForm = () => {
       )
     },
     { title: 'Description', width: 250, dataIndex: 'description', render: (v, row) => <Input size="small" value={v} onChange={e => updateLine(row.key, 'description', e.target.value)} /> },
-    { title: 'Act W (in)', width: 100, dataIndex: 'act_w_in', render: (v, row) => <InputNumber size="small" value={v} onChange={val => updateLine(row.key, 'act_w_in', val)} /> },
-    { title: 'Act H (in)', width: 100, dataIndex: 'act_h_in', render: (v, row) => <InputNumber size="small" value={v} onChange={val => updateLine(row.key, 'act_h_in', val)} /> },
+    { title: 'Act W (in)', width: 110, dataIndex: 'act_w_in', render: (v, row) => <FractionInput value={v} onChange={val => updateLine(row.key, 'act_w_in', val)} placeholder="90 1/2" /> },
+    { title: 'Act H (in)', width: 110, dataIndex: 'act_h_in', render: (v, row) => <FractionInput value={v} onChange={val => updateLine(row.key, 'act_h_in', val)} placeholder="78 1/8" /> },
     { title: 'Act W (mm)', width: 100, dataIndex: 'act_w_mm', render: (v) => <InputNumber size="small" value={v} disabled /> },
     { title: 'Act H (mm)', width: 100, dataIndex: 'act_h_mm', render: (v) => <InputNumber size="small" value={v} disabled /> },
     { title: 'Qty', width: 80, dataIndex: 'qty', render: (v, row) => <InputNumber size="small" value={v} onChange={val => updateLine(row.key, 'qty', val)} /> },
@@ -538,8 +539,8 @@ const WorkshopOrderForm = () => {
         groupedRows.push([
           groupedRows.filter(r => r.length > 1).length + 1,   // running Sr No across all sizes
           '',
-          line.act_w_in ? `${line.act_w_in}"` : '—',
-          line.act_h_in ? `${line.act_h_in}"` : '—',
+          line.act_w_in ? `${toFraction(line.act_w_in)}"` : '—',
+          line.act_h_in ? `${toFraction(line.act_h_in)}"` : '—',
           line.act_w_mm ? `${line.act_w_mm}mm` : '—',
           line.act_h_mm ? `${line.act_h_mm}mm` : '—',
           line.qty || 1,

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { Form, Input, InputNumber, Select, Row, Col, Divider, DatePicker, Button, Table, Steps, Space, Tag, Card, Modal, Checkbox, App, Typography } from 'antd'
-import { SendOutlined, CheckCircleOutlined, PlusOutlined, InboxOutlined, DownloadOutlined } from '@ant-design/icons'
+import { SendOutlined, CheckCircleOutlined, PlusOutlined, InboxOutlined, DownloadOutlined, DeleteOutlined } from '@ant-design/icons'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import dayjs from 'dayjs'
@@ -33,6 +33,7 @@ const TougheningForm = () => {
   const [woModalOpen, setWoModalOpen] = useState(false)
   const [selectedWoItems, setSelectedWoItems] = useState([])
   const [pdfLoading, setPdfLoading] = useState(false)
+  const [selectedItemKeys, setSelectedItemKeys] = useState([])
 
   const { data: record, isLoading } = useQuery({
     queryKey: ['toughening_batches', id], queryFn: () => tougheningBatchApi.get(id).then(r => r.data), enabled: isEdit,
@@ -265,6 +266,18 @@ const TougheningForm = () => {
       <Select size="small" value={v || 'pending'} options={ITEM_STATUSES} style={{ width: '100%' }}
         onChange={val => updateItem(row.key, 'item_status', val)} />
     )},
+    {
+      title: '', width: 50, fixed: 'right',
+      render: (_, row) => (
+        <Button
+          type="text" danger size="small" icon={<DeleteOutlined />}
+          onClick={() => {
+            setItems(prev => prev.filter(it => it.key !== row.key))
+            setSelectedItemKeys(prev => prev.filter(k => k !== row.key))
+          }}
+        />
+      )
+    },
   ]
 
   return (
@@ -363,9 +376,27 @@ const TougheningForm = () => {
 
         <div style={{ marginBottom: 12 }}>
           <Button icon={<PlusOutlined />} onClick={handleAddFromWO}>Add from Workshop Orders</Button>
+          {selectedItemKeys.length > 0 && (
+            <Button
+              danger icon={<DeleteOutlined />} style={{ marginLeft: 8 }}
+              onClick={() => {
+                setItems(prev => prev.filter(it => !selectedItemKeys.includes(it.key)))
+                setSelectedItemKeys([])
+              }}
+            >
+              Remove selected ({selectedItemKeys.length})
+            </Button>
+          )}
         </div>
 
-        <Table dataSource={items} columns={itemColumns} rowKey="key" size="small" pagination={false} scroll={{ x: 1400 }} style={{ marginBottom: 16 }} />
+        <Table
+          dataSource={items} columns={itemColumns} rowKey="key" size="small"
+          pagination={false} scroll={{ x: 1400 }} style={{ marginBottom: 16 }}
+          rowSelection={{
+            selectedRowKeys: selectedItemKeys,
+            onChange: setSelectedItemKeys,
+          }}
+        />
 
         {/* Totals */}
         <Row justify="end">

@@ -43,6 +43,7 @@ const WorkshopOrderList = () => {
   const [batchLines, setBatchLines] = useState([])
   const [batchLoadingIds, setBatchLoadingIds] = useState([])
   const [batchVendor, setBatchVendor] = useState(null)
+  const [selectedBatchUids, setSelectedBatchUids] = useState([])
 
   // ── FETCH WORKSHOP ORDERS ──────────────────────────
   const { data, isLoading, isFetching } = useQuery({
@@ -457,11 +458,13 @@ const WorkshopOrderList = () => {
                 )
 
                 // Extract toughened lines from all WOs
+                let _uidSeq = 0
                 const allLines = woDetails.flatMap(wo =>
                   (wo.lines || [])
                     .filter(l => l.is_toughened)
                     .map(l => ({
                       ...l,
+                      _uid: `bl_${_uidSeq++}`,
                       source_wo: wo.wo_number,
                       source_so: wo.so_number,
                       wo_id: wo.id,
@@ -589,7 +592,7 @@ const WorkshopOrderList = () => {
           </Space>
         }
         open={batchModal}
-        onCancel={() => { setBatchModal(false); setBatchLines([]) }}
+        onCancel={() => { setBatchModal(false); setBatchLines([]); setSelectedBatchUids([]) }}
         width={900}
         footer={null}
       >
@@ -632,6 +635,32 @@ const WorkshopOrderList = () => {
           </Col>
         </Row>
 
+        {/* Bulk-remove toolbar */}
+        {selectedBatchUids.length > 0 && (
+          <div style={{ marginBottom: 10 }}>
+            <Button
+              danger
+              size="small"
+              icon={<DeleteOutlined />}
+              onClick={() => {
+                setBatchLines(prev => prev.filter(bl => !selectedBatchUids.includes(bl._uid)))
+                setSelectedBatchUids([])
+              }}
+            >
+              Remove selected ({selectedBatchUids.length})
+            </Button>
+          </div>
+        )}
+
+        {batchLines.length === 0 && (
+          <div style={{
+            textAlign: 'center', padding: '24px 0',
+            color: '#94a3b8', fontStyle: 'italic'
+          }}>
+            No glass lines left in this batch.
+          </div>
+        )}
+
         {/* Lines preview table — grouped by thickness */}
         {(() => {
           const getThickness = (desc) => {
@@ -670,12 +699,27 @@ const WorkshopOrderList = () => {
               }}>
                 <thead>
                   <tr style={{ background: '#f1f5f9' }}>
-                    {['#', 'Description', 'W (mm)', 'H (mm)', 'W+30', 'H+30', 'Qty', 'Sqmt', 'Source'].map(h => (
+                    {['#', 'Description', 'W (mm)', 'H (mm)', 'W+30', 'H+30', 'Qty', 'Sqmt', 'Source', ''].map(h => (
                       <th key={h} style={{
                         padding: '6px 8px', textAlign: 'left',
                         borderBottom: '1px solid #e2e8f0', fontWeight: 600
                       }}>{h}</th>
                     ))}
+                    <th style={{ padding: '6px 8px', borderBottom: '1px solid #e2e8f0', width: 32 }}>
+                      <input
+                        type="checkbox"
+                        title="Select all in group"
+                        checked={gLines.every(l => selectedBatchUids.includes(l._uid))}
+                        onChange={e => {
+                          const groupUids = gLines.map(l => l._uid)
+                          if (e.target.checked) {
+                            setSelectedBatchUids(prev => [...new Set([...prev, ...groupUids])])
+                          } else {
+                            setSelectedBatchUids(prev => prev.filter(u => !groupUids.includes(u)))
+                          }
+                        }}
+                      />
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -683,9 +727,10 @@ const WorkshopOrderList = () => {
                     const w30 = (line.act_w_mm || 0) + 30
                     const h30 = (line.act_h_mm || 0) + 30
                     const sqmt = (w30 / 1000) * (h30 / 1000) * (line.qty || 1)
+                    const isChecked = selectedBatchUids.includes(line._uid)
                     return (
-                      <tr key={i} style={{
-                        background: i % 2 === 0 ? '#fff' : '#f8fafc'
+                      <tr key={line._uid || i} style={{
+                        background: isChecked ? '#fff7ed' : (i % 2 === 0 ? '#fff' : '#f8fafc')
                       }}>
                         <td style={{ padding: '5px 8px', borderBottom: '1px solid #f1f5f9' }}>
                           {i + 1}
@@ -719,6 +764,28 @@ const WorkshopOrderList = () => {
                             {line.source_so}
                           </Tag>
                         </td>
+                        <td style={{ padding: '5px 8px', borderBottom: '1px solid #f1f5f9', textAlign: 'center', width: 32 }}>
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={e => {
+                              setSelectedBatchUids(prev =>
+                                e.target.checked
+                                  ? [...prev, line._uid]
+                                  : prev.filter(u => u !== line._uid)
+                              )
+                            }}
+                          />
+                        </td>
+                        <td style={{ padding: '5px 4px', borderBottom: '1px solid #f1f5f9', textAlign: 'center' }}>
+                          <Button
+                            type="text" danger size="small" icon={<DeleteOutlined />}
+                            onClick={() => {
+                              setBatchLines(prev => prev.filter(bl => bl._uid !== line._uid))
+                              setSelectedBatchUids(prev => prev.filter(u => u !== line._uid))
+                            }}
+                          />
+                        </td>
                       </tr>
                     )
                   })}
@@ -735,6 +802,7 @@ const WorkshopOrderList = () => {
               block
               icon={<span>📄</span>}
               style={{ borderColor: '#6366f1', color: '#6366f1', height: 42, fontWeight: 600 }}
+              disabled={batchLines.length === 0}
               onClick={() => generateToughChallanPDF(batchLines, batchVendor, selectedWoIds)}
             >
               Download PDF Challan
@@ -746,7 +814,7 @@ const WorkshopOrderList = () => {
               type="primary"
               icon={<span>🔥</span>}
               style={{ background: '#dc2626', borderColor: '#dc2626', height: 42, fontWeight: 600 }}
-              disabled={!batchVendor}
+              disabled={!batchVendor || batchLines.length === 0}
               onClick={async () => {
                 if (!batchVendor) {
                   message.warning('Please select a toughening vendor first')
