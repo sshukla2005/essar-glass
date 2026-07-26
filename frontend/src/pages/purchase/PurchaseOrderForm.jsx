@@ -14,7 +14,8 @@ import {
   Tag,
   App,
   Typography,
-  Collapse
+  Collapse,
+  Modal
 } from 'antd'
 import {
   PlusOutlined,
@@ -421,6 +422,17 @@ const PurchaseOrderForm = () => {
     mutationFn: (newStatus) => purchaseOrderApi.changeStatus(id, newStatus),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['purchase_orders', id] }),
   })
+
+  const changeStage = (next, mutateFn) => {
+    const label = String(next).replace(/_/g, ' ').toUpperCase()
+    Modal.confirm({
+      title: 'Change stage?',
+      content: `This will move this order to ${label}. Do you want to continue?`,
+      okText: 'Yes, change stage',
+      cancelText: 'Cancel',
+      onOk: mutateFn,
+    })
+  }
 
   const receiveMutation = useMutation({
     mutationFn: async () => {
@@ -1038,8 +1050,8 @@ const PurchaseOrderForm = () => {
                 PDF
               </Button>
             )}
-            {status === 'draft' && <Button type="primary" icon={<SendOutlined />} onClick={() => statusMutation.mutate('sent')} style={{ background: '#3b82f6' }}>Send to Vendor</Button>}
-            {status === 'sent' && <Button type="primary" icon={<CheckCircleOutlined />} onClick={() => statusMutation.mutate('confirmed')} style={{ background: '#f59e0b' }}>Confirm Receipt</Button>}
+            {status === 'draft' && <Button type="primary" icon={<SendOutlined />} onClick={() => changeStage('sent', () => statusMutation.mutate('sent'))} style={{ background: '#3b82f6' }}>Send to Vendor</Button>}
+            {status === 'sent' && <Button type="primary" icon={<CheckCircleOutlined />} onClick={() => changeStage('confirmed', () => statusMutation.mutate('confirmed'))} style={{ background: '#f59e0b' }}>Confirm Receipt</Button>}
             {status === 'confirmed' && <Button type="primary" icon={<InboxOutlined />} onClick={() => receiveMutation.mutate()} style={{ background: '#10b981' }}>Mark Received</Button>}
             {status === 'received' && <Tag color="green">✅ RECEIVED</Tag>}
           </Space>

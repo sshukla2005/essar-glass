@@ -160,6 +160,17 @@ const TougheningForm = () => {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['toughening_batches', id] }),
   })
 
+  const changeStage = (next, mutateFn) => {
+    const label = String(next).replace(/_/g, ' ').toUpperCase()
+    Modal.confirm({
+      title: 'Change stage?',
+      content: `This will move this batch to ${label}. Do you want to continue?`,
+      okText: 'Yes, change stage',
+      cancelText: 'Cancel',
+      onOk: mutateFn,
+    })
+  }
+
   const receiveMutation = useMutation({
     mutationFn: async () => {
       const received = items.filter(it => it.item_status !== 'rejected')
@@ -318,8 +329,8 @@ const TougheningForm = () => {
             >
               Download Challan
             </Button>
-            {status === 'draft' && <Button type="primary" icon={<SendOutlined />} onClick={() => statusMutation.mutate('sent')} style={{ background: '#3b82f6' }}>Send to Vendor</Button>}
-            {status === 'sent' && <Button type="primary" icon={<InboxOutlined />} onClick={() => receiveMutation.mutate()} loading={receiveMutation.isPending} style={{ background: '#10b981' }}>Mark as Received</Button>}
+            {status === 'draft' && <Button type="primary" icon={<SendOutlined />} onClick={() => changeStage('sent', () => statusMutation.mutate('sent'))} style={{ background: '#3b82f6' }}>Send to Vendor</Button>}
+            {status === 'sent' && <Button type="primary" icon={<InboxOutlined />} onClick={() => changeStage('received', () => receiveMutation.mutate())} loading={receiveMutation.isPending} style={{ background: '#10b981' }}>Mark as Received</Button>}
             {status === 'received' && <Tag color="green" style={{ padding: '6px 12px', fontSize: 14 }}>✅ RECEIVED</Tag>}
           </Space>
         </Col>

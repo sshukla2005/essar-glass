@@ -1366,6 +1366,17 @@ const SalesOrderForm = () => {
     },
   })
 
+  const changeStage = (next) => {
+    const label = String(next).replace(/_/g, ' ').toUpperCase()
+    Modal.confirm({
+      title: 'Change stage?',
+      content: `This will move this order to ${label}. Do you want to continue?`,
+      okText: 'Yes, change stage',
+      cancelText: 'Cancel',
+      onOk: () => statusMutation.mutate(next),
+    })
+  }
+
   const createPOMutation = useMutation({
     mutationFn: async () => {
       const poData = { so_id: parseInt(id), vendor_reference: record?.so_number, lines: getFlatLines().map(l => ({ ...l, unit_price: 0 })) }
@@ -1650,13 +1661,13 @@ const SalesOrderForm = () => {
             hide()
           }
         }}
-        onConfirm={() => statusMutation.mutate('confirmed')}
+        onConfirm={() => changeStage('confirmed')}
         isConfirming={statusMutation.isPending && statusMutation.variables === 'confirmed'}
         onCreatePO={() => createPOMutation.mutate()}
         isCreatingPO={createPOMutation.isPending}
-        onProduction={() => statusMutation.mutate('in_production')}
+        onProduction={() => changeStage('in_production')}
         isStartingProduction={statusMutation.isPending && statusMutation.variables === 'in_production'}
-        onReady={() => statusMutation.mutate('ready')}
+        onReady={() => changeStage('ready')}
         isMarkingReady={statusMutation.isPending && statusMutation.variables === 'ready'}
         onCreateDelivery={() => createDCMutation.mutate()}
         isCreatingDelivery={createDCMutation.isPending}
