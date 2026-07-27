@@ -1035,6 +1035,21 @@ const SalesOrderForm = () => {
     return () => window.removeEventListener('beforeunload', handler)
   }, [isDirty])
 
+  // ── Browser / gesture back-button guard (popstate) ──────────────────
+  // BrowserRouter has no useBlocker, so we push a sentinel history entry.
+  // When the user pops it (back button / two-finger swipe / side mouse
+  // button), we re-push the sentinel and show the leave prompt.
+  useEffect(() => {
+    if (!isDirty) return
+    window.history.pushState(null, '', window.location.href)
+    const onPop = () => {
+      window.history.pushState(null, '', window.location.href)
+      setLeavePrompt('__back__')
+    }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [isDirty])
+
   // ── In-app navigation guard ───────────────────────────────
   const guardedNavigate = (path, options) => {
     if (!isDirty) { navigate(path, options); return }
@@ -2552,7 +2567,8 @@ const SalesOrderForm = () => {
             setIsDirty(false)
             const prompt = leavePrompt
             setLeavePrompt(null)
-            if (typeof prompt === 'string') navigate(prompt)
+            if (prompt === '__back__') setTimeout(() => window.history.back(), 0)
+            else if (typeof prompt === 'string') navigate(prompt)
             else if (prompt?.path) navigate(prompt.path, prompt.options)
           }}>Leave without saving</Button>,
           <Button key="save" type="primary" loading={saveMutation.isPending}
@@ -2561,7 +2577,8 @@ const SalesOrderForm = () => {
                 await handleSave(false)
                 const prompt = leavePrompt
                 setLeavePrompt(null)
-                if (typeof prompt === 'string') navigate(prompt)
+                if (prompt === '__back__') setTimeout(() => window.history.back(), 0)
+                else if (typeof prompt === 'string') navigate(prompt)
                 else if (prompt?.path) navigate(prompt.path, prompt.options)
               } catch {
                 setLeavePrompt(null)

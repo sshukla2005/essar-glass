@@ -202,6 +202,21 @@ const WorkshopOrderForm = () => {
     return () => window.removeEventListener('beforeunload', handler)
   }, [isDirty])
 
+  // ── Browser / gesture back-button guard (popstate) ──────────────────
+  // BrowserRouter has no useBlocker, so we push a sentinel history entry.
+  // When the user pops it (back button / two-finger swipe / side mouse
+  // button), we re-push the sentinel and show the leave prompt.
+  useEffect(() => {
+    if (!isDirty) return
+    window.history.pushState(null, '', window.location.href)
+    const onPop = () => {
+      window.history.pushState(null, '', window.location.href)
+      setLeavePrompt('__back__')
+    }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [isDirty])
+
   // ── In-app navigation guard ───────────────────────────────
   const guardedNavigate = (path, options) => {
     if (!isDirty) { navigate(path, options); return }
@@ -529,9 +544,9 @@ const WorkshopOrderForm = () => {
             colSpan: 11,
             styles: {
               fillColor: [227, 242, 253],
-              textColor: [13, 71, 161],
+              textColor: [10, 40, 120],
               fontStyle: 'bold',
-              fontSize: 8.5,
+              fontSize: 9.5,
               halign: 'left',
             },
           }])
@@ -672,7 +687,7 @@ const WorkshopOrderForm = () => {
             oCtx.fillText(String(i + 1), px + 12 * k, py + 27 * k)
             if (line) {
               const label = `${line.description || 'Line ' + (p.lineIndex + 1)}  ${line.act_w_in || '?'}"x${line.act_h_in || '?'}" x${line.qty || 1}`
-              oCtx.font = `bold ${14 * k}px sans-serif`
+              oCtx.font = `bold ${16 * k}px sans-serif`
               const tw = oCtx.measureText(label).width + 10 * k
               oCtx.fillStyle = 'rgba(255,255,255,0.92)'
               oCtx.fillRect(px + 3 * k, py + ph - 22 * k, Math.min(tw, Math.max(pw - 6 * k, 40 * k)), 19 * k)
@@ -715,7 +730,7 @@ const WorkshopOrderForm = () => {
             alternateRowStyles: { fillColor: [245, 243, 255] },
             columnStyles: {
               0: { cellWidth: 14, halign: 'center' },
-              1: { cellWidth: 70 },
+              1: { cellWidth: 70, fontStyle: 'bold' },
               2: { cellWidth: 35 },
               3: { cellWidth: 12, halign: 'center' },
               4: { cellWidth: 12, halign: 'center' },
@@ -732,6 +747,9 @@ const WorkshopOrderForm = () => {
                   parseInt(c.slice(5, 7), 16),
                 ]
                 data.cell.styles.textColor = 255
+                data.cell.styles.fontStyle = 'bold'
+              }
+              if (data.section === 'body' && data.column.index === 1) {
                 data.cell.styles.fontStyle = 'bold'
               }
             },
@@ -1677,7 +1695,8 @@ const WorkshopOrderForm = () => {
             setIsDirty(false)
             const prompt = leavePrompt
             setLeavePrompt(null)
-            if (typeof prompt === 'string') navigate(prompt)
+            if (prompt === '__back__') setTimeout(() => window.history.back(), 0)
+            else if (typeof prompt === 'string') navigate(prompt)
             else if (prompt?.path) navigate(prompt.path, prompt.options)
           }}>Leave without saving</Button>,
           <Button key="save" type="primary" loading={saveMutation.isPending}
@@ -1686,7 +1705,8 @@ const WorkshopOrderForm = () => {
                 await handleSave(false)
                 const prompt = leavePrompt
                 setLeavePrompt(null)
-                if (typeof prompt === 'string') navigate(prompt)
+                if (prompt === '__back__') setTimeout(() => window.history.back(), 0)
+                else if (typeof prompt === 'string') navigate(prompt)
                 else if (prompt?.path) navigate(prompt.path, prompt.options)
               } catch {
                 setLeavePrompt(null)

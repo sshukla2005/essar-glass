@@ -2359,6 +2359,9 @@ export const generateTougheningChallanPDF = async (batch) => {
   // 7. One blank row (as in reference)
   allBodyRows.push(['', '', '', '', '', ''])
 
+  // Track row indices of each group's first row for bolding MM & DESCRIPTION
+  const groupFirstRowIndices = new Set()
+
   // 8. Grouped data rows
   groupedMap.forEach((itemsInGroup, groupDesc) => {
     const parsed = parseThickness(groupDesc)
@@ -2372,6 +2375,7 @@ export const generateTougheningChallanPDF = async (batch) => {
       const widthStr = h_mm ? `${Math.round(h_mm)}` : '—'
 
       if (idx === 0) {
+        groupFirstRowIndices.add(allBodyRows.length)
         allBodyRows.push([
           parsed.mm,
           parsed.rest,
@@ -2456,6 +2460,13 @@ export const generateTougheningChallanPDF = async (batch) => {
       3: { cellWidth: 25 },
       4: { cellWidth: 15 },
       5: { cellWidth: 25 },
+    },
+    didParseCell: (data) => {
+      if (data.section === 'body' && groupFirstRowIndices.has(data.row.index)) {
+        if (data.column.index === 0 || data.column.index === 1) {
+          data.cell.styles.fontStyle = 'bold'
+        }
+      }
     },
   })
 

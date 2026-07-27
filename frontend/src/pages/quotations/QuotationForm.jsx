@@ -1183,6 +1183,21 @@ const QuotationForm = () => {
     return () => window.removeEventListener('beforeunload', handler)
   }, [isDirty])
 
+  // ── Browser / gesture back-button guard (popstate) ──────────────────
+  // BrowserRouter has no useBlocker, so we push a sentinel history entry.
+  // When the user pops it (back button / two-finger swipe / side mouse
+  // button), we re-push the sentinel and show the leave prompt.
+  useEffect(() => {
+    if (!isDirty) return
+    window.history.pushState(null, '', window.location.href)
+    const onPop = () => {
+      window.history.pushState(null, '', window.location.href)
+      setLeavePrompt('__back__')
+    }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [isDirty])
+
   // \u2500\u2500 In-app navigation guard \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
   // Note: app uses <BrowserRouter>, not createBrowserRouter, so useBlocker is
   // not available. In-app navigation is handled via guardedNavigate below;
@@ -1868,7 +1883,15 @@ const QuotationForm = () => {
           advance_received: advanceRec || 0, groups, totals, lines: getFlatLines(),
           hardware_items: hardwareItems, labor_items: laborItems,
         })}
-        onConvertToSO={() => convertMutation.mutate()}
+        onConvertToSO={() => {
+          Modal.confirm({
+            title: 'Convert to Sales Order?',
+            content: 'This will create a Sales Order and move this quotation to CONVERTED. Do you want to continue?',
+            okText: 'Yes, convert',
+            cancelText: 'Cancel',
+            onOk: () => convertMutation.mutate(),
+          })
+        }}
         isConverting={convertMutation.isPending}
         onCancel={async () => {
           await quotationApi.changeStatus(id, 'cancelled');
@@ -1882,7 +1905,13 @@ const QuotationForm = () => {
             handleSave(false);
             return
           }
-          confirmMutation.mutate()
+          Modal.confirm({
+            title: 'Confirm this quotation?',
+            content: 'This will move the quotation to CONFIRMED. Do you want to continue?',
+            okText: 'Yes, confirm',
+            cancelText: 'Cancel',
+            onOk: () => confirmMutation.mutate(),
+          })
         }}
         isConfirming={confirmMutation.isPending}
       />
@@ -2791,19 +2820,18 @@ const QuotationForm = () => {
             setIsDirty(false)
             const p = leavePrompt
             setLeavePrompt(null)
-            navigate(p)
+            if (p === '__back__') setTimeout(() => window.history.back(), 0)
+            else navigate(p)
           }}>Leave without saving</Button>,
           status !== 'converted' && (
             <Button key="save" type="primary" loading={saveMutation.isPending}
               onClick={async () => {
                 try {
                   await handleSave(false)
-                  // handleSave calls saveMutation.mutateAsync; if it resolves,
-                  // the save succeeded. setIsDirty(false) is also done in
-                  // saveMutation.onSuccess, but we navigate here explicitly.
                   const p = leavePrompt
                   setLeavePrompt(null)
-                  navigate(p)
+                  if (p === '__back__') setTimeout(() => window.history.back(), 0)
+                  else navigate(p)
                 } catch {
                   // Validation failed or save errored — keep user on page.
                   setLeavePrompt(null)
