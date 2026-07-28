@@ -89,6 +89,27 @@ const resolveProcName = (p) => {
   return 'Process'
 }
 
+const aggregateProcesses = (allProcs) => {
+  const procAgg = []
+  const procIndex = new Map()
+  allProcs.forEach(p => {
+    const name = resolveProcName(p)
+    const rate = p.rate || 0
+    const qty = (p.qty_area ?? p.qty) || 0
+    const amt = p.amount ?? 0
+    const key = name + '|' + rate
+    if (!procIndex.has(key)) {
+      procIndex.set(key, procAgg.length)
+      procAgg.push({ name, rate, qty, amount: amt })
+    } else {
+      const g = procAgg[procIndex.get(key)]
+      g.qty += qty
+      g.amount += amt
+    }
+  })
+  return procAgg
+}
+
 const STATE_CODES = {
   '27': 'MAHARASHTRA',
   '24': 'GUJARAT',
@@ -931,19 +952,6 @@ const calculateGroupHeight = (group, hasCep) => {
   h += approxLines > 1 ? 13 : 8
   h += 11 // two-tier header
   h += sizes.length * 6.5
-  
-  const isRealProc = (p) => (p.process_id != null || p.process_name || p.name) &&
-    (((p.qty_area ?? p.qty) || 0) > 0 || (p.rate || 0) > 0 || (p.amount || 0) > 0)
-  const sizeProcs = sizes.flatMap(s => s.size_processes || []).filter(isRealProc)
-  const grpProcs = (group.processes || []).filter(isRealProc)
-  const allProcs = [...sizeProcs, ...grpProcs]
-  
-  if (allProcs.length > 0) {
-    h += 6.5
-    h += allProcs.length * 6.5
-    h += SP_8
-  }
-  
   h += 7.5 // subtotal row
   h += 5.5 // HSN row
   h += SP_8
@@ -953,11 +961,6 @@ const calculateGroupHeight = (group, hasCep) => {
 // ── Draw Glass Card (Splits Dynamically across pages) ──
 const drawGroupCard = (doc, group, groupNo, hasCep, cols, startY, pageNum, quotation) => {
   const sizes = group.sizes || []
-  const isRealProc = (p) => (p.process_id != null || p.process_name || p.name) &&
-    (((p.qty_area ?? p.qty) || 0) > 0 || (p.rate || 0) > 0 || (p.amount || 0) > 0)
-  const sizeProcs = sizes.flatMap(s => s.size_processes || []).filter(isRealProc)
-  const grpProcs = (group.processes || []).filter(isRealProc)
-  const allProcs = [...sizeProcs, ...grpProcs]
   
   const groupHeight = calculateGroupHeight(group, hasCep)
   const remainingSpace = (PAGE_H - 18) - startY
@@ -1024,37 +1027,7 @@ const drawGroupCard = (doc, group, groupNo, hasCep, cols, startY, pageNum, quota
     ly = drawDataRow(doc, cols, vals, false, ly)
   })
   
-  // 4. Processes
-  if (allProcs.length > 0) {
-    const procsHeight = 6.5 + allProcs.length * 6.5 + SP_8 * 2
-    if ((PAGE_H - 18) - ly < procsHeight + 7.5 + 5.5) {
-      y = checkPageBreak(doc, y, 999, pageNum, quotation)
-      ly = y + SP_8
-      ly = drawGroupBanner(doc, groupNo, refCode, groupDesc + ' - Processes (Continued)', group.is_toughened, group.cep, ly)
-    }
-    
-    ly += SP_8
-    drawRect(doc, MARGIN.l + SP_8, ly, CONTENT_W - 2 * SP_8, 6.5, C.procHeader)
-    setFont(doc, 7, 'bold', C.white)
-    drawText(doc, 'GROUP & SIZE PROCESS CHARGES', MARGIN.l + SP_8 + 3, ly + 4.5)
-    ly += 6.5
-    
-    allProcs.forEach((p, pi) => {
-      if (pi % 2 === 1) {
-        drawRect(doc, MARGIN.l + SP_8, ly, CONTENT_W - 2 * SP_8, 6.5, C.rowAlt)
-      }
-      setFont(doc, 7, 'normal', C.text)
-      drawText(doc, resolveProcName(p).substring(0, 45), MARGIN.l + SP_8 + 3, ly + 4.5)
-      
-      setFont(doc, 7, 'bold', C.text)
-      drawText(doc, `${p.qty_area || 0} x ${fmtR(p.rate || 0)} = ${fmtR(p.amount || 0)}`, MARGIN.l + CONTENT_W - SP_8 - 5.0, ly + 4.5, { align: 'right' })
-      drawLine(doc, MARGIN.l + SP_8, ly + 6.5, MARGIN.l + CONTENT_W - SP_8, ly + 6.5, C.borderLight, 0.15)
-      ly += 6.5
-    })
-    ly += SP_8
-  }
-  
-  // 5. Group Subtotal & HSN row
+  // 4. Group Subtotal & HSN row
   ly = drawGroupSubtotal(doc, cols, grpQty, grpSqft, grpRft, grpCep, grpAmt, hasCep, ly)
   ly = drawGroupHsnRow(doc, group, ly)
   
@@ -1076,6 +1049,45 @@ const drawTotalSummaryGridRow = (doc, qty, sqft, amt, y) => {
   
   drawText(doc, text, MARGIN.l + 4, y + 5.2)
   return y + rowH
+}
+
+// ── Process Charges Card Drawing ──
+const calculateProcessCardHeight = (items) => {
+  if (!items?.length) return 0
+  return SP_8 + 7 + items.length * 6.5 + 7.5 + SP_8 + SP_16
+}
+
+const drawProcessCard = (doc, items, y) => {
+  const h = calculateProcessCardHeight(items)
+  drawCard(doc, MARGIN.l, y, CONTENT_W, h - SP_16, C.white, C.border, 2.0)
+  
+  let ly = y + SP_8
+  drawRect(doc, MARGIN.l + 0.3, ly, CONTENT_W - 0.6, 7, C.procHeaderBg)
+  setFont(doc, 8, 'bold', C.procHeader)
+  drawText(doc, 'PROCESS CHARGES', MARGIN.l + 4, ly + 5)
+  ly += 7
+  
+  items.forEach((item, i) => {
+    if (i % 2 === 1) {
+      drawRect(doc, MARGIN.l + 0.3, ly, CONTENT_W - 0.6, 6.5, C.rowAlt)
+    }
+    setFont(doc, 7.5, 'normal', C.text)
+    drawText(doc, item.name.substring(0, 48), MARGIN.l + 4, ly + 4.5)
+    
+    setFont(doc, 7.5, 'bold', C.text)
+    drawText(doc, `${item.qty} x ${fmtR(item.rate)} = ${fmtR(item.amount)}`, MARGIN.l + CONTENT_W - 5.0, ly + 4.5, { align: 'right' })
+    drawLine(doc, MARGIN.l + 0.3, ly + 6.5, MARGIN.l + CONTENT_W - 0.3, ly + 6.5, C.borderLight, 0.15)
+    ly += 6.5
+  })
+  
+  const tot = items.reduce((s, item) => s + (item.amount || 0), 0)
+  drawRect(doc, MARGIN.l + 0.3, ly, CONTENT_W - 0.6, 7.5, C.procHeaderBg)
+  drawLine(doc, MARGIN.l + 0.3, ly, MARGIN.l + CONTENT_W - 0.3, ly, C.border, 0.3)
+  setFont(doc, 7.5, 'bold', C.procHeader)
+  drawText(doc, 'Process Charges Total', MARGIN.l + 4, ly + 5.5)
+  drawText(doc, fmtR(tot), MARGIN.l + CONTENT_W - 5.0, ly + 5.5, { align: 'right' })
+  
+  return y + h
 }
 
 // ── Hardware / Labor / Wastage Card Drawing ──
@@ -1636,6 +1648,22 @@ export const generateQuotationPDF = async (quotation) => {
     y = checkPageBreak(doc, y, 8 + SP_16, pageNum, quotation)
     y = drawTotalSummaryGridRow(doc, totalQty, totalSqft, grandGlass, y) + SP_16
 
+    // Process Charges Card
+    const isRealProc = (p) => (p.process_id != null || p.process_name || p.name) &&
+      (((p.qty_area ?? p.qty) || 0) > 0 || (p.rate || 0) > 0 || (p.amount || 0) > 0)
+    const allDocProcs = [
+      ...(groups || []).flatMap(g => [
+        ...(g.processes || []).filter(isRealProc),
+        ...(g.sizes || []).flatMap(s => (s.size_processes || []).filter(isRealProc))
+      ])
+    ]
+    const aggProcs = aggregateProcesses(allDocProcs)
+    if (aggProcs.length > 0) {
+      const procHeight = calculateProcessCardHeight(aggProcs)
+      y = checkPageBreak(doc, y, procHeight, pageNum, quotation)
+      y = drawProcessCard(doc, aggProcs, y) + SP_16
+    }
+
     // Hardware Card
     if (hardware_items.length > 0) {
       const hwHeight = calculateHardwareHeight(hardware_items)
@@ -1660,7 +1688,7 @@ export const generateQuotationPDF = async (quotation) => {
     // Processes block height calculations for processes
     const t = quotation.totals || {}
     const subI = t.subI || grandGlass || 0
-    const procTot = t.procTotal || 0
+    const procTot = t.procTotal || aggProcs.reduce((s, p) => s + (p.amount || 0), 0) || 0
     const hwTot = t.hwTotal || hardware_items.reduce((s, h) => s + (h.amount || 0), 0) || 0
     const lbTot = t.lbTotal || labor_items.reduce((s, l) => s + (l.amount || 0), 0) || 0
     const wstTot = t.wstTotal || wastage_items.reduce((s, w) => s + (w.amount || 0), 0) || 0
@@ -1834,11 +1862,6 @@ const drawSOItemsCard = (doc, lines, hasCep, cols, startY, pageNum, so) => {
 
 const drawSOGroupCard = (doc, group, groupNo, hasCep, cols, startY, pageNum, so) => {
   const sizes = group.sizes || []
-  const isRealProc = (p) => (p.process_id != null || p.process_name || p.name) &&
-    (((p.qty_area ?? p.qty) || 0) > 0 || (p.rate || 0) > 0 || (p.amount || 0) > 0)
-  const sizeProcs = sizes.flatMap(s => s.size_processes || []).filter(isRealProc)
-  const grpProcs = (group.processes || []).filter(isRealProc)
-  const allProcs = [...sizeProcs, ...grpProcs]
   
   const groupHeight = calculateGroupHeight(group, hasCep)
   const remainingSpace = (PAGE_H - 18) - startY
@@ -1905,37 +1928,7 @@ const drawSOGroupCard = (doc, group, groupNo, hasCep, cols, startY, pageNum, so)
     ly = drawDataRow(doc, cols, vals, false, ly)
   })
   
-  // 4. Processes
-  if (allProcs.length > 0) {
-    const procsHeight = 6.5 + allProcs.length * 6.5 + SP_8 * 2
-    if ((PAGE_H - 18) - ly < procsHeight + 7.5 + 5.5) {
-      y = checkPageBreak(doc, y, 999, pageNum, so)
-      ly = y + SP_8
-      ly = drawGroupBanner(doc, groupNo, refCode, groupDesc + ' - Processes (Continued)', group.is_toughened, group.cep, ly)
-    }
-    
-    ly += SP_8
-    drawRect(doc, MARGIN.l + SP_8, ly, CONTENT_W - 2 * SP_8, 6.5, C.procHeader)
-    setFont(doc, 7, 'bold', C.white)
-    drawText(doc, 'GROUP & SIZE PROCESS CHARGES', MARGIN.l + SP_8 + 3, ly + 4.5)
-    ly += 6.5
-    
-    allProcs.forEach((p, pi) => {
-      if (pi % 2 === 1) {
-        drawRect(doc, MARGIN.l + SP_8, ly, CONTENT_W - 2 * SP_8, 6.5, C.rowAlt)
-      }
-      setFont(doc, 7, 'normal', C.text)
-      drawText(doc, resolveProcName(p).substring(0, 45), MARGIN.l + SP_8 + 3, ly + 4.5)
-      
-      setFont(doc, 7, 'bold', C.text)
-      drawText(doc, `${p.qty_area || 0} x ${fmtR(p.rate || 0)} = ${fmtR(p.amount || 0)}`, MARGIN.l + CONTENT_W - SP_8 - 5.0, ly + 4.5, { align: 'right' })
-      drawLine(doc, MARGIN.l + SP_8, ly + 6.5, MARGIN.l + CONTENT_W - SP_8, ly + 6.5, C.borderLight, 0.15)
-      ly += 6.5
-    })
-    ly += SP_8
-  }
-  
-  // 5. Group Subtotal & HSN row
+  // 4. Group Subtotal & HSN row
   ly = drawGroupSubtotal(doc, cols, grpQty, grpSqft, grpRft, grpCep, grpAmt, hasCep, ly)
   ly = drawGroupHsnRow(doc, group, ly)
   
@@ -2026,6 +2019,23 @@ export const generateSOPDF = async (so) => {
     y = checkPageBreak(doc, y, 8 + SP_16, pageNum, so)
     y = drawTotalSummaryGridRow(doc, totalQty, totalSqft, grandGlass, y) + SP_16
 
+    // Process Charges Card
+    const isRealProc = (p) => (p.process_id != null || p.process_name || p.name) &&
+      (((p.qty_area ?? p.qty) || 0) > 0 || (p.rate || 0) > 0 || (p.amount || 0) > 0)
+    const allDocProcs = [
+      ...(groups || []).flatMap(g => [
+        ...(g.processes || []).filter(isRealProc),
+        ...(g.sizes || []).flatMap(s => (s.size_processes || []).filter(isRealProc))
+      ]),
+      ...(so.lines || []).flatMap(l => (l.line_processes || l.processes || []).filter(isRealProc))
+    ]
+    const aggProcs = aggregateProcesses(allDocProcs)
+    if (aggProcs.length > 0) {
+      const procHeight = calculateProcessCardHeight(aggProcs)
+      y = checkPageBreak(doc, y, procHeight, pageNum, so)
+      y = drawProcessCard(doc, aggProcs, y) + SP_16
+    }
+
     // Hardware Card
     if (hardware_items.length > 0) {
       const hwHeight = calculateHardwareHeight(hardware_items)
@@ -2050,7 +2060,7 @@ export const generateSOPDF = async (so) => {
     // Financial ladder calculations
     const t = so.totals || {}
     const subI = t.subI || grandGlass || so.subtotal || 0
-    const procTot = t.procTotal || 0
+    const procTot = t.procTotal || aggProcs.reduce((s, p) => s + (p.amount || 0), 0) || 0
     const hwTot = t.hwTotal || hardware_items.reduce((s, h) => s + (h.amount || 0), 0) || 0
     const lbTot = t.lbTotal || labor_items.reduce((s, l) => s + (l.amount || 0), 0) || 0
     const wstTot = t.wstTotal || wastage_items.reduce((s, w) => s + (w.amount || 0), 0) || 0

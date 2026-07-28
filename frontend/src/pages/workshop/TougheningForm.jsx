@@ -12,8 +12,8 @@ import { generateTougheningChallanPDF } from '../../utils/pdfGenerator'
 const { TextArea } = Input
 const { Text } = Typography
 
-const STATUS_STEPS = ['draft', 'sent', 'received']
-const STATUS_IDX = { draft: 0, sent: 1, received: 2 }
+const STATUS_STEPS = ['draft', 'sent', 'partial_received', 'received']
+const STATUS_IDX = { draft: 0, sent: 1, partial_received: 2, received: 3 }
 const ITEM_STATUSES = [
   { value: 'pending', label: 'Pending' },
   { value: 'sent', label: 'Sent' },
@@ -78,6 +78,7 @@ const TougheningForm = () => {
           quantity: it.qty || it.quantity || 1,
           tgh_rate: it.tgh_rate || 1200,
           item_status: it.item_status || 'pending',
+          received_done: Boolean(it.received_done),
           wo_number: it.wo_number || it.source_wo || record.wo_number || '',
           so_number: it.so_number || it.source_so || record.so_number || '',
         })))
@@ -173,8 +174,12 @@ const TougheningForm = () => {
 
   const receiveMutation = useMutation({
     mutationFn: async () => {
-      const received = items.filter(it => it.item_status !== 'rejected')
-      for (const it of received) {
+      const newlyReceived = items.filter(it => it.item_status === 'received' && !it.received_done)
+      if (newlyReceived.length === 0) {
+        message.warning('Mark at least one item as Received (in the item Status column) first')
+        return null
+      }
+      for (const it of newlyReceived) {
         if (it.product_id) {
           await stockMovementApi.create({
             product_id: it.product_id, quantity: it.quantity, movement_type: 'in',
@@ -182,10 +187,31 @@ const TougheningForm = () => {
           })
         }
       }
-      await tougheningBatchApi.changeStatus(id, 'received')
+      const updatedItems = items.map(it =>
+        it.item_status === 'received' ? { ...it, received_done: true } : it
+      )
+      setItems(updatedItems)
+
+      const allDone = updatedItems.every(it => it.item_status === 'received' || it.item_status === 'rejected' || it.received_done)
+      const newStatus = allDone ? 'received' : 'partial_received'
+
+      const formVals = form.getFieldsValue()
+      await tougheningBatchApi.update(id, {
+        ...record,
+        ...formVals,
+        sent_date: formVals.sent_date ? formVals.sent_date.format('YYYY-MM-DD') : record?.sent_date,
+        expected_return: formVals.expected_return ? formVals.expected_return.format('YYYY-MM-DD') : record?.expected_return,
+        lines: updatedItems.map(({ key, ...rest }) => rest),
+        status: newStatus
+      })
+      await tougheningBatchApi.changeStatus(id, newStatus)
+      return newStatus
     },
-    onSuccess: () => {
-      message.success(`${items.length} items received from toughening`)
+    onSuccess: (newStatus) => {
+      if (!newStatus) return
+      message.success(newStatus === 'received'
+        ? 'All items received from toughening'
+        : 'Partial receipt recorded — remaining items still pending')
       queryClient.invalidateQueries({ queryKey: ['toughening_batches', id] })
     }
   })
@@ -299,7 +325,7 @@ const TougheningForm = () => {
       {/* Status Bar */}
       <Row gutter={[16, 16]} align="middle" style={{ marginBottom: 24 }}>
         <Col xs={24} lg={12}>
-          <Steps size="small" current={STATUS_IDX[status] || 0} items={STATUS_STEPS.map(s => ({ title: s.toUpperCase() }))} />
+          <Steps size="small" current={STATUS_IDX[status] || 0} items={STATUS_STEPS.map(s => ({ title: s.replace('_', ' ').toUpperCase() }))} />
         </Col>
         <Col xs={24} lg={12} style={{ textAlign: 'right' }}>
           <Space wrap>
@@ -330,7 +356,8 @@ const TougheningForm = () => {
               Download Challan
             </Button>
             {status === 'draft' && <Button type="primary" icon={<SendOutlined />} onClick={() => changeStage('sent', () => statusMutation.mutate('sent'))} style={{ background: '#3b82f6' }}>Send to Vendor</Button>}
-            {status === 'sent' && <Button type="primary" icon={<InboxOutlined />} onClick={() => changeStage('received', () => receiveMutation.mutate())} loading={receiveMutation.isPending} style={{ background: '#10b981' }}>Mark as Received</Button>}
+            {(status === 'sent' || status === 'partial_received') && <Button type="primary" icon={<InboxOutlined />} onClick={() => changeStage('received items', () => receiveMutation.mutate())} loading={receiveMutation.isPending} style={{ background: '#10b981' }}>Receive Marked Items</Button>}
+            {status === 'partial_received' && <Tag color="orange" style={{ padding: '6px 12px', fontSize: 14 }}>◐ PARTIAL RECEIVED</Tag>}
             {status === 'received' && <Tag color="green" style={{ padding: '6px 12px', fontSize: 14 }}>✅ RECEIVED</Tag>}
           </Space>
         </Col>

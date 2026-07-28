@@ -54,6 +54,26 @@ const WorkshopOrderForm = () => {
   const [selectedLineKeys, setSelectedLineKeys] = useState([])
   const [bulkArtworkModal, setBulkArtworkModal] = useState(false)
   const [bulkArtworkId, setBulkArtworkId] = useState(null)
+  const [bulkArtworkName, setBulkArtworkName] = useState('')
+  const [bulkArtworkFileData, setBulkArtworkFileData] = useState(null)
+  const [bulkArtworkFileName, setBulkArtworkFileName] = useState(null)
+
+  const saveToArtworkMaster = (name, fileName, fileData) => {
+    const newArtwork = {
+      id: Date.now(),
+      name,
+      file_name: fileName,
+      file_data: fileData,
+      created_at: new Date().toISOString().split('T')[0]
+    }
+    setArtworkMaster(prev => {
+      const updated = [...prev, newArtwork]
+      saveArtworkMaster(updated)
+      return updated
+    })
+    message.success(`"${name}" saved to Artwork Master!`)
+    return newArtwork
+  }
   const [expandedRowKeys, setExpandedRowKeys] = useState([])
   const [exportWizard, setExportWizard] = useState(false)
   const [exportLoading, setExportLoading] = useState(null)
@@ -430,7 +450,26 @@ const WorkshopOrderForm = () => {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['workshop_orders', id] }),
   })
 
+  const lineHasArtwork = (l) =>
+    !!(l.artwork_file_data || l.artwork_id || l.artwork_master_id || l.artwork_image || l.artwork_name || l.artwork_file || l.artwork_file_name)
+
+  const missingArtworkLines = () =>
+    lines
+      .map((l, i) => ({ l, i }))
+      .filter(({ l }) => (l.has_process || l.hasProcess) && !lineHasArtwork(l))
+
   const changeStatus = (next) => {
+    if (next === 'in_progress') {
+      const missing = missingArtworkLines()
+      if (missing.length > 0) {
+        const nums = missing.map(({ i }) => i + 1).join(', ')
+        Modal.warning({
+          title: 'Artwork required before processing',
+          content: `${missing.length} glass line(s) with a process have no artwork uploaded (row ${nums}). Upload artwork for each, or turn off "Has Process", before starting processing.`,
+        })
+        return
+      }
+    }
     const label = String(next).replace(/_/g, ' ').toUpperCase()
     Modal.confirm({
       title: 'Change workshop order stage?',
@@ -439,6 +478,19 @@ const WorkshopOrderForm = () => {
       cancelText: 'Cancel',
       onOk: () => statusMutation.mutate(next),
     })
+  }
+
+  const handleStartProcessing = () => {
+    const missing = missingArtworkLines()
+    if (missing.length > 0) {
+      const nums = missing.map(({ i }) => i + 1).join(', ')
+      Modal.warning({
+        title: 'Artwork required before processing',
+        content: `${missing.length} glass line(s) with a process have no artwork uploaded (row ${nums}). Upload artwork for each, or turn off "Has Process", before starting processing.`,
+      })
+      return
+    }
+    setExportWizard(true)
   }
 
   const handleSave = async (andNew = false) => {
@@ -1233,7 +1285,7 @@ const WorkshopOrderForm = () => {
               <Button
                 type="primary"
                 icon={<PlayCircleOutlined />}
-                onClick={() => setExportWizard(true)}
+                onClick={handleStartProcessing}
                 style={{ background: '#f59e0b' }}
               >
                 Start Processing
@@ -1392,18 +1444,13 @@ const WorkshopOrderForm = () => {
 
                               // Save to master if name provided
                               if (record.new_artwork_name?.trim()) {
-                                const newArtwork = {
-                                  id: Date.now(),
-                                  name: record.new_artwork_name.trim(),
-                                  file_name: file.name,
-                                  file_data: base64,
-                                  created_at: new Date().toISOString().split('T')[0]
-                                }
-                                const updated = [...artworkMaster, newArtwork]
-                                setArtworkMaster(updated)
-                                saveArtworkMaster(updated)
+                                const newArtwork = saveToArtworkMaster(
+                                  record.new_artwork_name.trim(),
+                                  file.name,
+                                  base64
+                                )
                                 updateLine(record.key, 'artwork_master_id', newArtwork.id)
-                                message.success(`"${newArtwork.name}" saved to Artwork Master!`)
+                                updateLine(record.key, 'artwork_name', newArtwork.name)
                               }
                             }
                             reader.readAsDataURL(file)
@@ -1505,18 +1552,35 @@ const WorkshopOrderForm = () => {
         <Modal
           title="Apply Artwork to Selected Lines"
           open={bulkArtworkModal}
-          onCancel={() => setBulkArtworkModal(false)}
+          onCancel={() => {
+            setBulkArtworkModal(false)
+            setBulkArtworkId(null)
+            setBulkArtworkName('')
+            setBulkArtworkFileData(null)
+            setBulkArtworkFileName(null)
+          }}
           onOk={() => {
-            if (!bulkArtworkId) return
-            const artwork = artworkMaster.find(a => a.id === bulkArtworkId)
-            if (!artwork) return
+            let artToApply = null
+            if (bulkArtworkFileData) {
+              const nameToUse = bulkArtworkName?.trim() || bulkArtworkFileName || 'New Artwork'
+              artToApply = saveToArtworkMaster(nameToUse, bulkArtworkFileName, bulkArtworkFileData)
+            } else if (bulkArtworkId) {
+              artToApply = artworkMaster.find(a => a.id === bulkArtworkId)
+            }
+
+            if (!artToApply) {
+              message.warning('Select an artwork or upload a new one')
+              return
+            }
+
             setLines(prev => prev.map(l =>
               selectedLineKeys.includes(l.key)
                 ? {
                   ...l,
-                  artwork_master_id: artwork.id,
-                  artwork_name: artwork.name,
-                  artwork_file_data: artwork.file_data,
+                  artwork_master_id: artToApply.id,
+                  artwork_name: artToApply.name,
+                  artwork_file_data: artToApply.file_data,
+                  artwork_file_name: artToApply.file_name || l.artwork_file_name,
                   has_process: true,
                 }
                 : l
@@ -1529,23 +1593,70 @@ const WorkshopOrderForm = () => {
             setBulkArtworkModal(false)
             setSelectedLineKeys([])
             setBulkArtworkId(null)
+            setBulkArtworkName('')
+            setBulkArtworkFileData(null)
+            setBulkArtworkFileName(null)
           }}
           okText="Apply"
-          okButtonProps={{ style: { background: '#7c3aed' }, disabled: !bulkArtworkId }}
+          okButtonProps={{ style: { background: '#7c3aed' }, disabled: !bulkArtworkId && !bulkArtworkFileData }}
         >
           <Select
             placeholder="Select artwork from master"
             style={{ width: '100%' }}
             showSearch
+            allowClear
             value={bulkArtworkId}
             options={artworkMaster.map(a => ({
               value: a.id, label: a.name
             }))}
-            onChange={setBulkArtworkId}
+            onChange={val => {
+              setBulkArtworkId(val)
+              if (val) {
+                setBulkArtworkFileData(null)
+                setBulkArtworkFileName(null)
+              }
+            }}
           />
-          {artworkMaster.length === 0 && (
+
+          <Divider style={{ margin: '12px 0' }}>
+            <Text type="secondary" style={{ fontSize: 11 }}>or upload new</Text>
+          </Divider>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <Input
+              placeholder="Artwork name (required to save to master)"
+              size="small"
+              value={bulkArtworkName}
+              onChange={e => setBulkArtworkName(e.target.value)}
+            />
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input
+                type="file"
+                accept="image/*,.pdf"
+                style={{ flex: 1, fontSize: 12 }}
+                onChange={e => {
+                  const file = e.target.files[0]
+                  if (!file) return
+                  const reader = new FileReader()
+                  reader.onload = (ev) => {
+                    setBulkArtworkFileData(ev.target.result)
+                    setBulkArtworkFileName(file.name)
+                    setBulkArtworkId(null)
+                  }
+                  reader.readAsDataURL(file)
+                }}
+              />
+              {bulkArtworkFileData && (
+                <Tag color="green" style={{ fontSize: 11 }}>
+                  ✓ {bulkArtworkFileName || 'Attached'}
+                </Tag>
+              )}
+            </div>
+          </div>
+
+          {artworkMaster.length === 0 && !bulkArtworkFileData && (
             <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 8 }}>
-              No artworks in master yet. Upload artwork on individual lines first.
+              No artworks in master yet. Upload a new artwork or pick one once added.
             </Text>
           )}
         </Modal>

@@ -5,7 +5,7 @@ import MasterList from '../../components/common/MasterList'
 import { tougheningBatchApi } from '../../api'
 import { generateTougheningChallanPDF } from '../../utils/pdfGenerator'
 
-const STATUS_COLORS = { draft: 'default', sent: 'processing', received: 'success' }
+const STATUS_COLORS = { draft: 'default', sent: 'processing', partial_received: 'warning', received: 'success' }
 
 const columns = [
   { title: 'Batch #', dataIndex: 'tb_number', width: 120, render: v => <span style={{ fontWeight: 600, color: '#dc2626' }}>{v}</span> },
@@ -15,7 +15,7 @@ const columns = [
   { title: 'Items', dataIndex: 'lines', width: 80, render: v => v?.length || 0 },
   { title: 'Total Sqmt', dataIndex: 'total_sqmt', width: 120, render: v => v ? v.toFixed(4) : '—' },
   { title: 'Amount', dataIndex: 'total_amount', width: 120, render: v => `₹ ${Number(v || 0).toLocaleString('en-IN')}` },
-  { title: 'Status', dataIndex: 'status', width: 120, render: v => <Tag color={STATUS_COLORS[v] || 'default'}>{(v || 'draft').toUpperCase()}</Tag> },
+  { title: 'Status', dataIndex: 'status', width: 120, render: v => <Tag color={STATUS_COLORS[v] || 'default'}>{(v || 'draft').replace('_', ' ').toUpperCase()}</Tag> },
 ]
 
 const TougheningList = () => (
