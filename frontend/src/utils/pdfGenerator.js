@@ -296,72 +296,6 @@ const drawBorder = (doc) => {
 const drawHeader = (doc, company, docTitle) => {
   const yStart = MARGIN.t // 10mm
 
-  // 1. Process address text lines
-  const rawAddrText = [
-    cleanVal(company.address),
-    cleanVal(company.address_line2),
-    cleanVal(company.city)
-  ].filter(Boolean).join(', ')
-  const combinedAddrText = "Add: " + rawAddrText
-  setFont(doc, 9, 'normal', C.text)
-  const addressLines = doc.splitTextToSize(combinedAddrText, 120).slice(0, 2)
-
-  // 2. Process statutory lines
-  const panVal = cleanVal(company.pan || company.pan_number)
-  const cinVal = cleanVal(company.cin)
-  const gstinVal = cleanVal(company.gstin || company.gst)
-  const stateStr = (cleanVal(company.state_code) && cleanVal(company.state_name))
-    ? `${cleanVal(company.state_code)}-${cleanVal(company.state_name).toUpperCase()}`
-    : cleanVal(company.state_code || company.state_name)
-
-  const statutoryParts = []
-  if (panVal) statutoryParts.push(`PAN No : ${panVal}`)
-  if (cinVal) statutoryParts.push(`CIN No : ${cinVal}`)
-  if (gstinVal) statutoryParts.push(`GSTIN : ${gstinVal}`)
-  if (stateStr) statutoryParts.push(`Code / State : ${stateStr}`)
-
-  const statutoryLine = statutoryParts.join('   ')
-  setFont(doc, 8.5, 'bold', C.text)
-  const statutoryLines = doc.splitTextToSize(statutoryLine, 120).slice(0, 2)
-
-  // 3. Process contact inline segments (Line 3)
-  const segments = []
-  if (cleanVal(company.phone)) {
-    const pVal = cleanVal(company.phone2) ? `${cleanVal(company.phone)}, ${cleanVal(company.phone2)}` : cleanVal(company.phone)
-    segments.push({ label: 'Phone: ', value: pVal })
-  }
-  if (cleanVal(company.whatsapp)) {
-    segments.push({ label: '  WhatsApp: ', value: cleanVal(company.whatsapp) })
-  }
-  if (cleanVal(company.email)) {
-    segments.push({ label: '  E-mail: ', value: cleanVal(company.email) })
-  }
-
-  // Compute heights & gaps
-  const padTop = 4
-  const nameH = 6
-  const gap1 = 2
-  const addrH = addressLines.length * 4
-  const gap2 = 2
-  const contactH = segments.length > 0 ? 3.5 : 0
-  const gap3 = segments.length > 0 ? 2 : 0
-  const statH = statutoryLines.length > 0 ? (statutoryLines.length * 4) : 0
-  const padBot = 4
-
-  const boxH = padTop + nameH + gap1 + addrH + gap2 + contactH + gap3 + statH + padBot
-
-  // 4. Draw outer border rectangle (content width = 190mm)
-  // Thin border (0.3mm, dark gray)
-  drawRect(doc, 10, yStart, CONTENT_W, boxH, null, [120, 130, 140], 0.3)
-
-  // 5. Draw left vertical separator line at x = 42
-  drawLine(doc, 42, yStart, 42, yStart + boxH, [120, 130, 140], 0.3)
-
-  // 6. Draw Left Column logo / monogram
-  // Bounding box: width = 28mm, height = boxH - 4mm
-  const gstinForBadge = cleanVal(company.gstin || company.gst)
-  const maxLogoW = 28
-  const maxLogoH = gstinForBadge ? (boxH - 12) : (boxH - 4)
   const fitImage = (imgW, imgH, maxW, maxH) => {
     const ratio = imgW / imgH
     let w = maxW
@@ -379,6 +313,84 @@ const drawHeader = (doc, company, docTitle) => {
     return 'JPEG'
   }
 
+  // 1. Company Name
+  const nameText = (company.name || 'ESSAR GLASS').toUpperCase()
+  let nameFontSize = 16
+  setFont(doc, nameFontSize, 'bold', C.primary)
+  while (doc.getTextWidth(nameText) > 104 && nameFontSize > 10) {
+    nameFontSize -= 0.5
+    setFont(doc, nameFontSize, 'bold', C.primary)
+  }
+  const nameLineH = nameFontSize * 0.45
+
+  // 2. Address Line
+  const rawAddrText = [
+    cleanVal(company.address),
+    cleanVal(company.address_line2),
+    cleanVal(company.city),
+    cleanVal(company.state_name || company.state),
+    cleanVal(company.pincode)
+  ].filter(Boolean).join(', ')
+  const combinedAddrText = rawAddrText ? ("Add: " + rawAddrText) : ""
+  setFont(doc, 8.5, 'normal', C.text)
+  const addressLines = combinedAddrText ? doc.splitTextToSize(combinedAddrText, 104).slice(0, 2) : []
+  const addrLineH = 3.6
+  const addrTotalH = addressLines.length * addrLineH
+
+  // 3. Contact Line
+  const segments = []
+  if (cleanVal(company.phone)) {
+    const pVal = cleanVal(company.phone2) ? `${cleanVal(company.phone)}, ${cleanVal(company.phone2)}` : cleanVal(company.phone)
+    segments.push({ label: 'Phone: ', value: pVal })
+  }
+  if (cleanVal(company.whatsapp)) {
+    segments.push({ label: 'Whatsapp: ', value: cleanVal(company.whatsapp) })
+  }
+  if (cleanVal(company.email)) {
+    segments.push({ label: 'E-mail: ', value: cleanVal(company.email) })
+  }
+  const contactLineH = segments.length > 0 ? 3.5 : 0
+
+  // 4. Statutory Line
+  const panVal = cleanVal(company.pan || company.pan_number)
+  const cinVal = cleanVal(company.cin)
+  const gstinVal = cleanVal(company.gstin || company.gst)
+  const stateStr = (cleanVal(company.state_code) && cleanVal(company.state_name))
+    ? `${cleanVal(company.state_code)}-${cleanVal(company.state_name).toUpperCase()}`
+    : cleanVal(company.state_code || company.state_name)
+
+  const statutoryParts = []
+  if (panVal) statutoryParts.push(`PAN No : ${panVal}`)
+  if (cinVal) statutoryParts.push(`CIN No : ${cinVal}`)
+  if (gstinVal) statutoryParts.push(`GSTIN : ${gstinVal}`)
+  if (stateStr) statutoryParts.push(`Code / State : ${stateStr}`)
+
+  const statutoryLine = statutoryParts.join('   ')
+  setFont(doc, 8, 'bold', C.text)
+  const statutoryLines = statutoryLine ? doc.splitTextToSize(statutoryLine, 104).slice(0, 2) : []
+  const statLineH = 3.5
+  const statTotalH = statutoryLines.length * statLineH
+
+  // Gaps & Heights calculation
+  const gapNameAddr = combinedAddrText ? 2 : 0
+  const gapAddrContact = (combinedAddrText && segments.length > 0) ? 1.5 : 0
+  const gapContactStat = (segments.length > 0 && statutoryLines.length > 0) ? 1.5 : 0
+  const gapAddrStat = (!segments.length && combinedAddrText && statutoryLines.length > 0) ? 1.5 : 0
+
+  const centerTextH = nameLineH + gapNameAddr + addrTotalH + gapAddrContact + contactLineH + (gapContactStat || gapAddrStat) + statTotalH
+  const padTop = 3.5
+  const padBot = 3.5
+  const boxH = Math.max(28, centerTextH + padTop + padBot)
+
+  // 5. Draw Outer Header Box & Separators (content width = 190mm at x=10)
+  drawRect(doc, 10, yStart, CONTENT_W, boxH, null, [120, 130, 140], 0.3)
+  // Subtle vertical column separators at x=50 and x=160
+  drawLine(doc, 50, yStart, 50, yStart + boxH, [120, 130, 140], 0.3)
+  drawLine(doc, 160, yStart, 160, yStart + boxH, [120, 130, 140], 0.3)
+
+  // 6. Draw Left Column logo / monogram (x=10 to 50, width=40mm)
+  const maxLogoW = 34
+  const maxLogoH = boxH - 4
   let primaryDrawSuccess = false
   if (company.logo) {
     try {
@@ -389,10 +401,8 @@ const drawHeader = (doc, company, docTitle) => {
         imgH = company._logoImg.naturalHeight || company._logoImg.height || 150
       }
       const dims = fitImage(imgW, imgH, maxLogoW, maxLogoH)
-      const xImg = 10 + 2 + (maxLogoW - dims.w) / 2
-      const yImg = gstinForBadge
-        ? yStart + 9.5 + (maxLogoH - dims.h) / 2
-        : yStart + 2 + (maxLogoH - dims.h) / 2
+      const xImg = 10 + (40 - dims.w) / 2
+      const yImg = yStart + (boxH - dims.h) / 2
       const format = getFormat(company.logo)
       doc.addImage(company.logo, format, xImg, yImg, dims.w, dims.h)
       primaryDrawSuccess = true
@@ -402,34 +412,18 @@ const drawHeader = (doc, company, docTitle) => {
   }
 
   if (!primaryDrawSuccess) {
-    // Monogram fallback
     const initials = (company.name || 'E').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
-    const xBox = 10 + (32 - 18) / 2
-    const yBox = gstinForBadge
-      ? yStart + 9.5 + (boxH - 9.5 - 18) / 2
-      : yStart + (boxH - 18) / 2
+    const xBox = 10 + (40 - 18) / 2
+    const yBox = yStart + (boxH - 18) / 2
     drawCard(doc, xBox, yBox, 18, 18, C.primaryLight, C.primary, 1.0)
     setFont(doc, 10, 'bold', C.primary)
     drawText(doc, initials, xBox + 9, yBox + 10.5, { align: 'center' })
   }
 
-  // ── GST REGISTERED badge (only when a GSTIN exists) ──
-  if (gstinForBadge) {
-    const badgeW = 26, badgeH = 8
-    const bx = 10 + (32 - badgeW) / 2         // centered in the 32mm left column
-    const by = yStart + 1.5                    // pinned near the top of the header box
-    drawCard(doc, bx, by, badgeW, badgeH, [22, 101, 52], [15, 81, 42], 1.0)  // green seal
-    setFont(doc, 5.2, 'bold', C.white)
-    drawText(doc, 'GST REGISTERED', bx + badgeW / 2, by + 3.4, { align: 'center' })
-    setFont(doc, 4.2, 'normal', [220, 235, 225])
-    drawText(doc, 'GOVT. OF INDIA', bx + badgeW / 2, by + 6.4, { align: 'center' })
-  }
-
-  // 7. Draw Right Column (secondary logo if present)
-  // Bounding box: width = 24mm, height = boxH - 4mm
+  // 7. Draw Right Column secondary logo if present (x=160 to 200, width=40mm)
   if (company.secondary_logo) {
     try {
-      const maxSecW = 24
+      const maxSecW = 34
       const maxSecH = boxH - 4
       let secW = 150
       let secH = 150
@@ -438,8 +432,8 @@ const drawHeader = (doc, company, docTitle) => {
         secH = company._secLogoImg.naturalHeight || company._secLogoImg.height || 150
       }
       const dimsSec = fitImage(secW, secH, maxSecW, maxSecH)
-      const xSec = 172 + 2 + (maxSecW - dimsSec.w) / 2
-      const ySec = yStart + 2 + (maxSecH - dimsSec.h) / 2
+      const xSec = 160 + (40 - dimsSec.w) / 2
+      const ySec = yStart + (boxH - dimsSec.h) / 2
       const format = getFormat(company.secondary_logo)
       doc.addImage(company.secondary_logo, format, xSec, ySec, dimsSec.w, dimsSec.h)
     } catch (err) {
@@ -447,60 +441,42 @@ const drawHeader = (doc, company, docTitle) => {
     }
   }
 
-  // 8. Draw Center Column text (center coordinate = 107)
-  let ly = yStart + padTop + 4.5 // Base line coordinate of name
+  // 8. Draw Center Column text (x=50 to 160, center x = 105mm)
+  const textTopY = yStart + (boxH - centerTextH) / 2
+  let ly = textTopY + nameLineH * 0.75
 
-  // Line 1: Company Name (bold, uppercase, fit-to-width)
-  let nameFontSize = 15
-  const nameText = (company.name || 'ESSAR SONS').toUpperCase()
+  // Line 1: Company Name
   setFont(doc, nameFontSize, 'bold', C.primary)
-  while (doc.getTextWidth(nameText) > 120 && nameFontSize > 9) {
-    nameFontSize -= 0.5
-    setFont(doc, nameFontSize, 'bold', C.primary)
-  }
-  drawText(doc, nameText, 107, ly, { align: 'center' })
-  ly += gap1
+  drawText(doc, nameText, 105, ly, { align: 'center' })
 
-  // Line 2: Address (wrapped, bold prefix "Add:")
+  // Line 2: Address
   if (addressLines.length > 0) {
-    ly += 3 // Advance base line
-    if (addressLines.length === 1) {
-      const line = addressLines[0]
-      const rest = line.startsWith("Add: ") ? line.substring(5) : line
-      setFont(doc, 9, 'bold', C.text)
-      const addW = doc.getTextWidth("Add: ")
-      setFont(doc, 9, 'normal', C.text)
-      const restW = doc.getTextWidth(rest)
-      const startX = 107 - (addW + restW) / 2
+    ly += gapNameAddr
+    addressLines.forEach((line, idx) => {
+      ly += addrLineH
+      if (idx === 0 && line.startsWith("Add: ")) {
+        const rest = line.substring(5)
+        setFont(doc, 8.5, 'bold', C.text)
+        const addW = doc.getTextWidth("Add: ")
+        setFont(doc, 8.5, 'normal', C.text)
+        const restW = doc.getTextWidth(rest)
+        const startX = 105 - (addW + restW) / 2
 
-      setFont(doc, 9, 'bold', C.text)
-      drawText(doc, "Add: ", startX, ly)
-      setFont(doc, 9, 'normal', C.text)
-      drawText(doc, rest, startX + addW, ly)
-    } else {
-      const line1 = addressLines[0]
-      const rest1 = line1.startsWith("Add: ") ? line1.substring(5) : line1
-      setFont(doc, 9, 'bold', C.text)
-      const addW = doc.getTextWidth("Add: ")
-      setFont(doc, 9, 'normal', C.text)
-      const restW = doc.getTextWidth(rest1)
-      const startX = 107 - (addW + restW) / 2
-
-      setFont(doc, 9, 'bold', C.text)
-      drawText(doc, "Add: ", startX, ly)
-      setFont(doc, 9, 'normal', C.text)
-      drawText(doc, rest1, startX + addW, ly)
-
-      ly += 4
-      setFont(doc, 9, 'normal', C.text)
-      drawText(doc, addressLines[1], 107, ly, { align: 'center' })
-    }
-    ly += gap2
+        setFont(doc, 8.5, 'bold', C.text)
+        drawText(doc, "Add: ", startX, ly)
+        setFont(doc, 8.5, 'normal', C.text)
+        drawText(doc, rest, startX + addW, ly)
+      } else {
+        setFont(doc, 8.5, 'normal', C.text)
+        drawText(doc, line, 105, ly, { align: 'center' })
+      }
+    })
   }
 
-  // Line 3: Phone/WhatsApp/Email
+  // Line 3: Contact details
   if (segments.length > 0) {
-    ly += 2.8 // Advance base line
+    ly += gapAddrContact || (combinedAddrText ? 1.5 : gapNameAddr)
+    ly += contactLineH
     let totalW = 0
     const segmentSpacing = 4
     segments.forEach((seg, idx) => {
@@ -516,7 +492,7 @@ const drawHeader = (doc, company, docTitle) => {
       totalW += lw + vw
     })
 
-    let currentX = 107 - totalW / 2
+    let currentX = 105 - totalW / 2
     segments.forEach((seg, idx) => {
       if (idx > 0) currentX += segmentSpacing
       setFont(doc, 8, 'bold', C.text)
@@ -526,19 +502,19 @@ const drawHeader = (doc, company, docTitle) => {
       drawText(doc, seg.value, currentX, ly)
       currentX += seg.vw
     })
-    ly += gap3
   }
 
   // Line 4: Statutory details
   if (statutoryLines.length > 0) {
+    ly += gapContactStat || gapAddrStat || gapNameAddr
     statutoryLines.forEach((l) => {
-      ly += 4
-      setFont(doc, 8.5, 'bold', C.text)
-      drawText(doc, l, 107, ly, { align: 'center' })
+      ly += statLineH
+      setFont(doc, 8, 'bold', C.text)
+      drawText(doc, l, 105, ly, { align: 'center' })
     })
   }
 
-  // 9. Document Title Band (repositoned below)
+  // 9. Document Title Band
   const titleY = yStart + boxH + 2
   drawRect(doc, MARGIN.l - 2, titleY, CONTENT_W + 4, 10, C.accent)
   setFont(doc, 10, 'bold', C.white)

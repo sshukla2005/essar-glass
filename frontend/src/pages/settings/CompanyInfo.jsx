@@ -4,6 +4,7 @@ import { SaveOutlined, CloseOutlined, UploadOutlined, DeleteOutlined } from '@an
 import { Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { companyApi, companyLogoApi } from '../../api'
+import { useAuth } from '../../hooks/useAuth'
 
 const { Title, Text } = Typography
 
@@ -15,15 +16,8 @@ const CompanyInfo = () => {
   const [logoPreview, setLogoPreview] = useState(null)
   const [logoUploading, setLogoUploading] = useState(false)
 
-  // Get company_id from auth user
-  const getCompanyId = () => {
-    try {
-      const user = JSON.parse(localStorage.getItem('auth_user') || '{}')
-      return user?.company_id || 1
-    } catch { return 1 }
-  }
-
-  const companyId = getCompanyId()
+  const { user, activeCompanyId } = useAuth()
+  const companyId = activeCompanyId || user?.active_company_id || user?.company_id
 
   const { data: companyData, isLoading } = useQuery({
     queryKey: ['company-info', companyId],
@@ -46,7 +40,7 @@ const CompanyInfo = () => {
         bank_ac_no: companyData.bank_ac_no || '',
         bank_ifsc: companyData.bank_ifsc || '',
       })
-      if (companyData.logo) setLogoPreview(companyData.logo)
+      setLogoPreview(companyData.logo || null)
     }
   }, [companyData, form])
 

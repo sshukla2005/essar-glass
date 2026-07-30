@@ -58,6 +58,9 @@ const WorkshopOrderForm = () => {
   const [bulkArtworkFileData, setBulkArtworkFileData] = useState(null)
   const [bulkArtworkFileName, setBulkArtworkFileName] = useState(null)
 
+  const [serialModal, setSerialModal] = useState(false)
+  const [bulkSerial, setBulkSerial] = useState('')
+
   const saveToArtworkMaster = (name, fileName, fileData) => {
     const newArtwork = {
       id: Date.now(),
@@ -180,6 +183,7 @@ const WorkshopOrderForm = () => {
           process_label: l.process_label || rebuiltLabel,
           artwork_file_data: l.artwork_file_data || l.artwork_file || null,
           artwork_file_name: l.artwork_file_name || null,
+          serial_no: l.serial_no || '',
           remark: l.remark || '',
           is_toughened: Boolean(l.is_toughened),
           cep: Boolean(l.cep)
@@ -295,6 +299,7 @@ const WorkshopOrderForm = () => {
             artwork_file_data: group.artwork_file_data || null,
             artwork_master_id: group.artwork_master_id || null,
             artwork_name: group.artwork_name || null,
+            serial_no: size.serial_no || group.serial_no || '',
             remark: '',
           }
         })
@@ -341,6 +346,7 @@ const WorkshopOrderForm = () => {
         artwork_file_data: line.artwork_file_data || null,
         artwork_master_id: line.artwork_master_id || null,
         artwork_name: line.artwork_name || null,
+        serial_no: line.serial_no || '',
         remark: '',
       }
     })
@@ -389,6 +395,19 @@ const WorkshopOrderForm = () => {
       )
     },
     { title: 'Description', width: 250, dataIndex: 'description', render: (v, row) => <Input size="small" value={v} onChange={e => updateLine(row.key, 'description', e.target.value)} /> },
+    {
+      title: 'Serial No',
+      width: 120,
+      dataIndex: 'serial_no',
+      render: (v, row) => (
+        <Input
+          size="small"
+          value={v || ''}
+          placeholder="Serial #"
+          onChange={e => updateLine(row.key, 'serial_no', e.target.value)}
+        />
+      )
+    },
     { title: 'Act W (in)', width: 110, dataIndex: 'act_w_in', render: (v, row) => <FractionInput value={v} onChange={val => updateLine(row.key, 'act_w_in', val)} placeholder="90 1/2" /> },
     { title: 'Act H (in)', width: 110, dataIndex: 'act_h_in', render: (v, row) => <FractionInput value={v} onChange={val => updateLine(row.key, 'act_h_in', val)} placeholder="78 1/8" /> },
     { title: 'Act W (mm)', width: 100, dataIndex: 'act_w_mm', render: (v) => <InputNumber size="small" value={v} disabled /> },
@@ -593,7 +612,7 @@ const WorkshopOrderForm = () => {
           seen.set(key, true)
           groupedRows.push([{
             content: key.toUpperCase(),
-            colSpan: 11,
+            colSpan: 12,
             styles: {
               fillColor: [227, 242, 253],
               textColor: [10, 40, 120],
@@ -606,6 +625,7 @@ const WorkshopOrderForm = () => {
         groupedRows.push([
           groupedRows.filter(r => r.length > 1).length + 1,   // running Sr No across all sizes
           '',
+          line.serial_no || '—',
           line.act_w_in ? `${toFraction(line.act_w_in)}"` : '—',
           line.act_h_in ? `${toFraction(line.act_h_in)}"` : '—',
           line.act_w_mm ? `${line.act_w_mm}mm` : '—',
@@ -621,7 +641,7 @@ const WorkshopOrderForm = () => {
       autoTable(doc, {
         theme: 'grid',
         startY: metaY + 28,
-        head: [['#', 'Description', 'W (in)', 'H (in)', 'W (mm)', 'H (mm)', 'Qty', 'CEP', 'Process', 'Tgh', 'Remark']],
+        head: [['#', 'Description', 'Serial No', 'W (in)', 'H (in)', 'W (mm)', 'H (mm)', 'Qty', 'CEP', 'Process', 'Tgh', 'Remark']],
         body: groupedRows,
         styles: { fontSize: 7.5, cellPadding: 2.5, lineWidth: 0.15, lineColor: [148, 163, 184] },
         headStyles: {
@@ -635,23 +655,24 @@ const WorkshopOrderForm = () => {
         alternateRowStyles: { fillColor: [248, 250, 252] },
         columnStyles: {
           0: { cellWidth: 10, halign: 'center' },
-          1: { cellWidth: 60 },
-          2: { cellWidth: 18, halign: 'center' },
+          1: { cellWidth: 50 },
+          2: { cellWidth: 25, halign: 'center' },
           3: { cellWidth: 18, halign: 'center' },
           4: { cellWidth: 18, halign: 'center' },
           5: { cellWidth: 18, halign: 'center' },
-          6: { cellWidth: 12, halign: 'center' },
+          6: { cellWidth: 18, halign: 'center' },
           7: { cellWidth: 12, halign: 'center' },
-          8: { cellWidth: 45 },
-          9: { cellWidth: 12, halign: 'center' },
-          10: { cellWidth: 'auto' },
+          8: { cellWidth: 12, halign: 'center' },
+          9: { cellWidth: 40 },
+          10: { cellWidth: 12, halign: 'center' },
+          11: { cellWidth: 'auto' },
         },
         didParseCell: (data) => {
           if (data.row.raw.length === 1) return
-          // CEP (col 7) & Tgh (col 9): YES → ZapfDingbats tick ✔ (green),
+          // CEP (col 8) & Tgh (col 10): YES → ZapfDingbats tick ✔ (green),
           // NO → cross ✘ (light grey). Helvetica mein ✓ glyph nahi hai —
           // wahi pehle garbled apostrophe print hota tha.
-          if (data.section === 'body' && (data.column.index === 7 || data.column.index === 9)) {
+          if (data.section === 'body' && (data.column.index === 8 || data.column.index === 10)) {
             const v = data.cell.raw
             if (v === 'YES') {
               data.cell.text = ['4']            // ZapfDingbats '4' = ✔
@@ -940,7 +961,7 @@ const WorkshopOrderForm = () => {
 
       // ── TABLE HEADER ────────────────────────────────
       const headerRow = ws.addRow([
-        '#', 'Description', 'W (inch)', 'H (inch)',
+        '#', 'Description', 'Serial No', 'W (inch)', 'H (inch)',
         'W (mm)', 'H (mm)', 'Qty', 'CEP',
         'Process', 'Toughened', 'Artwork', 'Remark'
       ])
@@ -960,6 +981,7 @@ const WorkshopOrderForm = () => {
         const row = ws.addRow([
           i + 1,
           line.description || '',
+          line.serial_no || '',
           line.act_w_in ? parseFloat(line.act_w_in.toFixed(4)) : '',
           line.act_h_in ? parseFloat(line.act_h_in.toFixed(4)) : '',
           line.act_w_mm || '',
@@ -985,13 +1007,13 @@ const WorkshopOrderForm = () => {
         })
 
         if (line.cep) {
-          row.getCell(8).font = { bold: true, color: { argb: 'FF3B82F6' } }
+          row.getCell(9).font = { bold: true, color: { argb: 'FF3B82F6' } }
         }
         if (line.is_toughened) {
-          row.getCell(10).font = { bold: true, color: { argb: 'FFDC2626' } }
+          row.getCell(11).font = { bold: true, color: { argb: 'FFDC2626' } }
         }
         if (line.process_label) {
-          row.getCell(9).font = { bold: true, color: { argb: 'FF7C3AED' } }
+          row.getCell(10).font = { bold: true, color: { argb: 'FF7C3AED' } }
         }
 
         row.height = 20
@@ -1001,6 +1023,7 @@ const WorkshopOrderForm = () => {
       ws.columns = [
         { key: 'num', width: 5 },
         { key: 'desc', width: 35 },
+        { key: 'serial', width: 15 },
         { key: 'win', width: 12 },
         { key: 'hin', width: 12 },
         { key: 'wmm', width: 10 },
@@ -1368,14 +1391,24 @@ const WorkshopOrderForm = () => {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
           <Text strong style={{ color: '#ea580c' }}>🔧 Job Cards</Text>
           {selectedLineKeys.length > 0 && (
-            <Button
-              size="small"
-              type="primary"
-              style={{ background: '#7c3aed' }}
-              onClick={() => setBulkArtworkModal(true)}
-            >
-              Apply Artwork to {selectedLineKeys.length} Selected
-            </Button>
+            <Space>
+              <Button
+                size="small"
+                type="primary"
+                style={{ background: '#7c3aed' }}
+                onClick={() => setBulkArtworkModal(true)}
+              >
+                Apply Artwork to {selectedLineKeys.length} Selected
+              </Button>
+              <Button
+                size="small"
+                type="primary"
+                style={{ background: '#0284c7' }}
+                onClick={() => { setBulkSerial(''); setSerialModal(true) }}
+              >
+                Add Serial Number to {selectedLineKeys.length} Selected
+              </Button>
+            </Space>
           )}
         </div>
         <Table
@@ -1659,6 +1692,42 @@ const WorkshopOrderForm = () => {
               No artworks in master yet. Upload a new artwork or pick one once added.
             </Text>
           )}
+        </Modal>
+
+        {/* Bulk Add Serial Number Modal */}
+        <Modal
+          title="Add Serial Number to Selected Lines"
+          open={serialModal}
+          onCancel={() => setSerialModal(false)}
+          onOk={() => {
+            const s = (bulkSerial || '').trim()
+            if (!s) { message.warning('Enter a serial number'); return }
+            setLines(prev => prev.map(l =>
+              selectedLineKeys.includes(l.key) ? { ...l, serial_no: s } : l
+            ))
+            setSerialModal(false)
+            setSelectedLineKeys([])
+            setBulkSerial('')
+            message.success(`Serial number applied to ${selectedLineKeys.length} line(s)`)
+          }}
+          okText="Apply"
+        >
+          <Input
+            placeholder="Enter serial number"
+            value={bulkSerial}
+            onChange={e => setBulkSerial(e.target.value)}
+            onPressEnter={() => {
+              const s = (bulkSerial || '').trim()
+              if (!s) { message.warning('Enter a serial number'); return }
+              setLines(prev => prev.map(l =>
+                selectedLineKeys.includes(l.key) ? { ...l, serial_no: s } : l
+              ))
+              setSerialModal(false)
+              setSelectedLineKeys([])
+              setBulkSerial('')
+              message.success(`Serial number applied to ${selectedLineKeys.length} line(s)`)
+            }}
+          />
         </Modal>
       </Form>
 
