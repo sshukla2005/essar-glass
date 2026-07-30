@@ -12,7 +12,9 @@ import {
   ToolOutlined, FireOutlined, RobotOutlined
 } from '@ant-design/icons'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '../../hooks/useAuth'
+import { companyApi } from '../../api'
 
 const { Sider, Header, Content } = Layout
 const { Text } = Typography
@@ -72,6 +74,14 @@ const AppLayout = () => {
   const navigate = useNavigate()
   const location = useLocation()
   const { user, isSuperAdmin, activeCompanyId, setActiveCompany, logout } = useAuth()
+  const companyId = activeCompanyId || user?.active_company_id || user?.company_id
+
+  const { data: activeCompany } = useQuery({
+    queryKey: ['company-info', companyId],
+    queryFn: () => companyId ? companyApi.get(companyId).then(r => r.data) : null,
+    enabled: !!companyId,
+    staleTime: 5 * 60 * 1000,
+  })
 
   const companies = useMemo(() => {
     try {
@@ -186,32 +196,27 @@ const AppLayout = () => {
           alignItems: 'center',
           gap: 12
         }}>
-          {companyLogo ? (
-            <div style={{
-              width: 40, height: 40, borderRadius: 8,
-              overflow: 'hidden', flexShrink: 0,
-              background: '#fff',
-              display: 'flex', alignItems: 'center', justifyContent: 'center'
-            }}>
-              <img
-                src={companyLogo}
-                alt="Logo"
-                style={{ width: '85%', height: '85%', objectFit: 'contain' }}
-              />
-            </div>
-          ) : (
-            <div style={{
-              width: 40, height: 40, background: '#fff', borderRadius: 8,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              overflow: 'hidden', flexShrink: 0
-            }}>
-              <img src="/src/public/Essar-logo.webp" alt="Logo" style={{ width: '85%', height: '85%', objectFit: 'contain' }} />
-            </div>
-          )}
+          <div style={{
+            width: 40, height: 40, background: activeCompany?.logo ? '#fff' : 'rgba(255,255,255,0.2)', borderRadius: 8,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            overflow: 'hidden', flexShrink: 0
+          }}>
+            {activeCompany?.logo ? (
+              <img src={activeCompany.logo} alt="Logo" style={{ width: '85%', height: '85%', objectFit: 'contain' }} />
+            ) : (
+              <span style={{ fontWeight: 700, color: '#fff' }}>
+                {(activeCompany?.short_name || activeCompany?.name || 'E').slice(0, 2).toUpperCase()}
+              </span>
+            )}
+          </div>
           {!collapsed && (
             <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <Text style={{ color: '#fff', fontWeight: 800, fontSize: 14, lineHeight: 1.1, letterSpacing: '0.5px' }}>ESSAR GLASS</Text>
-              <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 10, fontWeight: 600 }}>CENTER EG</Text>
+              <Text style={{ color: '#fff', fontWeight: 800, fontSize: 14, lineHeight: 1.1, letterSpacing: '0.5px' }}>
+                {activeCompany?.name || 'ESSAR GLASS'}
+              </Text>
+              <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 10, fontWeight: 600 }}>
+                {activeCompany?.short_name || 'CENTER EG'}
+              </Text>
             </div>
           )}
         </div>

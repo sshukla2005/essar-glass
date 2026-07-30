@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { Form, Input, Button, Typography, Space, App } from 'antd'
 import { useNavigate } from 'react-router-dom'
+import brandLogo from '../../assets/Essar-logo.webp'
 
 const { Title, Text } = Typography
 
@@ -194,7 +195,7 @@ const LoginPage = () => {
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           marginBottom: 32, padding: 10, boxShadow: '0 10px 40px rgba(0,0,0,0.2)'
         }}>
-          <img src="/src/public/Essar-logo.webp" alt="Logo" style={{ width: '80%', height: '80%', objectFit: 'contain' }} />
+          <img src={brandLogo} alt="Logo" style={{ width: '80%', height: '80%', objectFit: 'contain' }} />
         </div>
         
         <Title level={1} style={{ color: '#fff', fontSize: 48, fontWeight: 800, margin: '0 0 16px 0' }}>
