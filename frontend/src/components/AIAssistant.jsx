@@ -6,108 +6,368 @@ import {
   ExclamationCircleOutlined, LoadingOutlined
 } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
+import {
+  crmLeadApi,
+  crmStageApi,
+  customerApi,
+  quotationApi,
+  salesOrderApi,
+  invoiceApi,
+  productApi,
+} from '../api'
 
 const { Text } = Typography
-const read = (k) => { try { return JSON.parse(localStorage.getItem(k) || '[]') } catch { return [] } }
-const readObj = (k) => { try { return JSON.parse(localStorage.getItem(k) || '{}') } catch { return {} } }
-const save = (k, d) => localStorage.setItem(k, JSON.stringify(d))
-const nowStr = () => new Date().toISOString()
-const nextId = (a) => a.length ? Math.max(...a.map(r => r.id || 0)) + 1 : 1
-const autoCode = (p, id) => `${p}${String(id).padStart(4, '0')}`
-const getCompanyId = () => { try { return JSON.parse(localStorage.getItem('auth_user') || '{}').company_id || 1 } catch { return 1 } }
 
-// ── Execute ERP action from Claude's JSON ─────────────────────
-const executeAction = (action) => {
-  const cid = getCompanyId()
+const formatApiError = (err) => {
+  if (!err) return 'Unknown error'
+  const data = err.response?.data
+  if (data?.detail) {
+    if (typeof data.detail === 'string') return data.detail
+    if (Array.isArray(data.detail)) {
+      return data.detail.map(item => typeof item === 'string' ? item : item.msg || JSON.stringify(item)).join('; ')
+    }
+    if (typeof data.detail === 'object') return data.detail.msg || JSON.stringify(data.detail)
+  }
+  if (data?.message) return String(data.message)
+  return err.message || 'Request failed'
+}
 
-  if (action.type === 'create_lead') {
-    const d = action.data, leads = read('crm_leads'), custs = read('customers')
-    const stages = read('crm_stages').filter(s => s.is_active !== false).sort((a,b) => a.sequence - b.sequence)
-    let customer_id = null
-    if (d.customer_name) {
-      const ex = custs.find(c => c.name?.toLowerCase() === d.customer_name.toLowerCase())
-      if (ex) { customer_id = ex.id } else {
-        const nid = nextId(custs)
-        custs.push({ id: nid, name: d.customer_name, customer_code: autoCode('CUST', nid), customer_type: 'company', phone: d.phone || null, email: d.email || null, company_id: cid, is_active: true, created_at: nowStr(), updated_at: nowStr() })
-        save('customers', custs); customer_id = nid
+// ── Execute ERP action via real API calls ─────────────────────
+const executeAction = async (action) => {
+  try {
+    if (action.type === 'create_lead') {
+      const d = action.data
+      let customer_id = null
+
+      if (d.customer_name?.trim()) {
+        const cListRes = await customerApi.list({ search: d.customer_name.trim(), page_size: 50 }).catch(() => ({ data: [] }))
+        const custs = Array.isArray(cListRes.data) ? cListRes.data : (cListRes.data?.items || [])
+        const ex = custs.find(c => c.name?.toLowerCase() === d.customer_name.trim().toLowerCase())
+
+        if (ex) {
+          customer_id = ex.id
+        } else {
+          const newCustRes = await customerApi.create({
+            name: d.customer_name.trim(),
+            customer_type: 'company',
+            phone: d.phone || null,
+            email: d.email || null,
+            is_active: true,
+          })
+          customer_id = newCustRes.data?.id
+        }
+      }
+
+      const sRes = await crmStageApi.list({ is_active: true, page_size: 100 }).catch(() => ({ data: [] }))
+      const stages = Array.isArray(sRes.data) ? sRes.data : (sRes.data?.items || [])
+      const sortedStages = [...stages].sort((a, b) => (a.sequence || 0) - (b.sequence || 0))
+      const defaultStageId = d.stage_id || sortedStages[0]?.id || 1
+
+      const leadRes = await crmLeadApi.create({
+        name: d.title || d.customer_name || 'New Opportunity',
+        customer_id,
+        company_name: d.customer_name || '',
+        phone: d.phone || '',
+        email: d.email || '',
+        expected_revenue: d.expected_revenue || 0,
+        priority: d.priority || 'normal',
+        stage_id: defaultStageId,
+        salesperson: d.salesperson || '',
+        lead_type: 'opportunity',
+        is_active: true,
+      })
+
+      const lead = leadRes.data || {}
+      return {
+        success: true,
+        message: '✅ Lead created!',
+        details: [
+          `📋 Lead: **${lead.lead_number || ('ID #' + lead.id)}**`,
+          `👤 ${lead.name}`,
+          d.customer_name ? `🏢 Customer: ${d.customer_name}` : null,
+          d.expected_revenue ? `💰 ₹${Number(d.expected_revenue).toLocaleString('en-IN')}` : null,
+        ].filter(Boolean),
+        link: `/crm/leads/${lead.id}/edit`,
+        linkText: `Open ${lead.lead_number || 'Lead'}`
       }
     }
-    const nid = nextId(leads)
-    const lead = { id: nid, lead_number: autoCode('OPP', nid), name: d.title || d.customer_name || 'New Opportunity', customer_id, company_name: d.customer_name || '', phone: d.phone || '', email: d.email || '', expected_revenue: d.expected_revenue || 0, priority: d.priority || 'normal', stage_id: d.stage_id || stages[0]?.id || 1, salesperson: d.salesperson || '', lead_type: 'opportunity', probability: stages[0]?.probability || 10, company_id: cid, is_active: true, created_at: nowStr(), updated_at: nowStr() }
-    leads.push(lead); save('crm_leads', leads)
-    return { success: true, message: '✅ Lead created!', details: [`📋 Lead: **${lead.lead_number}**`, `👤 ${lead.name}`, d.customer_name ? `🏢 Customer: ${d.customer_name}` : null, d.expected_revenue ? `💰 ₹${Number(d.expected_revenue).toLocaleString('en-IN')}` : null].filter(Boolean), link: `/crm/leads/${nid}/edit`, linkText: `Open ${lead.lead_number}` }
-  }
 
-  if (action.type === 'create_quotation') {
-    const d = action.data, quotes = read('quotations'), custs = read('customers'), prods = read('products')
-    let customer_id = null, customer_name = d.customer_name || ''
-    if (d.customer_name) {
-      const ex = custs.find(c => c.name?.toLowerCase().includes(d.customer_name.toLowerCase()))
-      if (ex) { customer_id = ex.id; customer_name = ex.name } else {
-        const nid = nextId(custs)
-        custs.push({ id: nid, name: d.customer_name, customer_code: autoCode('CUST', nid), customer_type: 'company', phone: d.phone || null, company_id: cid, is_active: true, created_at: nowStr(), updated_at: nowStr() })
-        save('customers', custs); customer_id = nid
+    if (action.type === 'create_quotation') {
+      const d = action.data
+      let customer_id = null, customer_name = d.customer_name || ''
+
+      if (d.customer_name?.trim()) {
+        const cListRes = await customerApi.list({ search: d.customer_name.trim(), page_size: 50 }).catch(() => ({ data: [] }))
+        const custs = Array.isArray(cListRes.data) ? cListRes.data : (cListRes.data?.items || [])
+        const ex = custs.find(c => c.name?.toLowerCase().includes(d.customer_name.trim().toLowerCase()))
+        if (ex) {
+          customer_id = ex.id
+          customer_name = ex.name
+        } else {
+          const newCustRes = await customerApi.create({
+            name: d.customer_name.trim(),
+            customer_type: 'company',
+            phone: d.phone || null,
+            is_active: true,
+          })
+          customer_id = newCustRes.data?.id
+          customer_name = newCustRes.data?.name || d.customer_name
+        }
+      }
+
+      const pRes = await productApi.dropdown().catch(() => ({ data: [] }))
+      const prods = Array.isArray(pRes.data) ? pRes.data : (pRes.data?.items || [])
+
+      const ceil6 = x => Math.ceil(x / 6) * 6
+      const groups = (d.lines || []).map((ln, gi) => {
+        const prod = prods.find(p => p.name?.toLowerCase().includes((ln.product || '').toLowerCase().split(' ')[0]) || (ln.product || '').toLowerCase().includes(p.name?.toLowerCase()?.split(' ')[0] || ''))
+        const rate = ln.rate || prod?.sale_price || 0
+        const w = parseFloat(ln.width) || 0, h = parseFloat(ln.height) || 0, qty = parseInt(ln.qty) || 1
+        const aspc = w > 0 && h > 0 ? (ceil6(w) * ceil6(h)) / 144 : 0
+        const tsq = aspc * qty, sub = parseFloat((tsq * rate).toFixed(2))
+        return {
+          group_key: Date.now() + gi,
+          product_id: prod?.id || null,
+          description: prod?.name || ln.product || 'Glass',
+          rate,
+          pricing_method: 'per_sqft',
+          tax_rate: 18,
+          processes: [],
+          sizes: [{
+            size_key: Date.now() + gi + 50,
+            width_inch: w,
+            height_inch: h,
+            quantity: qty,
+            area_sqft_pc: parseFloat(aspc.toFixed(4)),
+            total_sqft: parseFloat(tsq.toFixed(4)),
+            running_ft: parseFloat(((w + h) * 2 * qty / 12).toFixed(4)),
+            charged_sqft: parseFloat(((Math.ceil(w/3)*3) * (Math.ceil(h/3)*3) * qty / 144).toFixed(4)),
+            subtotal: sub,
+            tax_amount: parseFloat((sub * 0.18).toFixed(2)),
+            line_total: parseFloat((sub * 1.18).toFixed(2))
+          }]
+        }
+      })
+      const allSz = groups.flatMap(g => g.sizes)
+      const subI = parseFloat(allSz.reduce((s,x) => s + (x.subtotal||0), 0).toFixed(2))
+      const cgst = parseFloat((subI * 0.09).toFixed(2)), sgst = cgst, grand = parseFloat((subI + cgst + sgst).toFixed(2))
+      const flatLines = groups.flatMap(g => g.sizes.map(s => ({
+        product_id: g.product_id,
+        description: g.description,
+        rate: g.rate,
+        pricing_method: g.pricing_method,
+        tax_rate: g.tax_rate,
+        width_inch: s.width_inch,
+        height_inch: s.height_inch,
+        quantity: s.quantity,
+        area_sqft_pc: s.area_sqft_pc,
+        total_sqft: s.total_sqft,
+        running_ft: s.running_ft,
+        charged_sqft: s.charged_sqft,
+        subtotal: s.subtotal,
+        tax_amount: s.tax_amount,
+        line_total: s.line_total
+      })))
+      const today = new Date(), vu = new Date(today.getTime() + 8 * 86400000), fmt = dt => dt.toISOString().split('T')[0]
+      const payload = {
+        customer_id,
+        customer_name,
+        crm_lead_id: d.crm_lead_id || null,
+        quote_date: fmt(today),
+        valid_until: fmt(vu),
+        salesperson: d.salesperson || '',
+        payment_terms: d.payment_terms || 'immediate',
+        status: 'draft',
+        lines: flatLines,
+        groups,
+        subtotal: subI,
+        tax_amount: cgst + sgst,
+        total_amount: grand,
+        cgst,
+        sgst,
+        totals: { subI, procTotal: 0, dcCharges: 0, subII: subI, discountAmt: 0, subIII: subI, cgst, sgst, igst: 0, grandTotal: grand, balance: grand },
+        is_active: true
+      }
+
+      const qRes = await quotationApi.create(payload)
+      const qt = qRes.data || {}
+      return {
+        success: true,
+        message: '✅ Quotation created!',
+        details: [
+          `📋 **${qt.quote_number || ('QT #' + qt.id)}**`,
+          `👤 ${customer_name || 'N/A'}`,
+          `📦 ${flatLines.length} item(s)`,
+          `💰 Total: ₹${grand.toLocaleString('en-IN')}`,
+          `📅 Valid: ${fmt(vu)}`
+        ],
+        link: `/quotations/${qt.id}/edit`,
+        linkText: `Open ${qt.quote_number || 'Quotation'}`
       }
     }
-    const ceil6 = x => Math.ceil(x / 6) * 6
-    const groups = (d.lines || []).map((ln, gi) => {
-      const prod = prods.find(p => p.name?.toLowerCase().includes((ln.product || '').toLowerCase().split(' ')[0]) || (ln.product || '').toLowerCase().includes(p.name?.toLowerCase()?.split(' ')[0] || ''))
-      const rate = ln.rate || prod?.sale_price || 0
-      const w = parseFloat(ln.width) || 0, h = parseFloat(ln.height) || 0, qty = parseInt(ln.qty) || 1
-      const aspc = w > 0 && h > 0 ? (ceil6(w) * ceil6(h)) / 144 : 0
-      const tsq = aspc * qty, sub = parseFloat((tsq * rate).toFixed(2))
-      return { group_key: Date.now() + gi, product_id: prod?.id || null, description: prod?.name || ln.product || 'Glass', rate, pricing_method: 'per_sqft', tax_rate: 18, processes: [], sizes: [{ size_key: Date.now() + gi + 50, width_inch: w, height_inch: h, quantity: qty, area_sqft_pc: parseFloat(aspc.toFixed(4)), total_sqft: parseFloat(tsq.toFixed(4)), running_ft: parseFloat(((w + h) * 2 * qty / 12).toFixed(4)), charged_sqft: parseFloat(((Math.ceil(w/3)*3) * (Math.ceil(h/3)*3) * qty / 144).toFixed(4)), subtotal: sub, tax_amount: parseFloat((sub * 0.18).toFixed(2)), line_total: parseFloat((sub * 1.18).toFixed(2)) }] }
-    })
-    const allSz = groups.flatMap(g => g.sizes), subI = parseFloat(allSz.reduce((s,x) => s + (x.subtotal||0), 0).toFixed(2))
-    const cgst = parseFloat((subI * 0.09).toFixed(2)), sgst = cgst, grand = parseFloat((subI + cgst + sgst).toFixed(2))
-    const flatLines = groups.flatMap(g => g.sizes.map(s => ({ product_id: g.product_id, description: g.description, rate: g.rate, pricing_method: g.pricing_method, tax_rate: g.tax_rate, width_inch: s.width_inch, height_inch: s.height_inch, quantity: s.quantity, area_sqft_pc: s.area_sqft_pc, total_sqft: s.total_sqft, running_ft: s.running_ft, charged_sqft: s.charged_sqft, subtotal: s.subtotal, tax_amount: s.tax_amount, line_total: s.line_total })))
-    const today = new Date(), vu = new Date(today.getTime() + 8 * 86400000), fmt = d => d.toISOString().split('T')[0]
-    const nid = nextId(quotes)
-    const qt = { id: nid, quote_number: autoCode('QT', nid), customer_id, customer_name, crm_lead_id: d.crm_lead_id || null, quote_date: fmt(today), valid_until: fmt(vu), salesperson: d.salesperson || '', payment_terms: d.payment_terms || 'immediate', status: 'draft', lines: flatLines, groups, subtotal: subI, tax_amount: cgst + sgst, total_amount: grand, cgst, sgst, totals: { subI, procTotal: 0, dcCharges: 0, subII: subI, discountAmt: 0, subIII: subI, cgst, sgst, igst: 0, grandTotal: grand, balance: grand }, company_id: cid, is_active: true, created_at: nowStr(), updated_at: nowStr() }
-    quotes.push(qt); save('quotations', quotes)
-    return { success: true, message: '✅ Quotation created!', details: [`📋 **${qt.quote_number}**`, `👤 ${customer_name || 'N/A'}`, `📦 ${flatLines.length} item(s)`, `💰 Total: ₹${grand.toLocaleString('en-IN')}`, `📅 Valid: ${fmt(vu)}`], link: `/quotations/${nid}/edit`, linkText: `Open ${qt.quote_number}` }
-  }
 
-  if (action.type === 'list_leads') {
-    const leads = read('crm_leads').filter(l => l.is_active !== false), stages = read('crm_stages')
-    let f = leads
-    if (action.data?.stage) f = f.filter(l => { const s = stages.find(x => x.id === l.stage_id); return s?.name?.toLowerCase().includes(action.data.stage.toLowerCase()) })
-    if (action.data?.search) f = f.filter(l => l.name?.toLowerCase().includes(action.data.search.toLowerCase()) || l.company_name?.toLowerCase().includes(action.data.search.toLowerCase()))
-    if (action.data?.priority) f = f.filter(l => l.priority === action.data.priority)
-    const show = f.slice(0, 5)
-    return { success: true, message: `📋 Found ${f.length} lead${f.length !== 1 ? 's' : ''}`, details: show.map(l => { const s = stages.find(x => x.id === l.stage_id); return `• **${l.lead_number}** — ${l.name} | ${s?.name || '—'} | ₹${(l.expected_revenue||0).toLocaleString('en-IN')}` }).concat(f.length > 5 ? [`...and ${f.length - 5} more`] : []), link: '/crm/leads', linkText: 'View All Leads' }
-  }
+    if (action.type === 'list_leads') {
+      const [lRes, sRes] = await Promise.all([
+        crmLeadApi.list({ page_size: 100, ...(action.data?.search ? { search: action.data.search } : {}) }),
+        crmStageApi.list({ page_size: 100 }).catch(() => ({ data: [] }))
+      ])
+      let leads = Array.isArray(lRes.data) ? lRes.data : (lRes.data?.items || [])
+      const stages = Array.isArray(sRes.data) ? sRes.data : (sRes.data?.items || [])
 
-  if (action.type === 'list_quotations') {
-    const q = read('quotations').filter(x => x.is_active !== false)
-    let f = q
-    if (action.data?.status) f = f.filter(x => x.status === action.data.status)
-    if (action.data?.customer) f = f.filter(x => x.customer_name?.toLowerCase().includes(action.data.customer.toLowerCase()))
-    const show = f.slice(0, 5)
-    return { success: true, message: `📋 Found ${f.length} quotation${f.length !== 1 ? 's' : ''}`, details: show.map(x => `• **${x.quote_number}** — ${x.customer_name || 'N/A'} | ${x.status?.toUpperCase()} | ₹${(x.total_amount||0).toLocaleString('en-IN')}`).concat(f.length > 5 ? [`...and ${f.length - 5} more`] : []), link: '/quotations', linkText: 'View All Quotations' }
-  }
+      if (action.data?.stage) {
+        leads = leads.filter(l => {
+          const s = stages.find(x => x.id === l.stage_id)
+          return s?.name?.toLowerCase().includes(action.data.stage.toLowerCase())
+        })
+      }
+      if (action.data?.search) {
+        const q = action.data.search.toLowerCase()
+        leads = leads.filter(l => l.name?.toLowerCase().includes(q) || l.company_name?.toLowerCase().includes(q) || l.lead_number?.toLowerCase().includes(q))
+      }
+      if (action.data?.priority) {
+        leads = leads.filter(l => l.priority === action.data.priority)
+      }
 
-  if (action.type === 'get_stats') {
-    const inv = read('invoices').filter(i => i.is_active !== false)
-    const rev = inv.filter(i => ['paid','sent'].includes(i.status)).reduce((s,i) => s + (i.total_amount||0), 0)
-    const out = inv.filter(i => i.status === 'sent').reduce((s,i) => s + (i.total_amount||0), 0)
-    return { success: true, message: '📊 Business Summary:', details: [`💰 Revenue: **₹${rev.toLocaleString('en-IN')}**`, `⚠️ Outstanding: ₹${out.toLocaleString('en-IN')}`, `📋 Quotations: ${read('quotations').filter(q=>q.is_active!==false).length}`, `📦 Sales Orders: ${read('sales_orders').filter(s=>s.is_active!==false).length}`, `🎯 Active Leads: ${read('crm_leads').filter(l=>l.is_active!==false).length}`] }
-  }
+      const show = leads.slice(0, 5)
+      return {
+        success: true,
+        message: `📋 Found ${leads.length} lead${leads.length !== 1 ? 's' : ''}`,
+        details: show.map(l => {
+          const s = stages.find(x => x.id === l.stage_id)
+          return `• **${l.lead_number || ('#' + l.id)}** — ${l.name} | ${s?.name || '—'} | ₹${(l.expected_revenue||0).toLocaleString('en-IN')}`
+        }).concat(leads.length > 5 ? [`...and ${leads.length - 5} more`] : []),
+        link: '/crm/leads',
+        linkText: 'View All Leads'
+      }
+    }
 
-  if (action.type === 'update_lead') {
-    const d = action.data, leads = read('crm_leads'), stages = read('crm_stages')
-    const idx = leads.findIndex(l => l.lead_number?.toLowerCase() === (d.lead_number || '').toLowerCase() || (d.search && l.name?.toLowerCase().includes(d.search.toLowerCase())))
-    if (idx === -1) return { success: false, message: `❌ Lead not found: "${d.lead_number || d.search}"`, details: ['Try the lead number like OPP0001.'] }
-    if (d.stage) { const st = stages.find(s => s.name?.toLowerCase().includes(d.stage.toLowerCase())); if (st) leads[idx].stage_id = st.id }
-    if (d.priority) leads[idx].priority = d.priority
-    if (d.salesperson) leads[idx].salesperson = d.salesperson
-    if (d.expected_revenue) leads[idx].expected_revenue = d.expected_revenue
-    leads[idx].updated_at = nowStr(); save('crm_leads', leads)
-    const ns = stages.find(s => s.id === leads[idx].stage_id)
-    return { success: true, message: '✅ Lead updated!', details: [`📋 ${leads[idx].lead_number} — ${leads[idx].name}`, d.stage ? `📍 Stage: ${ns?.name}` : null, d.priority ? `🔥 Priority: ${d.priority}` : null].filter(Boolean), link: `/crm/leads/${leads[idx].id}/edit`, linkText: 'Open Lead' }
-  }
+    if (action.type === 'list_quotations') {
+      const qRes = await quotationApi.list({
+        page_size: 100,
+        ...(action.data?.status ? { status: action.data.status } : {})
+      })
+      let quotes = Array.isArray(qRes.data) ? qRes.data : (qRes.data?.items || [])
 
-  return { success: false, message: "❓ I couldn't understand that.", details: ['Try: "create lead for [name]", "show quotations", "revenue stats"'] }
+      if (action.data?.status) {
+        quotes = quotes.filter(x => x.status === action.data.status)
+      }
+      if (action.data?.customer) {
+        const cName = action.data.customer.toLowerCase()
+        quotes = quotes.filter(x => (x.customer_name || '').toLowerCase().includes(cName))
+      }
+
+      const show = quotes.slice(0, 5)
+      return {
+        success: true,
+        message: `📋 Found ${quotes.length} quotation${quotes.length !== 1 ? 's' : ''}`,
+        details: show.map(x => `• **${x.quote_number || ('#' + x.id)}** — ${x.customer_name || 'N/A'} | ${(x.status || 'draft').toUpperCase()} | ₹${(x.total_amount||0).toLocaleString('en-IN')}`).concat(quotes.length > 5 ? [`...and ${quotes.length - 5} more`] : []),
+        link: '/quotations',
+        linkText: 'View All Quotations'
+      }
+    }
+
+    if (action.type === 'get_stats') {
+      const [qRes, soRes, lRes, invRes] = await Promise.all([
+        quotationApi.list({ page_size: 500 }).catch(() => ({ data: [] })),
+        salesOrderApi.list({ page_size: 500 }).catch(() => ({ data: [] })),
+        crmLeadApi.list({ page_size: 500 }).catch(() => ({ data: [] })),
+        invoiceApi.list({ page_size: 500 }).catch(() => ({ data: [] })),
+      ])
+
+      const quotes = Array.isArray(qRes.data) ? qRes.data : (qRes.data?.items || [])
+      const salesOrders = Array.isArray(soRes.data) ? soRes.data : (soRes.data?.items || [])
+      const leads = Array.isArray(lRes.data) ? lRes.data : (lRes.data?.items || [])
+      const invoices = Array.isArray(invRes.data) ? invRes.data : (invRes.data?.items || [])
+
+      const rev = invoices
+        .filter(i => ['paid', 'sent'].includes(i.status))
+        .reduce((s, i) => s + (i.total_amount || 0), 0)
+      const out = invoices
+        .filter(i => i.status === 'sent')
+        .reduce((s, i) => s + (i.total_amount || i.balance_due || 0), 0)
+
+      return {
+        success: true,
+        message: '📊 Business Summary:',
+        details: [
+          `💰 Revenue: **₹${rev.toLocaleString('en-IN')}**`,
+          `⚠️ Outstanding: ₹${out.toLocaleString('en-IN')}`,
+          `📋 Quotations: ${quotes.length}`,
+          `📦 Sales Orders: ${salesOrders.length}`,
+          `🎯 Active Leads: ${leads.filter(l => l.is_active !== false).length}`,
+        ]
+      }
+    }
+
+    if (action.type === 'update_lead') {
+      const d = action.data
+      const [lRes, sRes] = await Promise.all([
+        crmLeadApi.list({ page_size: 500 }),
+        crmStageApi.list({ page_size: 100 }).catch(() => ({ data: [] }))
+      ])
+      const leads = Array.isArray(lRes.data) ? lRes.data : (lRes.data?.items || [])
+      const stages = Array.isArray(sRes.data) ? sRes.data : (sRes.data?.items || [])
+
+      const leadMatch = leads.find(l =>
+        l.lead_number?.toLowerCase() === (d.lead_number || '').toLowerCase() ||
+        (d.search && (
+          l.name?.toLowerCase().includes(d.search.toLowerCase()) ||
+          l.lead_number?.toLowerCase().includes(d.search.toLowerCase())
+        ))
+      )
+
+      if (!leadMatch) {
+        return {
+          success: false,
+          message: `❌ Lead not found: "${d.lead_number || d.search}"`,
+          details: ['Try specifying the lead number (e.g. OPP0001) or exact name.']
+        }
+      }
+
+      const updates = {}
+      let targetStageName = null
+      if (d.stage) {
+        const st = stages.find(s => s.name?.toLowerCase().includes(d.stage.toLowerCase()))
+        if (st) {
+          updates.stage_id = st.id
+          targetStageName = st.name
+        }
+      }
+      if (d.priority) updates.priority = d.priority
+      if (d.salesperson) updates.salesperson = d.salesperson
+      if (d.expected_revenue) updates.expected_revenue = d.expected_revenue
+
+      const upRes = await crmLeadApi.update(leadMatch.id, updates)
+      const updatedLead = upRes.data || leadMatch
+
+      return {
+        success: true,
+        message: '✅ Lead updated!',
+        details: [
+          `📋 ${updatedLead.lead_number || leadMatch.lead_number} — ${updatedLead.name || leadMatch.name}`,
+          targetStageName ? `📍 Stage: ${targetStageName}` : null,
+          d.priority ? `🔥 Priority: ${d.priority}` : null,
+        ].filter(Boolean),
+        link: `/crm/leads/${leadMatch.id}/edit`,
+        linkText: 'Open Lead'
+      }
+    }
+
+    return {
+      success: false,
+      message: "❓ I couldn't understand that.",
+      details: ['Try: "create lead for [name]", "show quotations", "revenue stats"']
+    }
+  } catch (err) {
+    console.error('Action execution error:', err)
+    const errText = formatApiError(err)
+    const actionLabel = action.type ? action.type.replace('_', ' ') : 'complete action'
+    return {
+      success: false,
+      message: `❌ Couldn't ${actionLabel}: ${errText}`,
+      details: [errText]
+    }
+  }
 }
 
 // ── Claude API ──────────────────────────────────────────────────
@@ -123,12 +383,30 @@ Action types:
 7. unknown: {"type":"unknown","data":{},"suggestion":"..."}
 Rules: dimensions "84x48"→width=84,height=48. "50k"=50000,"1L"=100000. "toughened/CEP"→cep:true. "show/list/find"→list. "stats/revenue"→get_stats. "move/update"→update_lead. ONLY JSON, no markdown.`
 
+// The API key lives in the browser (localStorage) and is visible in DevTools/network to anyone
+// using this browser. Acceptable for trusted internal users; for public/multi-tenant use, proxy
+// these calls through the backend so the key stays server-side.
 const callClaude = async (msg, ctx) => {
+  const apiKey = localStorage.getItem('ai_api_key') || ''
+  if (!apiKey.trim()) {
+    throw new Error('NO_API_KEY')
+  }
+
   const r = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 1000, system: SYSTEM(ctx), messages: [{ role: 'user', content: msg }] }),
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey.trim(),
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true',
+    },
+    body: JSON.stringify({ model: 'claude-sonnet-4-5', max_tokens: 1000, system: SYSTEM(ctx), messages: [{ role: 'user', content: msg }] }),
   })
+  if (!r.ok) {
+    const errText = await r.text()
+    throw new Error(`API ${r.status}: ${errText.slice(0,200)}`)
+  }
+
   const j = await r.json()
   return JSON.parse((j?.content?.[0]?.text || '{}').replace(/```json|```/g, '').trim())
 }
@@ -195,11 +473,26 @@ const AIAssistant = () => {
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [msgs])
   useEffect(() => { if (open) setTimeout(() => inRef.current?.focus(), 100) }, [open])
 
-  const buildCtx = () => ({
-    customers: read('customers').slice(0, 10).map(c => ({ id: c.id, name: c.name })),
-    products: read('products').slice(0, 15).map(p => ({ id: p.id, name: p.name, sale_price: p.sale_price })),
-    stages: read('crm_stages').filter(s => s.is_active !== false).map(s => ({ id: s.id, name: s.name })),
-  })
+  const buildCtx = async () => {
+    try {
+      const [cRes, pRes, sRes] = await Promise.all([
+        customerApi.dropdown().catch(() => ({ data: [] })),
+        productApi.dropdown().catch(() => ({ data: [] })),
+        crmStageApi.list({ is_active: true, page_size: 100 }).catch(() => ({ data: [] })),
+      ])
+      const custs = Array.isArray(cRes.data) ? cRes.data : (cRes.data?.items || [])
+      const prods = Array.isArray(pRes.data) ? pRes.data : (pRes.data?.items || [])
+      const stages = Array.isArray(sRes.data) ? sRes.data : (sRes.data?.items || [])
+
+      return {
+        customers: custs.slice(0, 10).map(c => ({ id: c.id, name: c.name })),
+        products: prods.slice(0, 15).map(p => ({ id: p.id, name: p.name, sale_price: p.sale_price })),
+        stages: stages.filter(s => s.is_active !== false).map(s => ({ id: s.id, name: s.name })),
+      }
+    } catch {
+      return { customers: [], products: [], stages: [] }
+    }
+  }
 
   const send = async (text) => {
     const t = text || input.trim()
@@ -208,14 +501,37 @@ const AIAssistant = () => {
     const lMsg = { id: Date.now() + 1, role: 'assistant', loading: true }
     setMsgs(p => [...p, uMsg, lMsg]); setInput(''); setLoading(true)
     try {
-      const action = await callClaude(t, buildCtx())
+      const ctx = await buildCtx()
+      const action = await callClaude(t, ctx)
       const result = action.type === 'unknown'
         ? { success: false, message: '🤔 Not sure what you mean.', details: [action.suggestion || 'Try: "create lead for Rahul" or "show quotations"'] }
-        : executeAction(action)
+        : await executeAction(action)
       setMsgs(p => p.map(m => m.id === lMsg.id ? { ...m, loading: false, result } : m))
     } catch (err) {
       console.error('AI error:', err)
-      setMsgs(p => p.map(m => m.id === lMsg.id ? { ...m, loading: false, result: { success: false, message: '❌ Something went wrong.', details: ['Check your connection and try again.'] } } : m))
+      if (err.message === 'NO_API_KEY') {
+        setMsgs(p => p.map(m => m.id === lMsg.id ? {
+          ...m,
+          loading: false,
+          result: {
+            success: false,
+            message: '⚙️ No API key set',
+            details: ['Add your Anthropic API key in Settings → AI Assistant to enable the assistant.'],
+            link: '/settings/ai',
+            linkText: 'Go to AI Settings'
+          }
+        } : m))
+      } else {
+        setMsgs(p => p.map(m => m.id === lMsg.id ? {
+          ...m,
+          loading: false,
+          result: {
+            success: false,
+            message: '❌ AI Assistant Error',
+            details: [err.message || 'Check your connection and try again.']
+          }
+        } : m))
+      }
     } finally { setLoading(false) }
   }
 

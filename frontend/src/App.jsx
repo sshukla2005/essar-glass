@@ -66,6 +66,7 @@ import GlassDropdownSettings from './pages/settings/GlassDropdownSettings'
 import ProcessMasterList from './pages/settings/ProcessMasterList'
 import ProcessMasterForm from './pages/settings/ProcessMasterForm'
 import UomRateMaster from './pages/settings/UomRateMaster'
+import AISettings from './pages/settings/AISettings'
 
 // ── Workshop ──────────────────────────────────────────────────────────────────
 import WorkshopOrderList from './pages/workshop/WorkshopOrderList'
@@ -248,6 +249,7 @@ const App = () => {
 
             {/* ── Settings: Company ───────────────────────────────────── */}
             <Route path="settings/company" element={<CompanyInfo />} />
+            <Route path="settings/ai" element={<AISettings />} />
             <Route path="settings/glass-calc" element={<GlassCalcSettings />} />
             <Route path="settings/glass-rate-matrix" element={<GlassRateMatrix />} />
             <Route path="settings/glass-dropdowns" element={<GlassDropdownSettings />} />

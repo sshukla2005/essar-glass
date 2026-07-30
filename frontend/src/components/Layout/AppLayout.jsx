@@ -9,7 +9,7 @@ import {
   MenuFoldOutlined, MenuUnfoldOutlined, BuildOutlined, CarOutlined, RetweetOutlined,
   SwapOutlined, DownOutlined, LogoutOutlined, LayoutOutlined, DatabaseOutlined,
   UsergroupAddOutlined, ReconciliationOutlined, HistoryOutlined, CalculatorOutlined,
-  ToolOutlined, FireOutlined
+  ToolOutlined, FireOutlined, RobotOutlined
 } from '@ant-design/icons'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
@@ -49,6 +49,7 @@ const menuItems = [
   ]},
   { key: 'grp_settings', icon: <SettingOutlined />, label: 'Settings', children: [
     { key: '/settings/company', label: 'Company' },
+    { key: '/settings/ai', label: 'AI Assistant', icon: <RobotOutlined /> },
     { key: '/settings/payment-accounts', label: 'Payment Accounts', icon: '💳' },
     { key: '/settings/glass-calc', label: 'Glass Calc Settings', icon: <CalculatorOutlined /> },
     { key: '/settings/glass-rate-matrix', label: 'Glass Rate Matrix', icon: <CalculatorOutlined /> },
