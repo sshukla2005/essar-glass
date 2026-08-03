@@ -50,6 +50,7 @@ WRITE_WHITELIST = {
     "/api/v1/auth/logout",
     "/api/v1/auth/refresh",
     "/api/v1/auth/switch-company",
+    "/api/v1/inter-company/link",
 }
 
 class ReadOnlyMiddleware(BaseHTTPMiddleware):
@@ -157,6 +158,8 @@ from app.models.payment import Payment
 from app.routers.auth import router as auth_router
 from app.routers.settings import router as settings_router
 from app.routers.super import router as super_router
+from app.routers.reports import router as reports_router
+from app.routers.inter_company import router as inter_company_router
 
 PREFIX = "/api/v1"
 
@@ -168,6 +171,12 @@ app.include_router(settings_router)
 
 # SuperAdmin
 app.include_router(super_router, prefix=f"{PREFIX}")
+
+# Reports
+app.include_router(reports_router)
+
+# Inter-Company
+app.include_router(inter_company_router, prefix=f"{PREFIX}")
 
 
 # Auto CRUD routers

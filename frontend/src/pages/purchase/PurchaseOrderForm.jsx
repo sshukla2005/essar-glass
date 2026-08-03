@@ -35,6 +35,7 @@ import { purchaseOrderApi, vendorApi, productApi, stockMovementApi, salesOrderAp
 import { generatePOPDF } from '../../utils/pdfGenerator'
 import CompanySelector from '../../components/common/CompanySelector'
 import FractionInput from '../quotations/components/FractionInput'
+import InterCompanyBanner from '../../components/common/InterCompanyBanner'
 
 const { Text } = Typography
 
@@ -1028,6 +1029,8 @@ const PurchaseOrderForm = () => {
       onSaveNew={() => handleSave(true)}
       onDiscard={() => navigate('/purchase-orders')}
     >
+      <InterCompanyBanner docType="po" linkedRef={record?.linked_ref} />
+
       <Row gutter={[16, 16]} align="middle" style={{ marginBottom: 24 }}>
         <Col xs={24} lg={12}>
           <Steps size="small" current={STATUS_IDX[status] || 0} items={STATUS_STEPS.map(s => ({ title: s.toUpperCase() }))} />

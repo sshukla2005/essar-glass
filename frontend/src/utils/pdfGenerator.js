@@ -2332,14 +2332,47 @@ export const generateTougheningChallanPDF = async (batch) => {
     styles: { halign: 'center', fontStyle: 'bold', fontSize: 9.5 }
   }])
 
-  // 6. Column header row: MM | DESCRIPTION | LENGTH (mm) | WIDTH (mm) | QTY | HSN CODE
+  // Helper to extract process name(s) for a line item
+  const getItemProcessStr = (item) => {
+    if (!item) return ''
+    if (item.process_label) return String(item.process_label).trim()
+    if (item.process_name) return String(item.process_name).trim()
+
+    const procs = [
+      ...(item.processes || []),
+      ...(item.size_processes || []),
+      ...(item.group_processes || []),
+      ...(item.line_processes || []),
+    ]
+    if (procs.length > 0) {
+      const names = procs
+        .map(p => {
+          if (typeof p === 'string') return p
+          if (p.process_name || p.name || p.label) return p.process_name || p.name || p.label
+          try {
+            const pm = JSON.parse(localStorage.getItem('process_masters') || '[]')
+            const m = pm.find(x => x.id === (p.process_id ?? p.id))
+            if (m?.name) return m.name
+          } catch {}
+          return p.process_id ? `Process ${p.process_id}` : ''
+        })
+        .filter(Boolean)
+      if (names.length > 0) {
+        return [...new Set(names)].join(', ')
+      }
+    }
+    if (typeof item.process === 'string' && item.process.trim()) return item.process.trim()
+    return ''
+  }
+
+  // 6. Column header row: MM | DESCRIPTION | LENGTH (mm) | WIDTH (mm) | QTY | PROCESS
   allBodyRows.push([
     { content: 'MM', styles: { fontStyle: 'bold', halign: 'center', fontSize: 9 } },
     { content: 'DESCRIPTION', styles: { fontStyle: 'bold', halign: 'center', fontSize: 9 } },
     { content: 'LENGTH (mm)', styles: { fontStyle: 'bold', halign: 'center', fontSize: 8.5 } },
     { content: 'WIDTH (mm)', styles: { fontStyle: 'bold', halign: 'center', fontSize: 8.5 } },
     { content: 'QTY', styles: { fontStyle: 'bold', halign: 'center', fontSize: 9 } },
-    { content: 'HSN CODE', styles: { fontStyle: 'bold', halign: 'center', fontSize: 9 } },
+    { content: 'PROCESS', styles: { fontStyle: 'bold', halign: 'center', fontSize: 9 } },
   ])
 
   // 7. One blank row (as in reference)
@@ -2355,7 +2388,7 @@ export const generateTougheningChallanPDF = async (batch) => {
       const w_mm = item.width_mm || item.act_w_mm || 0
       const h_mm = item.height_mm || item.act_h_mm || 0
       const qty = item.quantity || item.qty || 1
-      const hsn = item.hsn_code || item.hsn || ''
+      const procStr = getItemProcessStr(item)
 
       const lengthStr = w_mm ? `${Math.round(w_mm)}` : '—'
       const widthStr = h_mm ? `${Math.round(h_mm)}` : '—'
@@ -2364,11 +2397,11 @@ export const generateTougheningChallanPDF = async (batch) => {
         groupFirstRowIndices.add(allBodyRows.length)
         allBodyRows.push([
           parsed.mm,
-          parsed.rest,
+          String(parsed.rest || '').toUpperCase(),
           lengthStr,
           widthStr,
           String(qty),
-          hsn
+          procStr
         ])
       } else {
         allBodyRows.push([
@@ -2377,7 +2410,7 @@ export const generateTougheningChallanPDF = async (batch) => {
           lengthStr,
           widthStr,
           String(qty),
-          hsn
+          procStr
         ])
       }
     })
@@ -2385,40 +2418,16 @@ export const generateTougheningChallanPDF = async (batch) => {
     allBodyRows.push(['', '', '', '', '', ''])
   })
 
-  // 9. Filler blank rows so grid extends down page (target ~34 total grid rows before footer)
+  // 9. Filler blank rows so grid extends down page nicely before signatory block (target ~25 rows total)
   const currentBodyCount = allBodyRows.length
-  const footerRowsCount = 7 // FOR company (1) + 2 blanks (2) + SIGNATURE (1) + 3 trailing blanks (3)
-  const targetRowsPerPage = 34
+  const targetRowsPerPage = 25
 
-  if (currentBodyCount + footerRowsCount < targetRowsPerPage) {
-    const fillerNeeded = targetRowsPerPage - (currentBodyCount + footerRowsCount)
+  if (currentBodyCount < targetRowsPerPage) {
+    const fillerNeeded = targetRowsPerPage - currentBodyCount
     for (let i = 0; i < fillerNeeded; i++) {
       allBodyRows.push(['', '', '', '', '', ''])
     }
   }
-
-  // 10. "FOR, <COMPANY NAME>" — right-aligned, bold
-  const compNameUpper = (company.name || 'ESSAR GLASS').toUpperCase()
-  allBodyRows.push([{
-    content: `FOR, ${compNameUpper}`,
-    colSpan: 6,
-    styles: { halign: 'right', fontStyle: 'bold' }
-  }])
-
-  // 11. Two blank rows
-  allBodyRows.push(['', '', '', '', '', ''])
-  allBodyRows.push(['', '', '', '', '', ''])
-
-  // 12. "SIGNATURE" — right-aligned
-  allBodyRows.push([{
-    content: 'SIGNATURE',
-    colSpan: 6,
-    styles: { halign: 'right', fontStyle: 'bold' }
-  }])
-
-  // 13. A few more blank rows to close out grid
-  allBodyRows.push(['', '', '', '', '', ''])
-  allBodyRows.push(['', '', '', '', '', ''])
 
   // Create A4 PDF document
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
@@ -2441,11 +2450,11 @@ export const generateTougheningChallanPDF = async (batch) => {
     },
     columnStyles: {
       0: { cellWidth: 15 },
-      1: { cellWidth: 85 },
+      1: { cellWidth: 75 },
       2: { cellWidth: 25 },
       3: { cellWidth: 25 },
       4: { cellWidth: 15 },
-      5: { cellWidth: 25 },
+      5: { cellWidth: 35 },
     },
     didParseCell: (data) => {
       if (data.section === 'body' && groupFirstRowIndices.has(data.row.index)) {
@@ -2456,7 +2465,352 @@ export const generateTougheningChallanPDF = async (batch) => {
     },
   })
 
+  // 10. Clean, dedicated Signatory Section
+  let sigY = doc.lastAutoTable ? doc.lastAutoTable.finalY + 6 : 240
+  if (sigY + 32 > 285) {
+    doc.addPage()
+    sigY = 15
+  }
+
+  const boxX = 10
+  const boxW = 190
+  const boxH = 32
+
+  // Draw container box matching table width & border style
+  drawRect(doc, boxX, sigY, boxW, boxH, [255, 255, 255], [0, 0, 0], 0.2)
+
+  // Receiver acknowledgement (left side)
+  setFont(doc, 8.5, 'bold', [0, 0, 0])
+  drawText(doc, "Receiver's Signature / Stamp:", boxX + 8, sigY + 7)
+  drawLine(doc, boxX + 8, sigY + 22, boxX + 65, sigY + 22, [0, 0, 0], 0.25)
+  setFont(doc, 7.5, 'normal', [100, 116, 139])
+  drawText(doc, "Received In Good Condition", boxX + 8, sigY + 26)
+
+  // Signatory block (right side)
+  const compNameUpper = (company.name || 'ESSAR GLASS').toUpperCase()
+  setFont(doc, 9, 'bold', [0, 0, 0])
+  drawText(doc, `FOR, ${compNameUpper}`, boxX + boxW - 8, sigY + 7, { align: 'right' })
+
+  const sigLineW = 60
+  const sigLineX2 = boxX + boxW - 8
+  const sigLineX1 = sigLineX2 - sigLineW
+  const sigLineY = sigY + 22
+  drawLine(doc, sigLineX1, sigLineY, sigLineX2, sigLineY, [0, 0, 0], 0.25)
+
+  setFont(doc, 8, 'normal', [71, 85, 105])
+  drawText(doc, "Authorised Signatory", sigLineX1 + sigLineW / 2, sigLineY + 4.5, { align: 'center' })
+
   const fileName = `${batch.tb_number || 'TB'}_JobWorkChallan.pdf`
   doc.save(fileName)
   return doc
+}
+
+// ── Delivery Challan PDF Generator ─────────────────────────────────────────────
+export const generateDeliveryChallanPDF = async (dc) => {
+  if (!dc) return
+  try {
+    const doc = new jsPDF('p', 'mm', 'a4')
+    const company = await preloadCompanyLogos(getCompany(dc.company_id))
+
+    // 1. Resolve Customer details (Bill To / Ship To)
+    let cust = {
+      name: dc.customer_name || '',
+      address: '', phone: dc.customer_phone || '', gstin: dc.customer_gstin || ''
+    }
+    if (dc.customer_id) {
+      try {
+        const res = await customerApi.get(dc.customer_id)
+        const c = res.data || res
+        if (c) cust = {
+          name: c.name || dc.customer_name || '',
+          address: [c.address, c.city, c.state, c.pincode].filter(Boolean).join(', '),
+          phone: c.phone || c.mobile || dc.customer_phone || '',
+          gstin: c.gstin || dc.customer_gstin || '',
+        }
+      } catch (err) {
+        try {
+          const all = JSON.parse(localStorage.getItem('customers') || '[]')
+          const c = all.find(x => x.id === dc.customer_id)
+          if (c) cust = {
+            name: c.name,
+            address: [c.address, c.city].filter(Boolean).join(', '),
+            phone: c.phone || c.mobile || '',
+            gstin: c.gstin || '',
+          }
+        } catch { }
+      }
+    }
+
+    let shipCust = { ...cust }
+    if (dc.delivery_address && dc.delivery_address.trim()) {
+      shipCust.address = dc.delivery_address.trim()
+    }
+
+    // 2. Resolve Sales Order Ref if missing
+    let soNum = cleanVal(dc.so_number || dc.sales_order_number)
+    if (!soNum && dc.so_id) {
+      try {
+        const allSos = JSON.parse(localStorage.getItem('sales_orders') || '[]')
+        const match = allSos.find(s => s.id === dc.so_id)
+        if (match?.so_number) soNum = match.so_number
+      } catch { }
+    }
+
+    let pageNum = { val: 1, total: '?' }
+
+    // 3. Page 1 Setup: Header & Title Band
+    drawBorder(doc)
+    let y = drawHeader(doc, company, 'DELIVERY CHALLAN')
+
+    // 4. Doc Info Strip
+    const dcInfoItems = [
+      { label: 'Document Type', value: 'DELIVERY CHALLAN' },
+      { label: 'DC No', value: dc.dc_number || 'DC-DRAFT' },
+      { label: 'Date', value: formatDate(dc.dc_date || new Date()) },
+      { label: 'Sales Order Ref', value: soNum || '—' },
+      { label: 'Vehicle No', value: dc.vehicle_number || '—' },
+      { label: 'Driver', value: dc.driver_name || '—' },
+      { label: 'Transporter', value: dc.transporter || '—' },
+    ]
+
+    const infoBoxH = 11
+    drawCard(doc, MARGIN.l, y, CONTENT_W, infoBoxH, C.summaryBg, C.border, 1.5)
+    const cellW = CONTENT_W / dcInfoItems.length
+    dcInfoItems.forEach((item, i) => {
+      const x = MARGIN.l + i * cellW
+      if (i > 0) drawLine(doc, x, y, x, y + infoBoxH, C.border, 0.2)
+      setFont(doc, 6, 'normal', C.textLight)
+      drawText(doc, item.label, x + 2.5, y + 4)
+      setFont(doc, 7, 'bold', C.text)
+      drawText(doc, String(item.value || '').substring(0, 16), x + 2.5, y + 8)
+    })
+    y += infoBoxH + SP_16
+
+    // 5. Party Blocks (BILL TO / SHIP TO)
+    y = drawCustomerCard(doc, cust, y, shipCust)
+
+    // 6. Extract lines
+    const rawLines = dc.lines?.length ? dc.lines : (dc.items?.length ? dc.items : [])
+    const glassLines = rawLines.filter(l => l.item_type !== 'hardware')
+    const hardwareLines = rawLines.filter(l => l.item_type === 'hardware')
+
+    const groupsMap = new Map()
+    glassLines.forEach((l) => {
+      const descKey = (l.description || 'GLASS ITEM').trim().toUpperCase()
+      if (!groupsMap.has(descKey)) {
+        groupsMap.set(descKey, [])
+      }
+      groupsMap.get(descKey).push(l)
+    })
+
+    if (groupsMap.size === 0 && dc.glassGroups?.length) {
+      dc.glassGroups.forEach(g => {
+        const descKey = (g.description || 'GLASS ITEM').trim().toUpperCase()
+        if (!groupsMap.has(descKey)) {
+          groupsMap.set(descKey, [])
+        }
+        (g.sizes || []).forEach(s => {
+          groupsMap.get(descKey).push({ ...s, description: descKey, item_type: 'glass' })
+        })
+      })
+    }
+    if (hardwareLines.length === 0 && dc.hardwareItems?.length) {
+      dc.hardwareItems.forEach(h => {
+        hardwareLines.push({ ...h, item_type: 'hardware' })
+      })
+    }
+
+    // Helper for page break check in DC
+    const checkPageBreakDC = (heightNeeded) => {
+      const usablePageHeight = PAGE_H - 24
+      if (y + heightNeeded > usablePageHeight) {
+        doc.addPage()
+        pageNum.val++
+        drawBorder(doc)
+
+        let ny = MARGIN.t + SP_8
+        setFont(doc, 9, 'bold', C.primary)
+        drawText(doc, company.name || 'ESSAR GLASS', MARGIN.l + 2, ny + 4)
+        setFont(doc, 7, 'normal', C.textLight)
+        drawText(doc, `DC No: ${dc.dc_number || 'DC-DRAFT'}`, PAGE_W - MARGIN.r - 2, ny + 4, { align: 'right' })
+        drawLine(doc, MARGIN.l, ny + 7, MARGIN.l + CONTENT_W, ny + 7, C.border, 0.3)
+
+        y = ny + 10
+      }
+    }
+
+    // 7. Glass Groups rendering
+    let groupNo = 0
+    groupsMap.forEach((sizes, groupDesc) => {
+      groupNo++
+      checkPageBreakDC(25)
+
+      // Group Banner
+      drawRect(doc, MARGIN.l, y, CONTENT_W, 7, C.glassHeaderBg)
+      drawLine(doc, MARGIN.l, y, MARGIN.l + CONTENT_W, y, C.border, 0.25)
+      drawLine(doc, MARGIN.l, y + 7, MARGIN.l + CONTENT_W, y + 7, C.border, 0.25)
+      setFont(doc, 8, 'bold', C.glassHeader)
+      drawText(doc, `GLASS ITEM ${groupNo}: ${groupDesc}`, MARGIN.l + 4, y + 4.8)
+
+      y += 7
+
+      const bodyRows = sizes.map((s, idx) => {
+        const w_in = s.width_inch ?? (s.width_mm ? parseFloat((s.width_mm / 25.4).toFixed(4)) : null)
+        const h_in = s.height_inch ?? (s.height_mm ? parseFloat((s.height_mm / 25.4).toFixed(4)) : null)
+        const inchStr = (w_in && h_in) ? `${toFraction(w_in)}" × ${toFraction(h_in)}"` : (w_in ? `${toFraction(w_in)}"` : '—')
+
+        const w_mm = s.width_mm ?? (w_in ? Math.round(w_in * 25.4) : null)
+        const h_mm = s.height_mm ?? (h_in ? Math.round(h_in * 25.4) : null)
+        const mmStr = (w_mm && h_mm) ? `${w_mm} × ${h_mm}` : '—'
+
+        const ordQty = s.quantity ?? s.ordered_qty ?? 1
+        const dispQty = s.qty_dispatched ?? s.dispatch_qty ?? ordQty
+        const remarks = s.remarks || '—'
+
+        return [
+          String(idx + 1),
+          inchStr,
+          mmStr,
+          String(ordQty),
+          String(dispQty),
+          remarks
+        ]
+      })
+
+      autoTable(doc, {
+        startY: y,
+        theme: 'grid',
+        margin: { left: MARGIN.l, right: MARGIN.r },
+        head: [[
+          'Sr No', 'Actual Size (Inch)', 'Size (mm)', 'Ordered Qty', 'Dispatched Qty', 'Remarks'
+        ]],
+        body: bodyRows,
+        styles: {
+          fontSize: 8.5,
+          cellPadding: 2,
+          lineWidth: 0.2,
+          lineColor: C.border,
+          textColor: C.text,
+          halign: 'center',
+          valign: 'middle',
+        },
+        headStyles: {
+          fillColor: C.glassHeader,
+          textColor: C.white,
+          fontStyle: 'bold',
+          fontSize: 8,
+          halign: 'center'
+        },
+        columnStyles: {
+          0: { cellWidth: 15 },
+          1: { cellWidth: 40 },
+          2: { cellWidth: 35 },
+          3: { cellWidth: 25 },
+          4: { cellWidth: 25 },
+          5: { cellWidth: 50, halign: 'left' },
+        },
+        didDrawPage: () => {
+          drawBorder(doc)
+        }
+      })
+
+      y = doc.lastAutoTable.finalY + SP_16
+    })
+
+    // 8. Hardware Items rendering
+    if (hardwareLines.length > 0) {
+      checkPageBreakDC(25)
+
+      drawRect(doc, MARGIN.l, y, CONTENT_W, 7, C.hwHeaderBg)
+      drawLine(doc, MARGIN.l, y, MARGIN.l + CONTENT_W, y, C.border, 0.25)
+      drawLine(doc, MARGIN.l, y + 7, MARGIN.l + CONTENT_W, y + 7, C.border, 0.25)
+      setFont(doc, 8, 'bold', C.hwHeader)
+      drawText(doc, 'HARDWARE ACCESSORIES', MARGIN.l + 4, y + 4.8)
+
+      y += 7
+
+      const hwBodyRows = hardwareLines.map((h, idx) => [
+        String(idx + 1),
+        (h.description || 'Hardware Item').toUpperCase(),
+        String(h.quantity ?? h.ordered_qty ?? 1),
+        String(h.qty_dispatched ?? h.dispatch_qty ?? h.quantity ?? 1),
+        h.remarks || '—'
+      ])
+
+      autoTable(doc, {
+        startY: y,
+        theme: 'grid',
+        margin: { left: MARGIN.l, right: MARGIN.r },
+        head: [['Sr No', 'Description', 'Ordered Qty', 'Dispatched Qty', 'Remarks']],
+        body: hwBodyRows,
+        styles: {
+          fontSize: 8.5,
+          cellPadding: 2,
+          lineWidth: 0.2,
+          lineColor: C.border,
+          textColor: C.text,
+          halign: 'center',
+          valign: 'middle',
+        },
+        headStyles: {
+          fillColor: C.hwHeader,
+          textColor: C.white,
+          fontStyle: 'bold',
+          fontSize: 8,
+          halign: 'center'
+        },
+        columnStyles: {
+          0: { cellWidth: 15 },
+          1: { cellWidth: 75, halign: 'left' },
+          2: { cellWidth: 25 },
+          3: { cellWidth: 25 },
+          4: { cellWidth: 50, halign: 'left' },
+        },
+        didDrawPage: () => {
+          drawBorder(doc)
+        }
+      })
+
+      y = doc.lastAutoTable.finalY + SP_16
+    }
+
+    // 9. Signature Block
+    checkPageBreakDC(28)
+
+    const cardW = (CONTENT_W - SP_8) / 2
+    const cardH = 22
+
+    // Left card: Receiver's Acknowledgment
+    const x1 = MARGIN.l
+    drawCard(doc, x1, y, cardW, cardH, C.white, C.border, 1.5)
+    setFont(doc, 7.5, 'bold', C.primaryMid)
+    drawText(doc, "Receiver's Acknowledgment", x1 + 4, y + 4.5)
+    setFont(doc, 6.5, 'normal', C.textLight)
+    drawText(doc, "Received In Good Condition", x1 + 4, y + 8.5)
+    drawLine(doc, x1 + 4, y + 15.5, x1 + cardW - 4, y + 15.5, C.border, 0.25)
+    setFont(doc, 6.5, 'normal', C.textLight)
+    drawText(doc, "Receiver's Signature & Stamp", x1 + cardW / 2, y + 19.5, { align: 'center' })
+
+    // Right card: Authorised Signatory for Company
+    const x2 = MARGIN.l + cardW + SP_8
+    const compNameUpper = (company.name || 'ESSAR GLASS').toUpperCase()
+    drawCard(doc, x2, y, cardW, cardH, C.white, C.border, 1.5)
+    setFont(doc, 7.5, 'bold', C.primaryMid)
+    drawText(doc, `For ${compNameUpper}`, x2 + 4, y + 4.5)
+    setFont(doc, 6.5, 'normal', C.textLight)
+    drawText(doc, "Office Seal & Dispatch Desk", x2 + 4, y + 8.5)
+    drawLine(doc, x2 + 4, y + 15.5, x2 + cardW - 4, y + 15.5, C.border, 0.25)
+    setFont(doc, 6.5, 'normal', C.textLight)
+    drawText(doc, "Authorised Signatory", x2 + cardW / 2, y + 19.5, { align: 'center' })
+
+    // 10. Page footers pass
+    addFootersAndPageNumbers(doc, dc.dc_number || 'DC')
+
+    const fileName = `${dc.dc_number || 'DC'}_${company.short_name || 'Challan'}.pdf`
+    doc.save(fileName)
+    return doc
+  } catch (err) {
+    console.error('Failed to generate Delivery Challan PDF:', err)
+    throw err
+  }
 }

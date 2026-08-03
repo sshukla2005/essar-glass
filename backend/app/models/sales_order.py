@@ -39,5 +39,6 @@ class SalesOrder(Base, TimestampMixin, SoftDeleteMixin):
     warehouse_id     = Column(Integer, ForeignKey("warehouses.id"), nullable=True)
     internal_notes   = Column(Text, nullable=True)
     customer_note    = Column(Text, nullable=True)
+    linked_ref       = Column(JSON, nullable=True)
     company_id       = Column(Integer, ForeignKey("companies.id"),
                               nullable=True, index=True)

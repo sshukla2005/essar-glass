@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Form, Input, Select, Row, Col, Divider, DatePicker, Button, Table, Steps, Space, Tag, Checkbox, Card, Badge, App, Typography, InputNumber, Switch, Modal } from 'antd'
-import { PlusOutlined, DeleteOutlined, ToolOutlined, FireOutlined, FileTextOutlined, CheckCircleOutlined, PlayCircleOutlined, DownloadOutlined } from '@ant-design/icons'
+import { PlusOutlined, DeleteOutlined, ToolOutlined, FireOutlined, FileTextOutlined, CheckCircleOutlined, PlayCircleOutlined, DownloadOutlined, SwapOutlined, LinkOutlined } from '@ant-design/icons'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import dayjs from 'dayjs'
 import MasterForm from '../../components/common/MasterForm'
 import ArtworkPanelMapper from '../../components/common/ArtworkPanelMapper'
-import { workshopOrderApi, salesOrderApi, customerApi, productApi, tougheningBatchApi, processMasterApi, vendorApi } from '../../api'
+import { workshopOrderApi, salesOrderApi, customerApi, productApi, tougheningBatchApi, processMasterApi, vendorApi, companyApi, interCompanyApi } from '../../api'
+import { useAuth } from '../../hooks/useAuth'
 import { settingsApi } from '../../api/settingsApi'
 // Note for developer/user to add manually in Masters -> Vendors:
 // MEBT, Amath, Sapphire, Al Burhan, RDTuff, Diamond
@@ -15,6 +16,7 @@ import autoTable from 'jspdf-autotable'
 import ExcelJS from 'exceljs'
 import { saveAs } from 'file-saver'
 import FractionInput, { toFraction } from '../quotations/components/FractionInput'
+import InterCompanyBanner from '../../components/common/InterCompanyBanner'
 
 const { TextArea } = Input
 const { Text } = Typography
@@ -125,6 +127,93 @@ const WorkshopOrderForm = () => {
   const customerList = Array.isArray(customers) ? customers : (customers?.items || [])
   const productList = Array.isArray(products) ? products : (products?.items || [])
 
+  // ── Inter-Company Link State & Queries ─────────────────
+  const { user, isSuperAdmin, activeCompanyId } = useAuth()
+  const [linkWizard, setLinkWizard] = useState(false)
+  const [selectedSupplierCompanyId, setSelectedSupplierCompanyId] = useState(null)
+  const [selectedLinkLineKeys, setSelectedLinkLineKeys] = useState([])
+  const [linkLoading, setLinkLoading] = useState(false)
+  const [linkResultModal, setLinkResultModal] = useState(null)
+
+  const { data: companiesData = [] } = useQuery({
+    queryKey: ['companies-dropdown'],
+    queryFn: () => companyApi.dropdown().then(r => r.data),
+  })
+  const companyList = Array.isArray(companiesData) ? companiesData : (companiesData?.items || [])
+
+  const currentWoCompanyId = record?.company_id || activeCompanyId || user?.company_id
+  const supplierCompanies = companyList.filter(c => c.id !== currentWoCompanyId && c.is_active !== false)
+
+  const handleOpenLinkWizard = () => {
+    setSelectedLinkLineKeys(lines.map(l => l.key))
+    setSelectedSupplierCompanyId(null)
+    setLinkWizard(true)
+  }
+
+  const handleConfirmInterCompanyLink = async () => {
+    if (!selectedSupplierCompanyId) {
+      message.warning('Please select a supplier company.')
+      return
+    }
+    if (selectedLinkLineKeys.length === 0) {
+      message.warning('Please select at least one glass line.')
+      return
+    }
+
+    const selectedLines = lines.filter(l => selectedLinkLineKeys.includes(l.key))
+    const payloadLines = selectedLines.map(l => ({
+      description: l.description || '',
+      glass_thickness: l.glass_thickness || null,
+      glass_type: l.glass_type || null,
+      glass_category: l.glass_category || null,
+      product_id: l.product_id || null,
+      product_name: l.product_name || l.description || '',
+      ceiling_w_inches: l.ceiling_w_inches || l.ceiling_inches || 6,
+      ceiling_h_inches: l.ceiling_h_inches || l.ceiling_inches || 6,
+      ceiling_w_custom_mm: l.ceiling_w_custom_mm || 30,
+      ceiling_h_custom_mm: l.ceiling_h_custom_mm || 30,
+      cep: Boolean(l.cep),
+      width_mm: l.act_w_mm || (l.act_w_in ? Math.round(l.act_w_in * 25.4) : null),
+      height_mm: l.act_h_mm || (l.act_h_in ? Math.round(l.act_h_in * 25.4) : null),
+      width_inch: l.act_w_in || (l.act_w_mm ? parseFloat((l.act_w_mm / 25.4).toFixed(4)) : null),
+      height_inch: l.act_h_in || (l.act_h_mm ? parseFloat((l.act_h_mm / 25.4).toFixed(4)) : null),
+      qty: l.qty || l.quantity || 1,
+      artwork_file_data: l.artwork_file_data || l.artwork_file || null,
+      artwork_id: l.artwork_master_id || l.artwork_id || null,
+      artwork_name: l.artwork_name || l.artwork_file_name || null,
+      has_process: Boolean(l.has_process),
+      process: l.process_label || '',
+      process_info: l.group_processes || l.size_processes || [],
+      is_toughened: Boolean(l.is_toughened),
+    }))
+
+    const payload = {
+      source_company_id: currentWoCompanyId,
+      supplier_company_id: selectedSupplierCompanyId,
+      source_wo_id: Number(id),
+      lines: payloadLines,
+    }
+
+    setLinkLoading(true)
+    try {
+      const res = await interCompanyApi.link(payload)
+      const resultData = res.data
+      message.success(`Created PO ${resultData.po_number} (${resultData.source_company}) + SO ${resultData.so_number} & WO ${resultData.wo_number} (${resultData.supplier_company})`)
+      setLinkWizard(false)
+      setLinkResultModal(resultData)
+      queryClient.invalidateQueries({ queryKey: ['workshop_orders', id] })
+    } catch (err) {
+      console.error('Inter-company link failed:', err)
+      let detail = err.response?.data?.detail || err.message || 'Failed to create inter-company link'
+      if (typeof detail === 'object') {
+        detail = JSON.stringify(detail)
+      }
+      message.error(detail)
+    } finally {
+      setLinkLoading(false)
+    }
+  }
+
   const [soLoadedFromParam, setSoLoadedFromParam] = useState(false)
 
   // Effect 1: set defaults on mount
@@ -175,14 +264,23 @@ const WorkshopOrderForm = () => {
           ...l,
           key: l.id || Date.now() + i,
           qty: l.qty || l.quantity || 1,
-          act_w_in: l.act_w_in || mmToInch(l.act_w_mm) || null,
-          act_h_in: l.act_h_in || mmToInch(l.act_h_mm) || null,
-          act_w_mm: l.act_w_mm || (l.act_w_in ? Math.round(l.act_w_in * 25.4) : null),
-          act_h_mm: l.act_h_mm || (l.act_h_in ? Math.round(l.act_h_in * 25.4) : null),
+          glass_thickness: l.glass_thickness || null,
+          glass_type: l.glass_type || null,
+          glass_category: l.glass_category || null,
+          product_id: l.product_id || null,
+          product_name: l.product_name || l.description || '',
+          ceiling_w_inches: l.ceiling_w_inches || l.ceiling_inches || 6,
+          ceiling_h_inches: l.ceiling_h_inches || l.ceiling_inches || 6,
+          ceiling_w_custom_mm: l.ceiling_w_custom_mm || 30,
+          ceiling_h_custom_mm: l.ceiling_h_custom_mm || 30,
+          act_w_in: l.act_w_in || l.width_inch || (l.act_w_mm || l.width_mm ? mmToInch(l.act_w_mm || l.width_mm) : null),
+          act_h_in: l.act_h_in || l.height_inch || (l.act_h_mm || l.height_mm ? mmToInch(l.act_h_mm || l.height_mm) : null),
+          act_w_mm: l.act_w_mm || l.width_mm || (l.act_w_in || l.width_inch ? Math.round((l.act_w_in || l.width_inch) * 25.4) : null),
+          act_h_mm: l.act_h_mm || l.height_mm || (l.act_h_in || l.height_inch ? Math.round((l.act_h_in || l.height_inch) * 25.4) : null),
           has_process: Boolean(l.has_process),
-          process_label: l.process_label || rebuiltLabel,
+          process_label: l.process_label || l.process || rebuiltLabel,
           artwork_file_data: l.artwork_file_data || l.artwork_file || null,
-          artwork_file_name: l.artwork_file_name || null,
+          artwork_file_name: l.artwork_file_name || l.artwork_name || null,
           serial_no: l.serial_no || '',
           remark: l.remark || '',
           is_toughened: Boolean(l.is_toughened),
@@ -280,6 +378,15 @@ const WorkshopOrderForm = () => {
           return {
             key: Date.now() + gi + si + Math.random(),
             description: group.description || '',
+            glass_thickness: group.glass_thickness || null,
+            glass_type: group.glass_type || null,
+            glass_category: group.glass_category || null,
+            product_id: group.product_id || null,
+            product_name: group.product_name || group.description || '',
+            ceiling_w_inches: group.ceiling_w_inches || group.ceiling_inches || 6,
+            ceiling_h_inches: group.ceiling_h_inches || group.ceiling_inches || 6,
+            ceiling_w_custom_mm: group.ceiling_w_custom_mm || 30,
+            ceiling_h_custom_mm: group.ceiling_h_custom_mm || 30,
             act_w_in: size.width_inch
               ? parseFloat(size.width_inch.toFixed(4)) : null,
             act_h_in: size.height_inch
@@ -324,6 +431,15 @@ const WorkshopOrderForm = () => {
       return {
         key: Date.now() + idx + Math.random(),
         description: line.description || '',
+        glass_thickness: line.glass_thickness || null,
+        glass_type: line.glass_type || null,
+        glass_category: line.glass_category || null,
+        product_id: line.product_id || null,
+        product_name: line.product_name || line.description || '',
+        ceiling_w_inches: line.ceiling_w_inches || line.ceiling_inches || 6,
+        ceiling_h_inches: line.ceiling_h_inches || line.ceiling_inches || 6,
+        ceiling_w_custom_mm: line.ceiling_w_custom_mm || 30,
+        ceiling_h_custom_mm: line.ceiling_h_custom_mm || 30,
         act_w_in: line.width_inch
           ? parseFloat(line.width_inch.toFixed(4))
           : line.width_mm
@@ -748,9 +864,9 @@ const WorkshopOrderForm = () => {
             const pw = (p.nw != null) ? p.nw * oCanvas.width : p.w * up
             const ph = (p.nh != null) ? p.nh * oCanvas.height : p.h * up
             oCtx.strokeStyle = color
-            oCtx.lineWidth = 4 * k
+            oCtx.lineWidth = 1.5 * k
             oCtx.strokeRect(px, py, pw, ph)
-            oCtx.fillStyle = color + '2e'
+            oCtx.fillStyle = color + '14'
             oCtx.fillRect(px, py, pw, ph)
             const bs = 34 * k
             oCtx.fillStyle = color
@@ -759,12 +875,12 @@ const WorkshopOrderForm = () => {
             oCtx.font = `bold ${22 * k}px sans-serif`
             oCtx.fillText(String(i + 1), px + 12 * k, py + 27 * k)
             if (line) {
-              const label = `${line.description || 'Line ' + (p.lineIndex + 1)}  ${line.act_w_in || '?'}"x${line.act_h_in || '?'}" x${line.qty || 1}`
-              oCtx.font = `bold ${16 * k}px sans-serif`
-              const tw = oCtx.measureText(label).width + 10 * k
-              oCtx.fillStyle = 'rgba(255,255,255,0.92)'
-              oCtx.fillRect(px + 3 * k, py + ph - 22 * k, Math.min(tw, Math.max(pw - 6 * k, 40 * k)), 19 * k)
-              oCtx.fillStyle = color
+              const label = `${line.description || 'Line ' + (p.lineIndex + 1)}  ${line.act_w_in ? toFraction(line.act_w_in) : '?'}"x${line.act_h_in ? toFraction(line.act_h_in) : '?'}" x${line.qty || 1}`
+              oCtx.font = `bold ${18 * k}px sans-serif`
+              const tw = oCtx.measureText(label).width + 14 * k
+              oCtx.fillStyle = 'rgba(255,255,255,0.96)'
+              oCtx.fillRect(px + 3 * k, py + ph - 26 * k, Math.min(tw, Math.max(pw - 6 * k, 40 * k)), 23 * k)
+              oCtx.fillStyle = '#111111'
               oCtx.fillText(label, px + 8 * k, py + ph - 8 * k)
             }
           })
@@ -786,7 +902,7 @@ const WorkshopOrderForm = () => {
             return [
               String(i + 1),
               line ? (line.description || `Line ${p.lineIndex + 1}`) : 'NOT ASSIGNED',
-              line ? `${line.act_w_in || '?'}" × ${line.act_h_in || '?'}"` : '—',
+              line ? `${line.act_w_in ? toFraction(line.act_w_in) : '?'}" × ${line.act_h_in ? toFraction(line.act_h_in) : '?'}"` : '—',
               line ? String(line.qty || 1) : '—',
               (line?.toughened || line?.is_toughened) ? 'YES' : '—',
               p.note || '—',
@@ -1264,6 +1380,8 @@ const WorkshopOrderForm = () => {
       breadcrumbs={[{ label: 'Workshop' }, { label: 'Workshop Orders', path: '/workshop/orders' }, { label: isEdit ? record?.wo_number || 'Edit' : 'New' }]}
       onSave={() => handleSave(false)} onSaveNew={() => handleSave(true)} onDiscard={() => guardedNavigate('/workshop/orders')} onBack={() => guardedNavigate('/workshop/orders')}>
 
+      <InterCompanyBanner docType="wo" linkedRef={record?.linked_ref} />
+
       {/* Smart Buttons */}
       {isEdit && (
         <div style={{ marginBottom: 16, display: 'flex', gap: 8 }}>
@@ -1285,6 +1403,15 @@ const WorkshopOrderForm = () => {
         </Col>
         <Col xs={24} lg={12} style={{ textAlign: 'right' }}>
           <Space wrap>
+            {isSuperAdmin && isEdit && (
+              <Button
+                icon={<SwapOutlined />}
+                onClick={handleOpenLinkWizard}
+                style={{ borderColor: '#7c3aed', color: '#7c3aed', fontWeight: 500 }}
+              >
+                Link to Supplier Co.
+              </Button>
+            )}
             {/* Always-available download — works at every status, like the quotation */}
             <Button
               icon={<DownloadOutlined />}
@@ -1323,19 +1450,6 @@ const WorkshopOrderForm = () => {
               }}>Create Toughening Challan</Button>
             )}
 
-            {lines.some(l => l.is_toughened) && (
-              <Button onClick={() => {
-                guardedNavigate('/purchase-orders/new', {
-                  state: {
-                    from_wo: id,
-                    vendor_name: selectedJobworkVendor,
-                    lines
-                  }
-                })
-              }}>
-                Create Jobwork Challan
-              </Button>
-            )}
           </Space>
         </Col>
       </Row>
@@ -1895,6 +2009,188 @@ const WorkshopOrderForm = () => {
         ].filter(Boolean)}
       >
         <p>You have unsaved changes. If you leave now, all changes will be lost.</p>
+      </Modal>
+
+      {/* ── Inter-Company Link Wizard Modal ── */}
+      <Modal
+        title={
+          <Space>
+            <SwapOutlined style={{ color: '#7c3aed' }} />
+            <span>Link Workshop Order to Supplier Company</span>
+          </Space>
+        }
+        open={linkWizard}
+        onCancel={() => setLinkWizard(false)}
+        width={700}
+        footer={[
+          <Button key="cancel" onClick={() => setLinkWizard(false)}>
+            Cancel
+          </Button>,
+          <Button
+            key="submit"
+            type="primary"
+            loading={linkLoading}
+            style={{ background: '#7c3aed', borderColor: '#7c3aed' }}
+            onClick={handleConfirmInterCompanyLink}
+          >
+            Create Linked PO + SO + WO
+          </Button>,
+        ]}
+      >
+        <div style={{ marginBottom: 16 }}>
+          <Text type="secondary" style={{ fontSize: 13 }}>
+            This cross-company workflow creates a Purchase Order in the source company and a linked Sales Order &amp; Workshop Order in the selected supplier company.
+          </Text>
+        </div>
+
+        <Form layout="vertical">
+          <Form.Item label={<Text strong>1. Select Supplier Company</Text>} required>
+            <Select
+              placeholder="Select supplier company..."
+              value={selectedSupplierCompanyId}
+              onChange={setSelectedSupplierCompanyId}
+              options={supplierCompanies.map(c => ({
+                value: c.id,
+                label: (
+                  <span>
+                    <Tag color={c.color || 'purple'} style={{ marginRight: 8 }}>{c.short_name || c.name}</Tag>
+                    {c.name}
+                  </span>
+                ),
+              }))}
+            />
+          </Form.Item>
+        </Form>
+
+        <div style={{ marginTop: 20 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <Text strong>2. Select Glass Lines ({selectedLinkLineKeys.length}/{lines.length} selected)</Text>
+            <Checkbox
+              checked={lines.length > 0 && selectedLinkLineKeys.length === lines.length}
+              indeterminate={selectedLinkLineKeys.length > 0 && selectedLinkLineKeys.length < lines.length}
+              onChange={e => {
+                if (e.target.checked) {
+                  setSelectedLinkLineKeys(lines.map(l => l.key))
+                } else {
+                  setSelectedLinkLineKeys([])
+                }
+              }}
+            >
+              Select All
+            </Checkbox>
+          </div>
+
+          <Table
+            size="small"
+            dataSource={lines}
+            rowKey="key"
+            pagination={false}
+            columns={[
+              {
+                title: '',
+                width: 40,
+                render: (_, row) => (
+                  <Checkbox
+                    checked={selectedLinkLineKeys.includes(row.key)}
+                    onChange={e => {
+                      if (e.target.checked) {
+                        setSelectedLinkLineKeys(prev => [...prev, row.key])
+                      } else {
+                        setSelectedLinkLineKeys(prev => prev.filter(k => k !== row.key))
+                      }
+                    }}
+                  />
+                ),
+              },
+              {
+                title: 'Description',
+                dataIndex: 'description',
+                render: (v) => <Text strong>{v || 'Glass Line'}</Text>,
+              },
+              {
+                title: 'Size (W x H)',
+                render: (_, row) => {
+                  const win = row.act_w_in ? `${toFraction(row.act_w_in)}"` : (row.act_w_mm ? `${row.act_w_mm}mm` : '—')
+                  const hin = row.act_h_in ? `${toFraction(row.act_h_in)}"` : (row.act_h_mm ? `${row.act_h_mm}mm` : '—')
+                  return `${win} × ${hin}`
+                },
+              },
+              {
+                title: 'Qty',
+                dataIndex: 'qty',
+                width: 60,
+                align: 'center',
+                render: (v) => v || 1,
+              },
+              {
+                title: 'Artwork',
+                width: 130,
+                render: (_, row) => lineHasArtwork(row) ? (
+                  <Tag color="purple">🎨 Artwork</Tag>
+                ) : (
+                  <Tag color="default">No Artwork</Tag>
+                ),
+              },
+            ]}
+          />
+        </div>
+      </Modal>
+
+      {/* ── Inter-Company Link Result Modal ── */}
+      <Modal
+        title={
+          <Space>
+            <CheckCircleOutlined style={{ color: '#10b981', fontSize: 20 }} />
+            <span>Inter-Company Documents Created</span>
+          </Space>
+        }
+        open={Boolean(linkResultModal)}
+        onCancel={() => setLinkResultModal(null)}
+        footer={[
+          <Button key="close" type="primary" onClick={() => setLinkResultModal(null)}>
+            Done
+          </Button>,
+        ]}
+      >
+        {linkResultModal && (
+          <div style={{ padding: '12px 0' }}>
+            <p style={{ fontSize: 15, fontWeight: 500, color: '#1e293b' }}>
+              Created PO <strong>{linkResultModal.po_number}</strong> ({linkResultModal.source_company}) + SO <strong>{linkResultModal.so_number}</strong> &amp; WO <strong>{linkResultModal.wo_number}</strong> ({linkResultModal.supplier_company})
+            </p>
+
+            <div style={{ background: '#f8fafc', padding: 16, borderRadius: 8, margin: '16px 0', border: '1px solid #e2e8f0' }}>
+              <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 12 }}>
+                💡 Note: The newly created Sales Order and Workshop Order belong to <strong>{linkResultModal.supplier_company}</strong>. To view them in full detail, switch your <strong>Viewing</strong> company header dropdown to {linkResultModal.supplier_company}.
+              </Text>
+
+              <Space direction="vertical" style={{ width: '100%' }}>
+                <Button
+                  type="default"
+                  block
+                  icon={<FileTextOutlined />}
+                  onClick={() => {
+                    setLinkResultModal(null)
+                    navigate(`/sales-orders/${linkResultModal.so_id}/edit`)
+                  }}
+                >
+                  Open Supplier SO ({linkResultModal.so_number})
+                </Button>
+
+                <Button
+                  type="default"
+                  block
+                  icon={<ToolOutlined />}
+                  onClick={() => {
+                    setLinkResultModal(null)
+                    navigate(`/workshop/orders/${linkResultModal.wo_id}/edit`)
+                  }}
+                >
+                  Open Supplier WO ({linkResultModal.wo_number})
+                </Button>
+              </Space>
+            </div>
+          </div>
+        )}
       </Modal>
 
     </MasterForm>

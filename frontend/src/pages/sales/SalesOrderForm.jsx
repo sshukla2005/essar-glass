@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { Form, Row, Col, Divider, Button, Space, Tag, Badge, App, Modal, Typography, Table, InputNumber, Select, Card } from 'antd'
+import { Form, Row, Col, Divider, Button, Space, Tag, Badge, App, Modal, Typography, Table, InputNumber, Select, Card, Checkbox } from 'antd'
 import { PlusOutlined, ShoppingCartOutlined, FileTextOutlined, CarOutlined, DollarOutlined, ToolOutlined, DownloadOutlined, AimOutlined, LineChartOutlined } from '@ant-design/icons'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -14,6 +14,7 @@ import {
   getAutoChargedDim,
 } from '../../utils/quotationCalc'
 import CompanySelector from '../../components/common/CompanySelector'
+import InterCompanyBanner from '../../components/common/InterCompanyBanner'
 
 // Shared quotation components
 import ActionToolbar from '../quotations/components/ActionToolbar'
@@ -142,6 +143,10 @@ const SalesOrderForm = () => {
   const [globalComparison, setGlobalComparison] = useState(null)
   const [marginTarget, setMarginTarget] = useState(null)
   const unit = soUnit
+
+  // DC dispatch wizard
+  const [dcWizardOpen, setDcWizardOpen] = useState(false)
+  const [dcWizardRows, setDcWizardRows] = useState([])
 
   const { data: record, isLoading } = useQuery({
     queryKey: ['sales_orders', id], queryFn: () => salesOrderApi.get(id).then(r => r.data), enabled: isEdit,
@@ -1536,6 +1541,8 @@ const SalesOrderForm = () => {
       breadcrumbs={[{ label: 'Sales' }, { label: 'Sales Orders', path: '/sales-orders' }, { label: isEdit ? record?.so_number || 'Edit' : 'New' }]}
       onSave={() => handleSave(false)} onSaveNew={() => handleSave(true)} onDiscard={() => guardedNavigate('/sales-orders')} onBack={() => guardedNavigate('/sales-orders')}>
 
+      <InterCompanyBanner docType="so" linkedRef={record?.linked_ref} />
+
       {isEdit && (
         <div style={{ marginBottom: 16, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {record?.quotation_id && (
@@ -1564,9 +1571,43 @@ const SalesOrderForm = () => {
           <Badge count={deliveryCount}>
             <Button
               icon={<CarOutlined />}
-              onClick={() => linkedDc?.id
-                ? guardedNavigate(`/delivery-challans/${linkedDc.id}/edit`)
-                : guardedNavigate(`/delivery-challans/new?so_id=${soId}`)}
+              onClick={() => {
+                if (linkedDc?.id) {
+                  guardedNavigate(`/delivery-challans/${linkedDc.id}/edit`)
+                  return
+                }
+                // Build wizard rows from glass sizes + hardware only
+                const rows = [
+                  ...groups.flatMap((g, gi) =>
+                    (g.sizes || []).map((s, si) => ({
+                      wiz_key: `g${gi}_s${si}`,
+                      item_type: 'glass',
+                      description: g.description || `Group ${gi + 1}`,
+                      product_id: g.product_id || null,
+                      width_inch: s.width_inch || null,
+                      height_inch: s.height_inch || null,
+                      width_mm: s.width_inch ? Math.round(s.width_inch * 25.4) : null,
+                      height_mm: s.height_inch ? Math.round(s.height_inch * 25.4) : null,
+                      ordered_qty: s.quantity || 1,
+                      dispatch_qty: s.quantity || 1,
+                      checked: true,
+                    }))
+                  ),
+                  ...hardwareItems.map((h, hi) => ({
+                    wiz_key: `hw${hi}`,
+                    item_type: 'hardware',
+                    description: h.description || `Hardware ${hi + 1}`,
+                    product_id: h.product_id || null,
+                    width_inch: null, height_inch: null,
+                    width_mm: null, height_mm: null,
+                    ordered_qty: h.qty || 1,
+                    dispatch_qty: h.qty || 1,
+                    checked: true,
+                  }))
+                ]
+                setDcWizardRows(rows)
+                setDcWizardOpen(true)
+              }}
             >
               Deliveries
             </Button>
@@ -1636,6 +1677,105 @@ const SalesOrderForm = () => {
           }
         </div>
       )}
+
+      {/* ── DC Dispatch Selection Wizard ── */}
+      <Modal
+        title={<Space><CarOutlined style={{ color: '#10b981' }} /><span>Select Items to Dispatch</span></Space>}
+        open={dcWizardOpen}
+        onCancel={() => setDcWizardOpen(false)}
+        width={760}
+        footer={
+          <Space>
+            <Button onClick={() => setDcWizardOpen(false)}>Cancel</Button>
+            <Button
+              type="primary"
+              style={{ background: '#10b981' }}
+              disabled={!dcWizardRows.some(r => r.checked && r.dispatch_qty > 0)}
+              onClick={() => {
+                const selected = dcWizardRows
+                  .filter(r => r.checked && r.dispatch_qty > 0)
+                  .map(r => ({
+                    item_type: r.item_type,
+                    description: r.description,
+                    product_id: r.product_id || null,
+                    width_mm: r.width_mm,
+                    height_mm: r.height_mm,
+                    ordered_qty: r.ordered_qty,
+                    dispatch_qty: r.dispatch_qty,
+                  }))
+                setDcWizardOpen(false)
+                navigate(`/delivery-challans/new?so_id=${soId}`, {
+                  state: {
+                    dcItems: selected,
+                    so_number: record?.so_number,
+                    customer_id: record?.customer_id,
+                  }
+                })
+              }}
+            >
+              Create Delivery Challan ({dcWizardRows.filter(r => r.checked && r.dispatch_qty > 0).length} selected)
+            </Button>
+          </Space>
+        }
+      >
+        <Table
+          dataSource={dcWizardRows}
+          rowKey="wiz_key"
+          size="small"
+          pagination={false}
+          columns={[
+            {
+              title: '',
+              width: 36,
+              render: (_, row) => (
+                <Checkbox
+                  checked={row.checked}
+                  onChange={e => setDcWizardRows(prev =>
+                    prev.map(r => r.wiz_key === row.wiz_key ? { ...r, checked: e.target.checked } : r)
+                  )}
+                />
+              ),
+            },
+            {
+              title: 'Type',
+              width: 80,
+              render: (_, row) => (
+                <Tag color={row.item_type === 'glass' ? 'blue' : 'orange'} style={{ textTransform: 'capitalize' }}>
+                  {row.item_type}
+                </Tag>
+              ),
+            },
+            { title: 'Description', dataIndex: 'description', ellipsis: true },
+            {
+              title: 'Size',
+              width: 130,
+              render: (_, row) => row.width_inch
+                ? `${toFraction(row.width_inch)}" × ${toFraction(row.height_inch)}"`
+                : '—',
+            },
+            { title: 'Ordered', dataIndex: 'ordered_qty', width: 70, align: 'center' },
+            {
+              title: 'Dispatch Qty',
+              width: 110,
+              render: (_, row) => (
+                <InputNumber
+                  size="small"
+                  min={0}
+                  max={row.ordered_qty}
+                  value={row.dispatch_qty}
+                  disabled={!row.checked}
+                  onChange={val => setDcWizardRows(prev =>
+                    prev.map(r => r.wiz_key === row.wiz_key ? { ...r, dispatch_qty: val ?? 0 } : r)
+                  )}
+                  style={{ width: '100%' }}
+                />
+              ),
+            },
+          ]}
+          rowClassName={row => !row.checked ? 'dc-wizard-unchecked' : ''}
+        />
+        <style>{`.dc-wizard-unchecked td { opacity: 0.4; }`}</style>
+      </Modal>
 
       <ActionToolbar
         type="sales_order"

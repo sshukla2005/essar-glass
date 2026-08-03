@@ -156,6 +156,11 @@ export const authApi = {
     api.post('/api/v1/auth/switch-company', { company_id }),
 }
 
+// ── Inter-Company Linking API ───────────────────────
+export const interCompanyApi = {
+  link: (payload) => api.post('/api/v1/inter-company/link', payload),
+}
+
 // ── SuperAdmin Dashboard ───────────────────────────
 export const superApi = {
   getGroupOverview: async () => {

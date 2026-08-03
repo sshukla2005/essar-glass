@@ -105,6 +105,9 @@ import InvoiceForm from './pages/invoices/InvoiceForm'
 import CustomerLedger from './pages/invoices/CustomerLedger'
 import PaymentAccounts from './pages/settings/PaymentAccounts'
 
+// ── Reports ───────────────────────────────────────────────────────────────────
+import SalesPerformance from './pages/reports/SalesPerformance'
+
 
 const fixFarma = () => {
   try {
@@ -288,6 +291,9 @@ const App = () => {
             <Route path="settings/payment-accounts"          element={<PaymentAccounts />} />
             <Route path="settings/process-masters/new"       element={<ProcessMasterForm />} />
             <Route path="settings/process-masters/:id/edit"  element={<ProcessMasterForm />} />
+
+            {/* ── Reports ─────────────────────────────────────────────── */}
+            <Route path="reports/sales-performance" element={<SalesPerformance />} />
 
             {/* Catch-all */}
             <Route path="*" element={<Navigate to="/" replace />} />

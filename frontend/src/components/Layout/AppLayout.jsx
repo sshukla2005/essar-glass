@@ -9,7 +9,7 @@ import {
   MenuFoldOutlined, MenuUnfoldOutlined, BuildOutlined, CarOutlined, RetweetOutlined,
   SwapOutlined, DownOutlined, LogoutOutlined, LayoutOutlined, DatabaseOutlined,
   UsergroupAddOutlined, ReconciliationOutlined, HistoryOutlined, CalculatorOutlined,
-  ToolOutlined, FireOutlined, RobotOutlined
+  ToolOutlined, FireOutlined, RobotOutlined, BarChartOutlined
 } from '@ant-design/icons'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
@@ -42,6 +42,9 @@ const menuItems = [
   { key: 'grp_workshop', icon: <ToolOutlined />, label: 'Workshop', children: [
     { key: '/workshop/orders', label: 'Workshop Orders' },
     { key: '/workshop/toughening', label: 'Toughening', icon: <FireOutlined /> },
+  ]},
+  { key: 'grp_reports', icon: <BarChartOutlined />, label: 'Reports', children: [
+    { key: '/reports/sales-performance', label: 'Sales Performance' },
   ]},
   { key: 'grp_masters', icon: <ReconciliationOutlined />, label: 'Masters', children: [
     { key: '/masters/customers', label: 'Customers' },

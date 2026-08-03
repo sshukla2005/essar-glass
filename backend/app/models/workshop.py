@@ -24,6 +24,7 @@ class WorkshopOrder(Base, TimestampMixin, SoftDeleteMixin):
     # Artwork Panel Mapper — panel rectangles (JSON) + annotated master image (base64)
     artwork_panels = Column(JSON,        nullable=True)
     artwork_image  = Column(Text,        nullable=True)
+    linked_ref     = Column(JSON,        nullable=True)
     company_id   = Column(Integer, ForeignKey("companies.id"),
                           nullable=True, index=True)
 
