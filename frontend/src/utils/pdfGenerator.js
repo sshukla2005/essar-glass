@@ -1,7 +1,50 @@
 import { jsPDF } from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import html2canvas from 'html2canvas'
-import { customerApi, vendorApi } from '../api'
+import { customerApi, vendorApi, companyApi } from '../api'
+
+// ── Brand logo assets (Vite-bundled, fingerprinted) ──────
+import asahiPng      from '../assets/brands/asahi.png'
+import goldPlusPng   from '../assets/brands/gold_plus.png'
+import guardianPng   from '../assets/brands/guardian.png'
+import saintGobainPng from '../assets/brands/saint_gobain.png'
+
+const BRAND_LOGOS = [
+  { src: asahiPng,      label: 'Asahi' },
+  { src: goldPlusPng,   label: 'Gold Plus' },
+  { src: guardianPng,   label: 'Guardian' },
+  { src: saintGobainPng, label: 'Saint-Gobain' },
+]
+
+// Cache: src → { dataUrl, w, h }
+const _brandCache = {}
+
+const loadBrandLogo = (entry) => {
+  if (_brandCache[entry.src]) return Promise.resolve(_brandCache[entry.src])
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas')
+        canvas.width  = img.naturalWidth  || img.width  || 200
+        canvas.height = img.naturalHeight || img.height || 200
+        const ctx = canvas.getContext('2d')
+        ctx.drawImage(img, 0, 0)
+        const dataUrl = canvas.toDataURL('image/png')
+        const result = { dataUrl, w: canvas.width, h: canvas.height }
+        _brandCache[entry.src] = result
+        resolve(result)
+      } catch {
+        resolve(null)
+      }
+    }
+    img.onerror = () => resolve(null)
+    img.src = entry.src
+  })
+}
+
+export const preloadBrandLogos = () =>
+  Promise.all(BRAND_LOGOS.map(loadBrandLogo))
 
 // ── Date formatter ──────────────────────
 const formatDate = (d) => {
@@ -199,6 +242,7 @@ const getCompany = (id) => {
   } catch { }
   return {
     name: 'ESSAR SONS',
+    short_name: 'ESSAR',
     tagline: "AN 'ESSAR SONS' GROUP COMPANY",
     address: 'Shop No.11, Rashmi Shopping Centre, Agashi Road',
     city: 'Virar West, Vasai Virar - 401303, Palghar, Maharashtra',
@@ -210,6 +254,17 @@ const getCompany = (id) => {
     bank_ac_no: '50200012345678',
     bank_ifsc: 'HDFC0000123'
   }
+}
+
+const fetchCompany = async (id) => {
+  if (id) {
+    try {
+      const res = await companyApi.get(id)
+      const c = res?.data || res
+      if (c && c.name) return c
+    } catch { }
+  }
+  return getCompany(id)
 }
 
 // ── Color Theme and Layout Constants ──────
@@ -420,26 +475,55 @@ const drawHeader = (doc, company, docTitle) => {
     drawText(doc, initials, xBox + 9, yBox + 10.5, { align: 'center' })
   }
 
-  // 7. Draw Right Column secondary logo if present (x=160 to 200, width=40mm)
-  if (company.secondary_logo) {
-    try {
-      const maxSecW = 34
-      const maxSecH = boxH - 4
-      let secW = 150
-      let secH = 150
-      if (company._secLogoImg) {
-        secW = company._secLogoImg.naturalWidth || company._secLogoImg.width || 150
-        secH = company._secLogoImg.naturalHeight || company._secLogoImg.height || 150
+  // 7. Draw Right Column — 2×2 brand logo grid (x=160 to 200, width=40mm)
+  //    Fixed "Authorized Dealer" branding — same for every company.
+  ;(() => {
+    const colX   = 160          // right column starts here
+    const colW   = 40           // 160→200 mm
+    const padH   = 1.5          // top/bottom padding inside column
+    const padSide = 1.5         // left/right padding
+
+    // Optional caption: "Authorized Dealer" in tiny muted text
+    const captionH = 4.5        // height reserved for caption text
+    const captionGap = 0.5
+
+    const gridTop = yStart + padH + captionH + captionGap
+    const gridH   = boxH - padH * 2 - captionH - captionGap - 0.5
+    const cellW   = (colW - padSide * 2) / 2   // ~18.5mm each
+    const cellH   = gridH / 2
+
+    // Caption
+    setFont(doc, 5.5, 'normal', [140, 150, 165])
+    drawText(doc, 'AUTHORIZED DEALER', colX + colW / 2, yStart + padH + 3.2, { align: 'center' })
+
+    // Draw a thin separator line under the caption
+    drawLine(doc, colX + padSide, yStart + padH + captionH, colX + colW - padSide, yStart + padH + captionH, [200, 210, 220], 0.2)
+
+    const cached = BRAND_LOGOS.map(b => _brandCache[b.src] || null)
+
+    cached.forEach((logo, idx) => {
+      if (!logo) return
+      const row = Math.floor(idx / 2)   // 0 or 1
+      const col = idx % 2               // 0 or 1
+
+      const cellX = colX + padSide + col * cellW
+      const cellY = gridTop + row * cellH
+
+      // inner padding within cell
+      const innerPad = 1.5
+      const availW = cellW - innerPad * 2
+      const availH = cellH - innerPad * 2
+
+      try {
+        const dims = fitImage(logo.w, logo.h, availW, availH)
+        const xImg = cellX + innerPad + (availW - dims.w) / 2
+        const yImg = cellY + innerPad + (availH - dims.h) / 2
+        doc.addImage(logo.dataUrl, 'PNG', xImg, yImg, dims.w, dims.h)
+      } catch (err) {
+        console.error('Failed to draw brand logo', idx, err)
       }
-      const dimsSec = fitImage(secW, secH, maxSecW, maxSecH)
-      const xSec = 160 + (40 - dimsSec.w) / 2
-      const ySec = yStart + (boxH - dimsSec.h) / 2
-      const format = getFormat(company.secondary_logo)
-      doc.addImage(company.secondary_logo, format, xSec, ySec, dimsSec.w, dimsSec.h)
-    } catch (err) {
-      console.error('Failed to draw secondary logo:', err)
-    }
-  }
+    })
+  })()
 
   // 8. Draw Center Column text (x=50 to 160, center x = 105mm)
   const textTopY = yStart + (boxH - centerTextH) / 2
@@ -1333,6 +1417,204 @@ const drawFinalSummaryBlock = (doc, totalsRows, amtWords, quotation, y) => {
 }
 
 // ── Terms & Signature Section ──
+const calculateDocumentFooterHeight = (company) => {
+  let bankLinesCount = 0
+  if (company) {
+    const fields = [
+      company.bank_ac_name,
+      company.bank_ac_no,
+      company.bank_name,
+      company.bank_branch,
+      company.bank_ifsc,
+      company.bank_micr,
+      company.bank_swift
+    ]
+    bankLinesCount = fields.filter(f => cleanVal(f)).length
+  }
+  const bankH = bankLinesCount > 0 ? (4.5 + bankLinesCount * 3.2 + 2.0) : 0
+  const rightH = bankH + 25.0
+  const leftH = 46.0
+  const maxTwoColH = Math.max(leftH, rightH)
+  return maxTwoColH + 4.5 + 12.0
+}
+
+const drawDocumentFooterSection = (doc, company, y, pageNum, docData) => {
+  const footerH = calculateDocumentFooterHeight(company)
+  
+  // Page break check so footer is never cut off
+  y = checkPageBreak(doc, y, footerH, pageNum, docData)
+
+  const startY = y
+  const leftX = MARGIN.l // 10mm
+  const colGap = 4
+  const leftW = 94
+  const rightX = leftX + leftW + colGap // 108mm
+  const rightW = CONTENT_W - leftW - colGap // 92mm
+
+  // ---------------------------------------------------------
+  // LEFT COLUMN: Terms of Sale/Payment/Delivery:
+  // ---------------------------------------------------------
+  let ly = startY
+  setFont(doc, 8, 'bold', C.primary)
+  drawText(doc, 'Terms of Sale/Payment/Delivery:', leftX, ly)
+  const headingW = doc.getTextWidth('Terms of Sale/Payment/Delivery:')
+  drawLine(doc, leftX, ly + 0.8, leftX + headingW, ly + 0.8, C.primary, 0.3)
+  
+  ly += 4.5
+
+  const bullets = [
+    '• Validity of Document is 8 Days from the date of issue.',
+    '• Goods sold cannot be Exchanged or Returned.',
+    '• Accepted Tolerance limits will be +/- 1mm in dimentions & =/- .01mm in thickness',
+    '• Delivery is effected solely on buyer\'s risk n costs',
+    '• All disputes subject to Palghar jurisdiction'
+  ]
+
+  setFont(doc, 6.5, 'normal', C.text)
+  bullets.forEach(b => {
+    const wrapped = doc.splitTextToSize(b, leftW)
+    wrapped.forEach(wline => {
+      drawText(doc, wline, leftX, ly)
+      ly += 3.2
+    })
+  })
+
+  ly += 1.5
+
+  // Red Italic Disclaimer
+  const companyShort = (cleanVal(company.short_name) || cleanVal(company.name) || 'EXCEL').toUpperCase()
+  const disclaimerText = `At ${companyShort} we value the time of our clients very highly, but due to the brittle nature of our product, many a times we are unable to meet our commitments and the deadlines of our esteemed clients due to reasons beyond our control.`
+  
+  setFont(doc, 6.5, 'italic', [220, 38, 38])
+  const disclaimerLines = doc.splitTextToSize(disclaimerText, leftW)
+  disclaimerLines.forEach(dline => {
+    drawText(doc, dline, leftX, ly)
+    ly += 3.0
+  })
+
+  ly += 2.0
+
+  // Emphasized Payment terms
+  setFont(doc, 7.5, 'bold', C.text)
+  drawText(doc, '50% Advance', leftX, ly)
+  ly += 3.5
+  drawText(doc, 'Bal before delivery', leftX, ly)
+  ly += 4.0
+
+  const leftEndY = ly
+
+  // ---------------------------------------------------------
+  // RIGHT COLUMN: BANK DETAILS & SIGNATORY BOX
+  // ---------------------------------------------------------
+  let ry = startY
+
+  const bankFields = [
+    cleanVal(company.bank_ac_name) ? { label: 'A/c Name:', val: cleanVal(company.bank_ac_name) } : null,
+    cleanVal(company.bank_ac_no) ? { label: 'A/c Number:', val: cleanVal(company.bank_ac_no) } : null,
+    cleanVal(company.bank_name) ? { label: 'Bank Name:', val: cleanVal(company.bank_name) } : null,
+    cleanVal(company.bank_branch) ? { label: 'Branch:', val: cleanVal(company.bank_branch) } : null,
+    cleanVal(company.bank_ifsc) ? { label: 'IFC/RTGS Code:', val: cleanVal(company.bank_ifsc) } : null,
+    cleanVal(company.bank_micr) ? { label: 'MICR Code:', val: cleanVal(company.bank_micr) } : null,
+    cleanVal(company.bank_swift) ? { label: 'Swift Code:', val: cleanVal(company.bank_swift) } : null,
+  ].filter(Boolean)
+
+  if (bankFields.length > 0) {
+    setFont(doc, 8, 'bold', C.primary)
+    drawText(doc, 'BANK DETAILS:', rightX, ry)
+    const bankHeadingW = doc.getTextWidth('BANK DETAILS:')
+    drawLine(doc, rightX, ry + 0.8, rightX + bankHeadingW, ry + 0.8, C.primary, 0.3)
+    ry += 4.5
+
+    bankFields.forEach(b => {
+      setFont(doc, 6.5, 'bold', C.textMid)
+      drawText(doc, b.label, rightX, ry)
+      setFont(doc, 6.5, 'normal', C.text)
+      drawText(doc, b.val, rightX + 24, ry)
+      ry += 3.2
+    })
+    ry += 2.0
+  }
+
+  // Signatory Box
+  const sigBoxH = 22
+  drawCard(doc, rightX, ry, rightW, sigBoxH, C.white, C.border, 1.5)
+  
+  setFont(doc, 7.5, 'bold', C.primary)
+  drawText(doc, `For:  ${(cleanVal(company.name) || 'ESSAR GLASS').toUpperCase()}`, rightX + 4, ry + 5)
+  
+  setFont(doc, 6.5, 'bold', C.textLight)
+  drawText(doc, 'authorized Signatory', rightX + rightW - 4, ry + sigBoxH - 4, { align: 'right' })
+
+  ry += sigBoxH + 3.0
+
+  const rightEndY = ry
+  const maxTwoColY = Math.max(leftEndY, rightEndY)
+
+  // ---------------------------------------------------------
+  // CENTERED COMPUTERIZED DOCUMENT NOTE
+  // ---------------------------------------------------------
+  let noteY = maxTwoColY + 1.0
+  setFont(doc, 6.5, 'italic', C.textLight)
+  drawText(
+    doc,
+    'This is a computerized generated document hence it does not require a signature.',
+    PAGE_W / 2,
+    noteY,
+    { align: 'center' }
+  )
+
+  noteY += 3.5
+
+  // ---------------------------------------------------------
+  // BOTTOM ADDRESS BOX (Full Width Bordered Box)
+  // ---------------------------------------------------------
+  const cityStr = cleanVal(company.city)
+  const pinStr = cleanVal(company.pincode)
+  let cityPinComp = cityStr
+  if (pinStr && !cityStr.includes(pinStr)) {
+    cityPinComp = cityStr ? `${cityStr} ${pinStr}` : pinStr
+  }
+
+  const addrComp = [
+    cleanVal(company.address),
+    cleanVal(company.address_line2),
+    cityPinComp,
+    cleanVal(company.state_name) && !cityStr.includes(cleanVal(company.state_name)) ? cleanVal(company.state_name) : ''
+  ].filter(Boolean)
+
+  const fullAddrStr = addrComp.join(', ')
+  const emailStr = cleanVal(company.email)
+  const websiteStr = cleanVal(company.website)
+  const mapsStr = cleanVal(company.google_maps || company.map_link)
+
+  const addrBoxLines = []
+  if (fullAddrStr) {
+    addrBoxLines.push(`Factory outlet & Reg. Sales Off: ${fullAddrStr}`)
+  }
+  
+  const contactParts = []
+  if (emailStr) contactParts.push(`email: ${emailStr}`)
+  if (websiteStr) contactParts.push(`website: ${websiteStr}`)
+  if (mapsStr) contactParts.push(`google maps: ${mapsStr}`)
+  if (contactParts.length > 0) {
+    addrBoxLines.push(contactParts.join('   |   '))
+  }
+
+  const lineCount = addrBoxLines.length || 1
+  const addrBoxH = 3.5 + lineCount * 3.5
+
+  drawCard(doc, MARGIN.l, noteY, CONTENT_W, addrBoxH, C.summaryBg, C.border, 1.5)
+
+  let aby = noteY + 3.8
+  setFont(doc, 6.5, 'bold', C.textMid)
+  addrBoxLines.forEach(aline => {
+    drawText(doc, aline, MARGIN.l + 4, aby)
+    aby += 3.5
+  })
+
+  return noteY + addrBoxH
+}
+
 const drawTerms = (doc, y) => {
   const terms = [
     'Please double-check glass specifications, size, quantity, rates and taxes before confirming.',
@@ -1565,7 +1847,10 @@ export const generateQuotationPDF = async (quotation) => {
   try {
     const { hardware_items = [], labor_items = [], wastage_items = [] } = quotation
     const doc = new jsPDF('p', 'mm', 'a4')
-    const company = await preloadCompanyLogos(getCompany(quotation.company_id))
+    const [company] = await Promise.all([
+      preloadCompanyLogos(await fetchCompany(quotation.company_id)),
+      preloadBrandLogos(),
+    ])
 
     let cust = {
       name: quotation.customer_name || '',
@@ -1700,26 +1985,14 @@ export const generateQuotationPDF = async (quotation) => {
     ].filter(Boolean)
 
     const summaryHeight = calculateSummaryHeight(totalsRows)
+    const footerSectionH = calculateDocumentFooterHeight(company)
     
-    // Check page break for summary block + signature strip + terms section
-    y = checkPageBreak(doc, y, summaryHeight + 22 + 28, pageNum, quotation)
+    // Check page break for summary block + footer section
+    y = checkPageBreak(doc, y, summaryHeight + footerSectionH, pageNum, quotation)
     
     y = drawFinalSummaryBlock(doc, totalsRows, toWords(Math.round(grand)), quotation, y) + SP_16
 
-    // Bank details (only if the company has any bank info) — mirrors the SO PDF
-    const hasBank = company.bank_name || company.bank_ac_no || company.bank_ifsc
-    if (hasBank) {
-      y = checkPageBreak(doc, y, 22 + 22 + 28, pageNum, quotation)
-      y = drawBankDetails(doc, company, y) + SP_16
-    }
-
-    // Check page break for signature strip + terms
-    y = checkPageBreak(doc, y, 22 + 28, pageNum, quotation)
-    y = drawSignatureStrip(doc, company, y) + SP_16
-    
-    // Check page break for terms section
-    y = checkPageBreak(doc, y, 28, pageNum, quotation)
-    drawTerms(doc, y)
+    drawDocumentFooterSection(doc, company, y, pageNum, quotation)
 
     // Complete footers rendering pass
     addFootersAndPageNumbers(doc, quotation.quote_number || 'QT')
@@ -1915,7 +2188,10 @@ export const generateSOPDF = async (so) => {
   try {
     const { hardware_items = [], labor_items = [], wastage_items = [] } = so
     const doc = new jsPDF('p', 'mm', 'a4')
-    const company = await preloadCompanyLogos(getCompany(so.company_id))
+    const [company] = await Promise.all([
+      preloadCompanyLogos(await fetchCompany(so.company_id)),
+      preloadBrandLogos(),
+    ])
     
     let cust = { name: so.customer_name || '', address: '', phone: so.customer_phone || '', gstin: so.customer_gstin || '', email: '', pan: '' }
     if (so.customer_id) {
@@ -2087,22 +2363,12 @@ export const generateSOPDF = async (so) => {
     ].filter(Boolean)
 
     const summaryHeight = calculateSummaryHeight(totalsRows)
-    const hasBank = company.bank_name || company.bank_ac_no || company.bank_ifsc
-    const bankHeight = hasBank ? 22 + SP_16 : 0
+    const footerSectionH = calculateDocumentFooterHeight(company)
     
-    y = checkPageBreak(doc, y, summaryHeight + bankHeight + 22 + 28, pageNum, so)
+    y = checkPageBreak(doc, y, summaryHeight + footerSectionH, pageNum, so)
     y = drawFinalSummaryBlock(doc, totalsRows, toWords(Math.round(grand)), { payment_terms: so.payment_terms }, y) + SP_16
     
-    if (hasBank) {
-      y = checkPageBreak(doc, y, 22 + 22 + 28, pageNum, so)
-      y = drawBankDetails(doc, company, y) + SP_16
-    }
-
-    y = checkPageBreak(doc, y, 22 + 28, pageNum, so)
-    y = drawSignatureStrip(doc, company, y) + SP_16
-    
-    y = checkPageBreak(doc, y, 28, pageNum, so)
-    drawTerms(doc, y)
+    drawDocumentFooterSection(doc, company, y, pageNum, so)
 
     addFootersAndPageNumbers(doc, so.so_number || 'SO')
     doc.save(`${so.so_number || 'SO'}_Essar.pdf`)
@@ -2168,7 +2434,10 @@ const drawPOItemsCard = (doc, lines, cols, startY, pageNum, po) => {
 export const generatePOPDF = async (po) => {
   try {
     const doc = new jsPDF('p', 'mm', 'a4')
-    const company = await preloadCompanyLogos(getCompany(po.company_id))
+    const [company] = await Promise.all([
+      preloadCompanyLogos(getCompany(po.company_id)),
+      preloadBrandLogos(),
+    ])
     let vend = { name: po.vendor_name || '', address: '', phone: '', gstin: '' }
     if (po.vendor_id) {
       try {
@@ -2510,7 +2779,10 @@ export const generateDeliveryChallanPDF = async (dc) => {
   if (!dc) return
   try {
     const doc = new jsPDF('p', 'mm', 'a4')
-    const company = await preloadCompanyLogos(getCompany(dc.company_id))
+    const [company] = await Promise.all([
+      preloadCompanyLogos(getCompany(dc.company_id)),
+      preloadBrandLogos(),
+    ])
 
     // 1. Resolve Customer details (Bill To / Ship To)
     let cust = {
