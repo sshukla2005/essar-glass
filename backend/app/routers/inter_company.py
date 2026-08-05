@@ -74,16 +74,21 @@ def _resolve_line_metadata(
 ) -> Dict[str, Any]:
     """
     Extract and resolve full glass metadata (thickness, type, category, product, ceiling dims, etc.)
-    for a given line item.
+    for a given line item, using overrides if provided.
     """
-    desc = l.get("description") or ""
+    override_type = l.get("override_glass_type")
+    override_cat = l.get("override_glass_category")
+    override_thick = l.get("override_thickness")
+    override_desc = l.get("override_description")
 
-    # Start with values directly on payload line l
-    g_thick = l.get("glass_thickness")
-    g_type = l.get("glass_type")
-    g_cat = l.get("glass_category")
+    desc = override_desc or l.get("description") or ""
+
+    # Start with values directly on payload line l (with override priority)
+    g_thick = override_thick if override_thick is not None else l.get("glass_thickness")
+    g_type = override_type or l.get("glass_type")
+    g_cat = override_cat or l.get("glass_category")
     prod_id = l.get("product_id")
-    prod_name = l.get("product_name") or desc
+    prod_name = override_desc or l.get("product_name") or desc
     w_ceil = (
         l.get("w_ceiling")
         or l.get("ceiling_w_inches")
@@ -100,6 +105,11 @@ def _resolve_line_metadata(
     h_ceil_mm = l.get("ceiling_h_custom_mm") or 30
     cep = bool(l.get("cep"))
     is_toughened = bool(l.get("is_toughened"))
+    if g_type:
+        if g_type.lower() == "toughened":
+            is_toughened = True
+        elif override_type and override_type.lower() != "toughened":
+            is_toughened = False
 
     # Try reading from source_so groups/lines if present
     source_match = None
@@ -109,7 +119,7 @@ def _resolve_line_metadata(
                 source_match = source_so.groups[index]
             else:
                 for g in source_so.groups:
-                    if g.get("description") == desc:
+                    if g.get("description") == desc or g.get("description") == l.get("description"):
                         source_match = g
                         break
         elif source_so.lines and isinstance(source_so.lines, list):
@@ -117,7 +127,7 @@ def _resolve_line_metadata(
                 source_match = source_so.lines[index]
             else:
                 for sl in source_so.lines:
-                    if sl.get("description") == desc:
+                    if sl.get("description") == desc or sl.get("description") == l.get("description"):
                         source_match = sl
                         break
 
@@ -127,7 +137,7 @@ def _resolve_line_metadata(
             source_match = source_wo.lines[index]
         else:
             for wl in source_wo.lines:
-                if wl.get("description") == desc:
+                if wl.get("description") == desc or wl.get("description") == l.get("description"):
                     source_match = wl
                     break
 
@@ -140,7 +150,7 @@ def _resolve_line_metadata(
             g_cat = source_match.get("glass_category")
         if prod_id is None:
             prod_id = source_match.get("product_id")
-        if not prod_name:
+        if not prod_name and not override_desc:
             prod_name = source_match.get("product_name") or source_match.get("description")
         if l.get("ceiling_w_inches") is None and l.get("w_ceiling") is None:
             w_ceil = (
@@ -162,7 +172,7 @@ def _resolve_line_metadata(
             h_ceil_mm = source_match.get("ceiling_h_custom_mm") or 30
         if "cep" not in l:
             cep = bool(source_match.get("cep"))
-        if "is_toughened" not in l:
+        if "is_toughened" not in l and not override_type:
             is_toughened = bool(source_match.get("is_toughened"))
 
     # If category, type, thickness are still missing, attempt string parsing from description
@@ -185,7 +195,7 @@ def _resolve_line_metadata(
                 g_type = source_prod.glass_type
             if not g_cat:
                 g_cat = source_prod.glass_category
-            if not prod_name:
+            if not prod_name and not override_desc:
                 prod_name = source_prod.name
 
             # Search in supplier_company
@@ -339,7 +349,12 @@ def create_inter_company_link(
         po_number = get_next_code(
             db, PurchaseOrder, "po_number", "PO", company_id=payload.source_company_id
         )
-        po_lines = copy.deepcopy(payload.lines)
+        po_lines = []
+        for l in payload.lines:
+            l_po = copy.deepcopy(l)
+            for k in ["override_glass_type", "override_glass_category", "override_thickness", "override_description"]:
+                l_po.pop(k, None)
+            po_lines.append(l_po)
 
         po_subtotal = 0.0
         for l in po_lines:
@@ -446,7 +461,10 @@ def create_inter_company_link(
 
             # Build SO Line
             l_copy = copy.deepcopy(l)
+            for k in ["override_glass_type", "override_glass_category", "override_thickness", "override_description"]:
+                l_copy.pop(k, None)
             l_copy.update({
+                "description": meta["description"],
                 "glass_thickness": meta["glass_thickness"],
                 "glass_type": meta["glass_type"],
                 "glass_category": meta["glass_category"],
@@ -473,7 +491,10 @@ def create_inter_company_link(
 
             # Build WO Line
             wo_l = copy.deepcopy(l)
+            for k in ["override_glass_type", "override_glass_category", "override_thickness", "override_description"]:
+                wo_l.pop(k, None)
             wo_l.update({
+                "description": meta["description"],
                 "glass_thickness": meta["glass_thickness"],
                 "glass_type": meta["glass_type"],
                 "glass_category": meta["glass_category"],

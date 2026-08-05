@@ -134,8 +134,110 @@ const WorkshopOrderForm = () => {
   const [linkWizard, setLinkWizard] = useState(false)
   const [selectedSupplierCompanyId, setSelectedSupplierCompanyId] = useState(null)
   const [selectedLinkLineKeys, setSelectedLinkLineKeys] = useState([])
+  const [lineOverrides, setLineOverrides] = useState({})
   const [linkLoading, setLinkLoading] = useState(false)
   const [linkResultModal, setLinkResultModal] = useState(null)
+
+  const glassTypeOptions = useMemo(() => {
+    try {
+      const cfg = JSON.parse(localStorage.getItem('glass_dropdown_config') || '{}')
+      const types = cfg.glass_types?.length ? cfg.glass_types : ['Annealed', 'Toughened', 'Laminated', 'DGU']
+      return types.map(t => ({ value: t, label: t }))
+    } catch {
+      return ['Annealed', 'Toughened', 'Laminated', 'DGU'].map(t => ({ value: t, label: t }))
+    }
+  }, [])
+
+  const glassCategoryOptions = useMemo(() => {
+    try {
+      const cfg = JSON.parse(localStorage.getItem('glass_dropdown_config') || '{}')
+      const cats = cfg.categories?.length ? cfg.categories : ['Clear', 'Xtra Clear', 'Tinted', 'Reflective', 'Mirror']
+      return cats.map(c => ({ value: c, label: c }))
+    } catch {
+      return ['Clear', 'Xtra Clear', 'Tinted', 'Reflective', 'Mirror'].map(c => ({ value: c, label: c }))
+    }
+  }, [])
+
+  const computeOverrideDescription = (line, overrideType, overrideCategory) => {
+    const origDesc = line.description || line.product_name || ''
+    if (!origDesc && !overrideType && !overrideCategory) return ''
+
+    let newDesc = origDesc
+
+    const allTypes = Array.from(new Set([
+      'Toughened', 'Annealed', 'Laminated', 'DGU',
+      line.glass_type,
+      ...glassTypeOptions.map(o => o.value)
+    ].filter(Boolean)))
+
+    const allCategories = Array.from(new Set([
+      'Xtra Clear', 'Extra Clear', 'Reflective', 'Tinted', 'Mirror', 'Clear',
+      line.glass_category,
+      ...glassCategoryOptions.map(o => o.value)
+    ].filter(Boolean))).sort((a, b) => b.length - a.length)
+
+    let typeReplaced = false
+    let catReplaced = false
+
+    // Replace type if matched
+    if (overrideType) {
+      for (const t of allTypes) {
+        const reg = new RegExp(`\\b${t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi')
+        if (reg.test(newDesc)) {
+          newDesc = newDesc.replace(reg, overrideType)
+          typeReplaced = true
+          break
+        }
+      }
+    }
+
+    // Replace category if matched
+    if (overrideCategory) {
+      for (const c of allCategories) {
+        const reg = new RegExp(`\\b${c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi')
+        if (reg.test(newDesc)) {
+          newDesc = newDesc.replace(reg, overrideCategory)
+          catReplaced = true
+          break
+        }
+      }
+    }
+
+    if (!typeReplaced && overrideType) {
+      const thickMatch = newDesc.match(/(\d+(?:\.\d+)?\s*mm)/i)
+      if (thickMatch) {
+        newDesc = newDesc.replace(thickMatch[0], `${thickMatch[0]} ${overrideType}`)
+        typeReplaced = true
+      } else {
+        newDesc = `${overrideType} ${newDesc}`
+        typeReplaced = true
+      }
+    }
+
+    if (!catReplaced && overrideCategory) {
+      const thickTypeMatch = newDesc.match(/(\d+(?:\.\d+)?\s*mm(?:\s+\w+)?)/i)
+      if (thickTypeMatch) {
+        newDesc = newDesc.replace(thickTypeMatch[0], `${thickTypeMatch[0]} ${overrideCategory}`)
+        catReplaced = true
+      } else {
+        newDesc = `${newDesc} ${overrideCategory}`
+        catReplaced = true
+      }
+    }
+
+    // If no type or category matched in original description, build a fallback description if overridden
+    if (!typeReplaced && !catReplaced && (overrideType || overrideCategory)) {
+      const parts = []
+      if (line.glass_thickness) parts.push(`${line.glass_thickness}mm`)
+      if (overrideType) parts.push(overrideType)
+      if (overrideCategory) parts.push(overrideCategory)
+      if (parts.length > 0) {
+        newDesc = parts.join(' ')
+      }
+    }
+
+    return newDesc || origDesc
+  }
 
   const { data: companiesData = [] } = useQuery({
     queryKey: ['companies-dropdown'],
@@ -149,6 +251,31 @@ const WorkshopOrderForm = () => {
   const handleOpenLinkWizard = () => {
     setSelectedLinkLineKeys(lines.map(l => l.key))
     setSelectedSupplierCompanyId(null)
+    const initialOverrides = {}
+    lines.forEach(l => {
+      let defaultType = l.glass_type || ''
+      if (!defaultType) {
+        const descLower = (l.description || '').toLowerCase()
+        if (l.is_toughened || descLower.includes('toughened')) defaultType = 'Toughened'
+        else if (descLower.includes('laminated')) defaultType = 'Laminated'
+        else if (descLower.includes('dgu')) defaultType = 'DGU'
+        else defaultType = 'Annealed'
+      }
+      let defaultCat = l.glass_category || ''
+      if (!defaultCat) {
+        const descLower = (l.description || '').toLowerCase()
+        if (descLower.includes('xtra clear') || descLower.includes('extra clear')) defaultCat = 'Xtra Clear'
+        else if (descLower.includes('tinted')) defaultCat = 'Tinted'
+        else if (descLower.includes('reflective')) defaultCat = 'Reflective'
+        else if (descLower.includes('mirror')) defaultCat = 'Mirror'
+        else defaultCat = 'Clear'
+      }
+      initialOverrides[l.key] = {
+        override_glass_type: defaultType,
+        override_glass_category: defaultCat,
+      }
+    })
+    setLineOverrides(initialOverrides)
     setLinkWizard(true)
   }
 
@@ -163,31 +290,59 @@ const WorkshopOrderForm = () => {
     }
 
     const selectedLines = lines.filter(l => selectedLinkLineKeys.includes(l.key))
-    const payloadLines = selectedLines.map(l => ({
-      description: l.description || '',
-      glass_thickness: l.glass_thickness || null,
-      glass_type: l.glass_type || null,
-      glass_category: l.glass_category || null,
-      product_id: l.product_id || null,
-      product_name: l.product_name || l.description || '',
-      ceiling_w_inches: l.ceiling_w_inches || l.ceiling_inches || 6,
-      ceiling_h_inches: l.ceiling_h_inches || l.ceiling_inches || 6,
-      ceiling_w_custom_mm: l.ceiling_w_custom_mm || 30,
-      ceiling_h_custom_mm: l.ceiling_h_custom_mm || 30,
-      cep: Boolean(l.cep),
-      width_mm: l.act_w_mm || (l.act_w_in ? Math.round(l.act_w_in * 25.4) : null),
-      height_mm: l.act_h_mm || (l.act_h_in ? Math.round(l.act_h_in * 25.4) : null),
-      width_inch: l.act_w_in || (l.act_w_mm ? parseFloat((l.act_w_mm / 25.4).toFixed(4)) : null),
-      height_inch: l.act_h_in || (l.act_h_mm ? parseFloat((l.act_h_mm / 25.4).toFixed(4)) : null),
-      qty: l.qty || l.quantity || 1,
-      artwork_file_data: l.artwork_file_data || l.artwork_file || null,
-      artwork_id: l.artwork_master_id || l.artwork_id || null,
-      artwork_name: l.artwork_name || l.artwork_file_name || null,
-      has_process: Boolean(l.has_process),
-      process: l.process_label || '',
-      process_info: l.group_processes || l.size_processes || [],
-      is_toughened: Boolean(l.is_toughened),
-    }))
+    const payloadLines = selectedLines.map(l => {
+      const ov = lineOverrides[l.key] || {}
+      let defaultType = l.glass_type || ''
+      if (!defaultType) {
+        const descLower = (l.description || '').toLowerCase()
+        if (l.is_toughened || descLower.includes('toughened')) defaultType = 'Toughened'
+        else if (descLower.includes('laminated')) defaultType = 'Laminated'
+        else if (descLower.includes('dgu')) defaultType = 'DGU'
+        else defaultType = 'Annealed'
+      }
+      let defaultCat = l.glass_category || ''
+      if (!defaultCat) {
+        const descLower = (l.description || '').toLowerCase()
+        if (descLower.includes('xtra clear') || descLower.includes('extra clear')) defaultCat = 'Xtra Clear'
+        else if (descLower.includes('tinted')) defaultCat = 'Tinted'
+        else if (descLower.includes('reflective')) defaultCat = 'Reflective'
+        else if (descLower.includes('mirror')) defaultCat = 'Mirror'
+        else defaultCat = 'Clear'
+      }
+
+      const overrideType = ov.override_glass_type !== undefined ? ov.override_glass_type : defaultType
+      const overrideCategory = ov.override_glass_category !== undefined ? ov.override_glass_category : defaultCat
+      const overrideDesc = computeOverrideDescription(l, overrideType, overrideCategory)
+
+      return {
+        description: l.description || '',
+        glass_thickness: l.glass_thickness || null,
+        glass_type: l.glass_type || null,
+        glass_category: l.glass_category || null,
+        override_glass_type: overrideType,
+        override_glass_category: overrideCategory,
+        override_description: overrideDesc,
+        product_id: l.product_id || null,
+        product_name: l.product_name || l.description || '',
+        ceiling_w_inches: l.ceiling_w_inches || l.ceiling_inches || 6,
+        ceiling_h_inches: l.ceiling_h_inches || l.ceiling_inches || 6,
+        ceiling_w_custom_mm: l.ceiling_w_custom_mm || 30,
+        ceiling_h_custom_mm: l.ceiling_h_custom_mm || 30,
+        cep: Boolean(l.cep),
+        width_mm: l.act_w_mm || (l.act_w_in ? Math.round(l.act_w_in * 25.4) : null),
+        height_mm: l.act_h_mm || (l.act_h_in ? Math.round(l.act_h_in * 25.4) : null),
+        width_inch: l.act_w_in || (l.act_w_mm ? parseFloat((l.act_w_mm / 25.4).toFixed(4)) : null),
+        height_inch: l.act_h_in || (l.act_h_mm ? parseFloat((l.act_h_mm / 25.4).toFixed(4)) : null),
+        qty: l.qty || l.quantity || 1,
+        artwork_file_data: l.artwork_file_data || l.artwork_file || null,
+        artwork_id: l.artwork_master_id || l.artwork_id || null,
+        artwork_name: l.artwork_name || l.artwork_file_name || null,
+        has_process: Boolean(l.has_process),
+        process: l.process_label || '',
+        process_info: l.group_processes || l.size_processes || [],
+        is_toughened: Boolean(l.is_toughened),
+      }
+    })
 
     const payload = {
       source_company_id: currentWoCompanyId,
@@ -2087,7 +2242,7 @@ const WorkshopOrderForm = () => {
         }
         open={linkWizard}
         onCancel={() => setLinkWizard(false)}
-        width={700}
+        width={850}
         footer={[
           <Button key="cancel" onClick={() => setLinkWizard(false)}>
             Cancel
@@ -2110,7 +2265,7 @@ const WorkshopOrderForm = () => {
         </div>
 
         <Form layout="vertical">
-          <Form.Item label={<Text strong>1. Select Supplier Company</Text>} required>
+          <Form.Item label={<Text strong>1. Select Supplier Company</Text>} required style={{ marginBottom: 16 }}>
             <Select
               placeholder="Select supplier company..."
               value={selectedSupplierCompanyId}
@@ -2128,8 +2283,8 @@ const WorkshopOrderForm = () => {
           </Form.Item>
         </Form>
 
-        <div style={{ marginTop: 20 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
             <Text strong>2. Select Glass Lines ({selectedLinkLineKeys.length}/{lines.length} selected)</Text>
             <Checkbox
               checked={lines.length > 0 && selectedLinkLineKeys.length === lines.length}
@@ -2146,6 +2301,12 @@ const WorkshopOrderForm = () => {
             </Checkbox>
           </div>
 
+          <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 6, padding: '8px 12px', marginBottom: 12 }}>
+            <Text style={{ fontSize: 12, color: '#0369a1' }}>
+              💡 Overrides apply only to the supplier's SO/WO. The PO keeps the original spec.
+            </Text>
+          </div>
+
           <Table
             size="small"
             dataSource={lines}
@@ -2154,7 +2315,7 @@ const WorkshopOrderForm = () => {
             columns={[
               {
                 title: '',
-                width: 40,
+                width: 36,
                 render: (_, row) => (
                   <Checkbox
                     checked={selectedLinkLineKeys.includes(row.key)}
@@ -2169,33 +2330,82 @@ const WorkshopOrderForm = () => {
                 ),
               },
               {
-                title: 'Description',
+                title: 'Original Line',
                 dataIndex: 'description',
-                render: (v) => <Text strong>{v || 'Glass Line'}</Text>,
-              },
-              {
-                title: 'Size (W x H)',
-                render: (_, row) => {
+                width: 170,
+                render: (v, row) => {
                   const win = row.act_w_in ? `${toFraction(row.act_w_in)}"` : (row.act_w_mm ? `${row.act_w_mm}mm` : '—')
                   const hin = row.act_h_in ? `${toFraction(row.act_h_in)}"` : (row.act_h_mm ? `${row.act_h_mm}mm` : '—')
-                  return `${win} × ${hin}`
+                  return (
+                    <div>
+                      <Text strong style={{ display: 'block', fontSize: 13 }}>{v || 'Glass Line'}</Text>
+                      <Text type="secondary" style={{ fontSize: 11 }}>Size: {win} × {hin} | Qty: {row.qty || 1}</Text>
+                    </div>
+                  )
                 },
               },
               {
-                title: 'Qty',
-                dataIndex: 'qty',
-                width: 60,
-                align: 'center',
-                render: (v) => v || 1,
+                title: 'Supplier Glass Type',
+                width: 140,
+                render: (_, row) => {
+                  const currentVal = lineOverrides[row.key]?.override_glass_type || row.glass_type || 'Annealed'
+                  return (
+                    <Select
+                      size="small"
+                      style={{ width: '100%' }}
+                      value={currentVal}
+                      options={glassTypeOptions}
+                      onChange={val => {
+                        setLineOverrides(prev => ({
+                          ...prev,
+                          [row.key]: {
+                            ...(prev[row.key] || {}),
+                            override_glass_type: val,
+                          }
+                        }))
+                      }}
+                    />
+                  )
+                },
               },
               {
-                title: 'Artwork',
-                width: 130,
-                render: (_, row) => lineHasArtwork(row) ? (
-                  <Tag color="purple">🎨 Artwork</Tag>
-                ) : (
-                  <Tag color="default">No Artwork</Tag>
-                ),
+                title: 'Supplier Glass Category',
+                width: 150,
+                render: (_, row) => {
+                  const currentVal = lineOverrides[row.key]?.override_glass_category || row.glass_category || 'Clear'
+                  return (
+                    <Select
+                      size="small"
+                      style={{ width: '100%' }}
+                      value={currentVal}
+                      options={glassCategoryOptions}
+                      onChange={val => {
+                        setLineOverrides(prev => ({
+                          ...prev,
+                          [row.key]: {
+                            ...(prev[row.key] || {}),
+                            override_glass_category: val,
+                          }
+                        }))
+                      }}
+                    />
+                  )
+                },
+              },
+              {
+                title: 'Supplier Spec Preview',
+                width: 170,
+                render: (_, row) => {
+                  const ov = lineOverrides[row.key] || {}
+                  const curType = ov.override_glass_type !== undefined ? ov.override_glass_type : (row.glass_type || 'Annealed')
+                  const curCat = ov.override_glass_category !== undefined ? ov.override_glass_category : (row.glass_category || 'Clear')
+                  const previewDesc = computeOverrideDescription(row, curType, curCat)
+                  return (
+                    <Tag color="purple" style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>
+                      {previewDesc}
+                    </Tag>
+                  )
+                },
               },
             ]}
           />
