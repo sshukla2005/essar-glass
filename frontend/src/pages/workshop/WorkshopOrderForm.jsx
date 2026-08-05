@@ -17,6 +17,7 @@ import ExcelJS from 'exceljs'
 import { saveAs } from 'file-saver'
 import FractionInput, { toFraction } from '../quotations/components/FractionInput'
 import InterCompanyBanner from '../../components/common/InterCompanyBanner'
+import { computeLineWeightKg } from '../../utils/glassCalc'
 
 const { TextArea } = Input
 const { Text } = Typography
@@ -530,6 +531,19 @@ const WorkshopOrderForm = () => {
     { title: 'Act H (mm)', width: 100, dataIndex: 'act_h_mm', render: (v) => <InputNumber size="small" value={v} disabled /> },
     { title: 'Qty', width: 80, dataIndex: 'qty', render: (v, row) => <InputNumber size="small" value={v} onChange={val => updateLine(row.key, 'qty', val)} /> },
     {
+      title: 'Weight (kg)',
+      width: 90,
+      align: 'right',
+      render: (_, row) => {
+        const kg = computeLineWeightKg(row)
+        return (
+          <span style={{ fontWeight: 600, color: kg > 0 ? '#0f766e' : '#94a3b8', fontSize: 12 }}>
+            {kg > 0 ? `${kg} kg` : '—'}
+          </span>
+        )
+      }
+    },
+    {
       title: 'Actions', width: 280, render: (_, row) => (
         <Space wrap>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
@@ -722,13 +736,16 @@ const WorkshopOrderForm = () => {
       // ── JOB CARDS TABLE ─────────────────────────────
       const groupedRows = []
       const seen = new Map()
+      let totalWeightKg = 0
       lines.forEach((line) => {
+        const lineWeight = computeLineWeightKg(line)
+        totalWeightKg += lineWeight
         const key = (line.description || 'Unspecified').trim()
         if (!seen.has(key)) {
           seen.set(key, true)
           groupedRows.push([{
             content: key.toUpperCase(),
-            colSpan: 12,
+            colSpan: 13,
             styles: {
               fillColor: [227, 242, 253],
               textColor: [10, 40, 120],
@@ -739,7 +756,7 @@ const WorkshopOrderForm = () => {
           }])
         }
         groupedRows.push([
-          groupedRows.filter(r => r.length > 1).length + 1,   // running Sr No across all sizes
+          groupedRows.filter(r => r.length > 1).length + 1,
           '',
           line.serial_no || '—',
           line.act_w_in ? `${toFraction(line.act_w_in)}"` : '—',
@@ -750,6 +767,7 @@ const WorkshopOrderForm = () => {
           line.cep ? 'YES' : 'NO',
           line.process_label || '—',
           line.is_toughened ? 'YES' : 'NO',
+          lineWeight > 0 ? `${lineWeight}` : '—',
           line.remark || '—',
         ])
       })
@@ -757,7 +775,7 @@ const WorkshopOrderForm = () => {
       autoTable(doc, {
         theme: 'grid',
         startY: metaY + 28,
-        head: [['#', 'Description', 'Serial No', 'W (in)', 'H (in)', 'W (mm)', 'H (mm)', 'Qty', 'CEP', 'Process', 'Tgh', 'Remark']],
+        head: [['#', 'Description', 'Serial No', 'W (in)', 'H (in)', 'W (mm)', 'H (mm)', 'Qty', 'CEP', 'Process', 'Tgh', 'Wt (kg)', 'Remark']],
         body: groupedRows,
         styles: { fontSize: 7.5, cellPadding: 2.5, lineWidth: 0.15, lineColor: [148, 163, 184] },
         headStyles: {
@@ -770,41 +788,59 @@ const WorkshopOrderForm = () => {
         },
         alternateRowStyles: { fillColor: [248, 250, 252] },
         columnStyles: {
-          0: { cellWidth: 10, halign: 'center' },
-          1: { cellWidth: 50 },
-          2: { cellWidth: 25, halign: 'center' },
-          3: { cellWidth: 18, halign: 'center' },
-          4: { cellWidth: 18, halign: 'center' },
-          5: { cellWidth: 18, halign: 'center' },
-          6: { cellWidth: 18, halign: 'center' },
-          7: { cellWidth: 12, halign: 'center' },
-          8: { cellWidth: 12, halign: 'center' },
-          9: { cellWidth: 40 },
-          10: { cellWidth: 12, halign: 'center' },
-          11: { cellWidth: 'auto' },
+          0:  { cellWidth: 9,   halign: 'center' },
+          1:  { cellWidth: 45 },
+          2:  { cellWidth: 22,  halign: 'center' },
+          3:  { cellWidth: 17,  halign: 'center' },
+          4:  { cellWidth: 17,  halign: 'center' },
+          5:  { cellWidth: 16,  halign: 'center' },
+          6:  { cellWidth: 16,  halign: 'center' },
+          7:  { cellWidth: 10,  halign: 'center' },
+          8:  { cellWidth: 10,  halign: 'center' },
+          9:  { cellWidth: 38 },
+          10: { cellWidth: 10,  halign: 'center' },
+          11: { cellWidth: 18,  halign: 'right' },
+          12: { cellWidth: 'auto' },
         },
         didParseCell: (data) => {
           if (data.row.raw.length === 1) return
-          // CEP (col 8) & Tgh (col 10): YES → ZapfDingbats tick ✔ (green),
-          // NO → cross ✘ (light grey). Helvetica mein ✓ glyph nahi hai —
-          // wahi pehle garbled apostrophe print hota tha.
+          // CEP (col 8) & Tgh (col 10): YES → ZapfDingbats tick ✔ (green), NO → cross ✘ (light grey)
           if (data.section === 'body' && (data.column.index === 8 || data.column.index === 10)) {
             const v = data.cell.raw
             if (v === 'YES') {
-              data.cell.text = ['4']            // ZapfDingbats '4' = ✔
+              data.cell.text = ['4']
               data.cell.styles.font = 'zapfdingbats'
               data.cell.styles.textColor = [22, 163, 74]
               data.cell.styles.fontSize = 8.5
             } else if (v === 'NO') {
-              data.cell.text = ['8']            // ZapfDingbats '8' = ✘
+              data.cell.text = ['8']
               data.cell.styles.font = 'zapfdingbats'
               data.cell.styles.textColor = [203, 213, 225]
               data.cell.styles.fontSize = 8.5
             }
           }
+          // Weight column (col 11): teal + bold
+          if (data.section === 'body' && data.column.index === 11 && data.cell.raw !== '—') {
+            data.cell.styles.textColor = [15, 118, 110]
+            data.cell.styles.fontStyle = 'bold'
+          }
         },
         margin: { left: margin, right: margin },
       })
+
+      // ── TOTAL WEIGHT FOOTER ──────────────────────────────────
+      const afterTableY = doc.lastAutoTable.finalY + 5
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(9)
+      doc.setTextColor(15, 118, 110)
+      doc.text(
+        `Total Weight: ${parseFloat(totalWeightKg.toFixed(2))} kg`,
+        pageW - margin,
+        afterTableY,
+        { align: 'right' }
+      )
+      doc.setTextColor(15, 23, 42)
+
 
       // ── ARTWORK SHEETS — worker-facing, one FULL PAGE per artwork ──────
       const PANEL_COLORS = [
@@ -1621,9 +1657,37 @@ const WorkshopOrderForm = () => {
             rowExpandable: record => record.has_process,
             expandedRowKeys: expandedRowKeys,
             onExpandedRowsChange: keys => setExpandedRowKeys(keys),
-            expandIconColumnIndex: -1
+          expandIconColumnIndex: -1
           }}
         />
+
+        {/* ── Total Weight summary ─────────────────────── */}
+        {(() => {
+          const totalKg = lines.reduce((sum, l) => sum + computeLineWeightKg(l), 0)
+          return totalKg > 0 ? (
+            <div style={{
+              display: 'flex',
+              justifyContent: 'flex-end',
+              marginBottom: 12,
+              marginTop: -6,
+            }}>
+              <div style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                background: '#f0fdfa',
+                border: '1px solid #99f6e4',
+                borderRadius: 8,
+                padding: '6px 14px',
+              }}>
+                <span style={{ fontSize: 13, color: '#475569' }}>Total Weight:</span>
+                <span style={{ fontSize: 15, fontWeight: 700, color: '#0f766e' }}>
+                  {parseFloat(totalKg.toFixed(2))} kg
+                </span>
+              </div>
+            </div>
+          ) : null
+        })()}
 
         {/* ── Artwork Panel Mapper ────────────────────────── */}
         <Card

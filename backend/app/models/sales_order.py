@@ -32,6 +32,7 @@ class SalesOrder(Base, TimestampMixin, SoftDeleteMixin):
     total_amount     = Column(Float,       default=0)
     notes            = Column(Text,        nullable=True)
     gst_mode         = Column(String(20), default='cgst_sgst')
+    process_rate_card = Column(JSON, nullable=True, default=list)
     dc_charges       = Column(Float, default=0)
     discount_amount  = Column(Float, default=0)
     advance_received = Column(Float, default=0)

@@ -162,3 +162,39 @@ export const calcQuotationTotals = (lines, processCharges, dcCharge, discount, i
     grand_total,
   }
 }
+
+// ── GLASS WEIGHT HELPERS ──────────────────────────────────────
+/**
+ * Extract thickness in mm from a description string.
+ * Matches "12mm", "12 mm", "12MM" etc.; falls back to the first bare number.
+ * Returns 0 if nothing matches.
+ */
+export const parseThickness = (description) => {
+  if (!description) return 0
+  const mmMatch = String(description).match(/(\d+(?:\.\d+)?)\s*mm/i)
+  if (mmMatch) return parseFloat(mmMatch[1])
+  const numMatch = String(description).match(/(\d+(?:\.\d+)?)/)
+  if (numMatch) return parseFloat(numMatch[1])
+  return 0
+}
+
+/**
+ * Compute glass weight in kg from actual (not charged) dimensions.
+ * Formula (density 2.5 g/cm³):
+ *   weight_kg = (act_w_in × act_h_in / 144) × qty × 0.092903 × thickness_mm × 2.5
+ *
+ * Prefers line.glass_thickness (numeric) over parseThickness(description).
+ * Returns 0 when dimensions or thickness are absent.
+ */
+export const computeLineWeightKg = (line) => {
+  const wIn = line.act_w_in || 0
+  const hIn = line.act_h_in || 0
+  const qty = line.qty || line.quantity || 1
+  if (!wIn || !hIn) return 0
+  const areaSqft = (wIn * hIn / 144) * qty
+  const mm = (line.glass_thickness && parseFloat(line.glass_thickness) > 0)
+    ? parseFloat(line.glass_thickness)
+    : parseThickness(line.description)
+  if (!mm) return 0
+  return parseFloat((areaSqft * 0.092903 * mm * 2.5).toFixed(2))
+}

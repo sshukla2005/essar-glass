@@ -27,6 +27,7 @@ import NotesCard from '../quotations/components/NotesCard'
 import StickySummary from '../quotations/components/StickySummary'
 import CostAnalysisCard from '../quotations/components/CostAnalysisCard'
 import FractionInput, { toFraction } from '../quotations/components/FractionInput'
+import ProcessRateCardSection from '../quotations/components/ProcessRateCardSection'
 
 const getUomRates = (uom) => {
   try {
@@ -138,6 +139,7 @@ const SalesOrderForm = () => {
   const [laborItems, setLaborItems] = useState([])
   const [wastageItems, setWastageItems] = useState([])
   const [gstMode, setGstMode] = useState('cgst_sgst')
+  const [processRateCard, setProcessRateCard] = useState([]) // per-SO rate card
   const [compWizard, setCompWizard] = useState(null)
   const [wizardCostPrice, setWizardCostPrice] = useState(null)
   const [globalComparison, setGlobalComparison] = useState(null)
@@ -625,9 +627,34 @@ const SalesOrderForm = () => {
                   .find(x => x.id === value)
                 if (pm) {
                   updated.charge_type = pm.charge_type
-                  updated.rate = pm.rate
                   updated.qty_area = 0
                   updated.amount = 0
+
+                  // ── Rate Card integration ──────────────────────────────
+                  setProcessRateCard(prevCard => {
+                    const cardEntry = prevCard.find(r => r.process_id === value)
+                    if (cardEntry) {
+                      updated.rate = cardEntry.selling_rate ?? pm.rate
+                      updated.cost_rate = cardEntry.cost_rate ?? (pm.cost_rate || parseFloat((pm.rate * 0.70).toFixed(2)))
+                    } else {
+                      updated.rate = pm.rate
+                      updated.cost_rate = (typeof pm.cost_rate === 'number' && pm.cost_rate >= 0)
+                        ? pm.cost_rate
+                        : parseFloat((pm.rate * 0.70).toFixed(2))
+                      return [
+                        ...prevCard,
+                        {
+                          prc_key: `prc_${Date.now()}_${Math.random()}`,
+                          process_id: value,
+                          process_name: pm.name || '',
+                          selling_rate: updated.rate,
+                          cost_rate: updated.cost_rate,
+                        },
+                      ]
+                    }
+                    return prevCard
+                  })
+                  // ─────────────────────────────────────────────────────
                 }
               }
               if (field === 'qty_area' || field === 'rate' || field === 'cost_rate') {
@@ -644,6 +671,64 @@ const SalesOrderForm = () => {
         })
       }
     }))
+  }
+
+  // ── Process Rate Card handlers ────────────────────────────────────────
+  const updateRateCard = (prc_key, field, value) => {
+    setProcessRateCard(prev => prev.map(r => {
+      if (r.prc_key !== prc_key) return r
+      if (field === '__process_select__') {
+        return { ...r, process_id: value.process_id, process_name: value.process_name }
+      }
+      return { ...r, [field]: value }
+    }))
+
+    if (field === 'selling_rate' || field === 'cost_rate') {
+      setProcessRateCard(prevCard => {
+        const entry = prevCard.find(r => r.prc_key === prc_key)
+        if (!entry?.process_id) return prevCard
+        const pid = entry.process_id
+        const newSell = field === 'selling_rate' ? (value ?? 0) : entry.selling_rate
+        const newCost = field === 'cost_rate' ? (value ?? 0) : entry.cost_rate
+
+        setGroups(prevGroups => prevGroups.map(g => ({
+          ...g,
+          sizes: g.sizes.map(s => ({
+            ...s,
+            size_processes: (s.size_processes || []).map(sp => {
+              if (sp.process_id !== pid) return sp
+              const updatedRate = field === 'selling_rate' ? newSell : sp.rate
+              const updatedCost = field === 'cost_rate' ? newCost : sp.cost_rate
+              return {
+                ...sp,
+                rate: updatedRate,
+                cost_rate: updatedCost,
+                amount: parseFloat(((sp.qty_area || 0) * updatedRate).toFixed(2)),
+                cost_amount: parseFloat(((sp.qty_area || 0) * updatedCost).toFixed(2)),
+              }
+            }),
+          })),
+        })))
+        return prevCard
+      })
+    }
+  }
+
+  const addRateCardRow = () => {
+    setProcessRateCard(prev => [
+      ...prev,
+      {
+        prc_key: `prc_${Date.now()}_${Math.random()}`,
+        process_id: null,
+        process_name: '',
+        selling_rate: 0,
+        cost_rate: 0,
+      },
+    ])
+  }
+
+  const removeRateCardRow = (prc_key) => {
+    setProcessRateCard(prev => prev.filter(r => r.prc_key !== prc_key))
   }
 
   const updateGroupProcess = (gkey, pkey, field, value) => {
@@ -959,6 +1044,7 @@ const SalesOrderForm = () => {
         })))
       }
       setGstMode(record.gst_mode || (record.is_inter_state ? 'igst' : 'cgst_sgst'))
+      if (record.process_rate_card?.length) setProcessRateCard(record.process_rate_card)
       setTimeout(() => { hydratedRef.current = true }, 0)
     }
   }, [record, form])
@@ -1427,6 +1513,7 @@ const SalesOrderForm = () => {
       values.subtotal = totals.subIII
       values.tax_amount = totals.cgst + totals.sgst + totals.igst
       values.total_amount = totals.grandTotal
+      values.process_rate_card = processRateCard
 
       if (!values.crm_lead_id && record?.crm_lead_id) {
         values.crm_lead_id = record.crm_lead_id
@@ -1495,6 +1582,9 @@ const SalesOrderForm = () => {
           wst_key: w.wst_key || Date.now() + Math.random() + i,
           ...w
         })))
+      }
+      if (quotation.process_rate_card?.length) {
+        setProcessRateCard(quotation.process_rate_card)
       }
       if (quotation.customer_notes) {
         form.setFieldValue('notes', quotation.customer_notes)
@@ -1964,6 +2054,13 @@ const SalesOrderForm = () => {
             </div>
 
             {/* Notes Card */}
+            <ProcessRateCardSection
+              processRateCard={processRateCard}
+              updateRateCard={updateRateCard}
+              addRateCardRow={addRateCardRow}
+              removeRateCardRow={removeRateCardRow}
+              processMasters={processMasters}
+            />
             <NotesCard />
 
             {/* Cost Analysis Card */}

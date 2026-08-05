@@ -27,6 +27,7 @@ import WastageCard from './components/WastageCard'
 import StickySummary from './components/StickySummary'
 import NotesCard from './components/NotesCard'
 import CostAnalysisCard from './components/CostAnalysisCard'
+import ProcessRateCardSection from './components/ProcessRateCardSection'
 
 const getUomRates = (uom) => {
   try {
@@ -282,6 +283,7 @@ const QuotationForm = () => {
   const [hardwareItems, setHardwareItems] = useState([])
   const [laborItems, setLaborItems] = useState([])
   const [wastageItems, setWastageItems] = useState([])
+  const [processRateCard, setProcessRateCard] = useState([]) // per-quotation rate card
 
   const emptyHardware = () => ({
     hw_key: Date.now() + Math.random(),
@@ -531,6 +533,7 @@ const QuotationForm = () => {
       if (record.hardware_items) setHardwareItems(record.hardware_items)
       if (record.labor_items) setLaborItems(record.labor_items)
       if (record.wastage_items) setWastageItems(record.wastage_items)
+      if (record.process_rate_card?.length) setProcessRateCard(record.process_rate_card)
     }
     // Defer enabling dirty tracking until the next tick so that all the
     // setState calls above have flushed and won't trigger the watcher.
@@ -858,9 +861,37 @@ const QuotationForm = () => {
                   .find(x => x.id === value)
                 if (pm) {
                   updated.charge_type = pm.charge_type
-                  updated.rate = pm.rate
                   updated.qty_area = 0
                   updated.amount = 0
+
+                  // ── Rate Card integration ──────────────────────────────
+                  // Check if this process is in the rate card
+                  setProcessRateCard(prevCard => {
+                    const cardEntry = prevCard.find(r => r.process_id === value)
+                    if (cardEntry) {
+                      // Apply card rates to this process row
+                      updated.rate = cardEntry.selling_rate ?? pm.rate
+                      updated.cost_rate = cardEntry.cost_rate ?? (pm.cost_rate || parseFloat((pm.rate * 0.70).toFixed(2)))
+                    } else {
+                      // Seed a new card entry with master rates
+                      updated.rate = pm.rate
+                      updated.cost_rate = (typeof pm.cost_rate === 'number' && pm.cost_rate >= 0)
+                        ? pm.cost_rate
+                        : parseFloat((pm.rate * 0.70).toFixed(2))
+                      return [
+                        ...prevCard,
+                        {
+                          prc_key: `prc_${Date.now()}_${Math.random()}`,
+                          process_id: value,
+                          process_name: pm.name || '',
+                          selling_rate: updated.rate,
+                          cost_rate: updated.cost_rate,
+                        },
+                      ]
+                    }
+                    return prevCard
+                  })
+                  // ─────────────────────────────────────────────────────
                 }
               }
               if (field === 'qty_area' || field === 'rate' || field === 'cost_rate') {
@@ -877,6 +908,72 @@ const QuotationForm = () => {
         })
       }
     }))
+  }
+
+  // ── Process Rate Card handlers ────────────────────────────────────────
+  /**
+   * Update a rate card entry and propagate the new rate to every matching
+   * size-specific process row across all groups.
+   */
+  const updateRateCard = (prc_key, field, value) => {
+    setProcessRateCard(prev => prev.map(r => {
+      if (r.prc_key !== prc_key) return r
+      // Special case: user selected a process from the manual-add select
+      if (field === '__process_select__') {
+        return { ...r, process_id: value.process_id, process_name: value.process_name }
+      }
+      return { ...r, [field]: value }
+    }))
+
+    // Propagate selling_rate / cost_rate to all matching size processes
+    if (field === 'selling_rate' || field === 'cost_rate') {
+      setProcessRateCard(prevCard => {
+        const entry = prevCard.find(r => r.prc_key === prc_key)
+        if (!entry?.process_id) return prevCard
+        const pid = entry.process_id
+        const newSell = field === 'selling_rate' ? (value ?? 0) : entry.selling_rate
+        const newCost = field === 'cost_rate' ? (value ?? 0) : entry.cost_rate
+
+        setGroups(prevGroups => prevGroups.map(g => ({
+          ...g,
+          sizes: g.sizes.map(s => ({
+            ...s,
+            size_processes: (s.size_processes || []).map(sp => {
+              if (sp.process_id !== pid) return sp
+              const updatedRate = field === 'selling_rate' ? newSell : sp.rate
+              const updatedCost = field === 'cost_rate' ? newCost : sp.cost_rate
+              return {
+                ...sp,
+                rate: updatedRate,
+                cost_rate: updatedCost,
+                amount: parseFloat(((sp.qty_area || 0) * updatedRate).toFixed(2)),
+                cost_amount: parseFloat(((sp.qty_area || 0) * updatedCost).toFixed(2)),
+              }
+            }),
+          })),
+        })))
+        return prevCard
+      })
+    }
+  }
+
+  /** Add a blank (no process selected yet) row to the rate card. */
+  const addRateCardRow = () => {
+    setProcessRateCard(prev => [
+      ...prev,
+      {
+        prc_key: `prc_${Date.now()}_${Math.random()}`,
+        process_id: null,
+        process_name: '',
+        selling_rate: 0,
+        cost_rate: 0,
+      },
+    ])
+  }
+
+  /** Remove a rate card row. Does NOT clear per-line rates (they keep their values). */
+  const removeRateCardRow = (prc_key) => {
+    setProcessRateCard(prev => prev.filter(r => r.prc_key !== prc_key))
   }
 
 
@@ -1125,6 +1222,7 @@ const QuotationForm = () => {
         hardware_items: hardwareItems,
         labor_items: laborItems,
         wastage_items: wastageItems,
+        process_rate_card: processRateCard,
         dc_cost: form.getFieldValue('dc_cost') || 0,
         totals: totals,
         quotation_id: parseInt(id),
@@ -1223,6 +1321,7 @@ const QuotationForm = () => {
       values.balance_due = totals.balance
       values.groups = groups
       values.totals = totals
+      values.process_rate_card = processRateCard
 
       const leadIdFromUrl = searchParams.get('lead_id')
       const existingLeadId = record?.crm_lead_id || record?.crm_lead?.id
@@ -2015,6 +2114,15 @@ const QuotationForm = () => {
                 cardStyle={cardStyle}
               />
             )}
+
+            {/* ── Section 5.5: Process Rate Card ── */}
+            <ProcessRateCardSection
+              processRateCard={processRateCard}
+              updateRateCard={updateRateCard}
+              addRateCardRow={addRateCardRow}
+              removeRateCardRow={removeRateCardRow}
+              processMasters={processMasters}
+            />
 
             {/* ── Section 6: Notes ── */}
             <NotesCard />

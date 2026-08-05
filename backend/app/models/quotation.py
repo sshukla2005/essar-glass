@@ -44,5 +44,6 @@ class Quotation(Base, TimestampMixin, SoftDeleteMixin):
     dc_cost          = Column(Float, default=0)
     totals           = Column(JSON, nullable=True)
     gst_mode         = Column(String(20), default='cgst_sgst')
+    process_rate_card = Column(JSON, nullable=True, default=list)
     company_id       = Column(Integer, ForeignKey("companies.id"),
                               nullable=True, index=True)
