@@ -14,6 +14,7 @@ import dayjs from 'dayjs'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { workshopOrderApi, tougheningBatchApi, vendorApi } from '../../api'
+import { makePdfFilename } from '../../utils/pdfGenerator'
 
 const { Search } = Input
 const { Title, Text } = Typography
@@ -303,7 +304,7 @@ const WorkshopOrderList = () => {
         doc.text(`Page ${p} of ${pageCount}`, pageW - margin, footY, { align: 'right' })
       }
 
-      doc.save(`ToughChallan_${challanNo}.pdf`)
+      doc.save(makePdfFilename(challanNo, vendor, 'Vendor'))
       message.success('PDF downloaded!')
     } catch (err) {
       console.error('PDF error:', err)

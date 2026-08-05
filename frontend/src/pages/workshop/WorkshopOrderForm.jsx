@@ -18,6 +18,7 @@ import { saveAs } from 'file-saver'
 import FractionInput, { toFraction } from '../quotations/components/FractionInput'
 import InterCompanyBanner from '../../components/common/InterCompanyBanner'
 import { computeLineWeightKg } from '../../utils/glassCalc'
+import { makePdfFilename } from '../../utils/pdfGenerator'
 
 const { TextArea } = Input
 const { Text } = Typography
@@ -1067,7 +1068,8 @@ const WorkshopOrderForm = () => {
         doc.text(`Page ${p} of ${pageCount}`, pageW - margin, footerY, { align: 'right' })
       }
 
-      doc.save(`${record?.wo_number || 'WorkshopOrder'}_${dayjs().format('YYYYMMDD')}.pdf`)
+      const custName = record?.customer_name || record?.customer?.name || customerList.find(c => c.id === record?.customer_id)?.name || 'Customer'
+      doc.save(makePdfFilename(record?.wo_number || 'WO', custName, 'Customer'))
     } catch (err) {
       console.error('PDF generation error:', err)
       message.error('PDF generation failed: ' + (err?.message || 'Unknown error'))

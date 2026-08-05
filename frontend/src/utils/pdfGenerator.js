@@ -10,13 +10,13 @@ import guardianPng   from '../assets/brands/guardian.png'
 import saintGobainPng from '../assets/brands/saint_gobain.png'
 
 const BRAND_LOGOS = [
-  { src: asahiPng,      label: 'Asahi' },
-  { src: goldPlusPng,   label: 'Gold Plus' },
-  { src: guardianPng,   label: 'Guardian' },
-  { src: saintGobainPng, label: 'Saint-Gobain' },
+  { src: asahiPng,      label: 'Asahi',       alias: 'brand_asahi' },
+  { src: goldPlusPng,   label: 'Gold Plus',   alias: 'brand_gold_plus' },
+  { src: guardianPng,   label: 'Guardian',    alias: 'brand_guardian' },
+  { src: saintGobainPng, label: 'Saint-Gobain', alias: 'brand_saint_gobain' },
 ]
 
-// Cache: src → { dataUrl, w, h }
+// Cache: src → { dataUrl, w, h, alias, format }
 const _brandCache = {}
 
 const loadBrandLogo = (entry) => {
@@ -25,13 +25,25 @@ const loadBrandLogo = (entry) => {
     const img = new Image()
     img.onload = () => {
       try {
+        const origW = img.naturalWidth || img.width || 300
+        const origH = img.naturalHeight || img.height || 300
+        const MAX = 300
+        const scale = Math.min(1, MAX / Math.max(origW, origH))
         const canvas = document.createElement('canvas')
-        canvas.width  = img.naturalWidth  || img.width  || 200
-        canvas.height = img.naturalHeight || img.height || 200
+        canvas.width = Math.round(origW * scale)
+        canvas.height = Math.round(origH * scale)
         const ctx = canvas.getContext('2d')
-        ctx.drawImage(img, 0, 0)
-        const dataUrl = canvas.toDataURL('image/png')
-        const result = { dataUrl, w: canvas.width, h: canvas.height }
+        ctx.fillStyle = '#FFFFFF'
+        ctx.fillRect(0, 0, canvas.width, canvas.height)
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.8)
+        const result = {
+          dataUrl,
+          w: canvas.width,
+          h: canvas.height,
+          alias: entry.alias,
+          format: 'JPEG'
+        }
         _brandCache[entry.src] = result
         resolve(result)
       } catch {
@@ -45,6 +57,14 @@ const loadBrandLogo = (entry) => {
 
 export const preloadBrandLogos = () =>
   Promise.all(BRAND_LOGOS.map(loadBrandLogo))
+
+export const makePdfFilename = (docNumber, name, fallback = 'Customer') => {
+  const num = docNumber || 'DOC'
+  const safeName = String(name || fallback)
+    .replace(/[^a-zA-Z0-9]+/g, '_')
+    .replace(/^_|_$/g, '') || fallback
+  return `${num}_${safeName}.pdf`
+}
 
 // ── Date formatter ──────────────────────
 const formatDate = (d) => {
@@ -222,14 +242,45 @@ const preloadImage = (src) => {
   })
 }
 
+const processImageToJpeg = (img) => {
+  if (!img) return null
+  try {
+    const origW = img.naturalWidth || img.width || 300
+    const origH = img.naturalHeight || img.height || 300
+    const MAX = 300
+    const scale = Math.min(1, MAX / Math.max(origW, origH))
+    const w = Math.round(origW * scale)
+    const h = Math.round(origH * scale)
+    const canvas = document.createElement('canvas')
+    canvas.width = w
+    canvas.height = h
+    const ctx = canvas.getContext('2d')
+    ctx.fillStyle = '#FFFFFF'
+    ctx.fillRect(0, 0, w, h)
+    ctx.drawImage(img, 0, 0, w, h)
+    return {
+      dataUrl: canvas.toDataURL('image/jpeg', 0.8),
+      w,
+      h,
+      format: 'JPEG'
+    }
+  } catch {
+    return null
+  }
+}
+
 const preloadCompanyLogos = async (company) => {
   if (!company) return company
   const logoImg = await preloadImage(company.logo)
   const secLogoImg = await preloadImage(company.secondary_logo)
+  const logoProcessed = processImageToJpeg(logoImg)
+  const secLogoProcessed = processImageToJpeg(secLogoImg)
   return {
     ...company,
     _logoImg: logoImg,
-    _secLogoImg: secLogoImg
+    _secLogoImg: secLogoImg,
+    _logoProcessed: logoProcessed,
+    _secLogoProcessed: secLogoProcessed
   }
 }
 
@@ -447,7 +498,24 @@ const drawHeader = (doc, company, docTitle) => {
   const maxLogoW = 34
   const maxLogoH = boxH - 4
   let primaryDrawSuccess = false
-  if (company.logo) {
+  let logoObj = company._logoProcessed
+  if (!logoObj && company._logoImg) {
+    logoObj = processImageToJpeg(company._logoImg)
+    company._logoProcessed = logoObj
+  }
+
+  if (logoObj) {
+    try {
+      const dims = fitImage(logoObj.w, logoObj.h, maxLogoW, maxLogoH)
+      const xImg = 10 + (40 - dims.w) / 2
+      const yImg = yStart + (boxH - dims.h) / 2
+      const alias = company.id ? `company_logo_${company.id}` : 'company_logo'
+      doc.addImage(logoObj.dataUrl, 'JPEG', xImg, yImg, dims.w, dims.h, alias)
+      primaryDrawSuccess = true
+    } catch (err) {
+      console.error('Failed to draw processed primary logo:', err)
+    }
+  } else if (company.logo) {
     try {
       let imgW = 150
       let imgH = 150
@@ -459,7 +527,8 @@ const drawHeader = (doc, company, docTitle) => {
       const xImg = 10 + (40 - dims.w) / 2
       const yImg = yStart + (boxH - dims.h) / 2
       const format = getFormat(company.logo)
-      doc.addImage(company.logo, format, xImg, yImg, dims.w, dims.h)
+      const alias = company.id ? `company_logo_${company.id}` : 'company_logo'
+      doc.addImage(company.logo, format, xImg, yImg, dims.w, dims.h, alias)
       primaryDrawSuccess = true
     } catch (err) {
       console.error('Failed to draw primary logo:', err)
@@ -518,7 +587,8 @@ const drawHeader = (doc, company, docTitle) => {
         const dims = fitImage(logo.w, logo.h, availW, availH)
         const xImg = cellX + innerPad + (availW - dims.w) / 2
         const yImg = cellY + innerPad + (availH - dims.h) / 2
-        doc.addImage(logo.dataUrl, 'PNG', xImg, yImg, dims.w, dims.h)
+        const alias = logo.alias || `brand_logo_${idx}`
+        doc.addImage(logo.dataUrl, logo.format || 'JPEG', xImg, yImg, dims.w, dims.h, alias)
       } catch (err) {
         console.error('Failed to draw brand logo', idx, err)
       }
@@ -2023,7 +2093,7 @@ export const generateQuotationPDF = async (quotation) => {
             windowWidth: 794,
           })
 
-          const imgData = canvas.toDataURL('image/jpeg', 0.92)
+          const imgData = canvas.toDataURL('image/jpeg', 0.85)
           const imgW = pdfW
           const imgH = (canvas.height * pdfW) / canvas.width
 
@@ -2031,13 +2101,15 @@ export const generateQuotationPDF = async (quotation) => {
           
           let heightLeft = imgH
           let position = 0
-          doc.addImage(imgData, 'JPEG', 0, position, imgW, imgH)
+          const artworkAlias = `artwork_group_${gi}`
+          doc.addImage(imgData, 'JPEG', 0, position, imgW, imgH, artworkAlias)
           heightLeft -= pdfH
 
           while (heightLeft > 0) {
             position = heightLeft - imgH
             doc.addPage()
-            doc.addImage(imgData, 'JPEG', 0, position, imgW, imgH)
+            doc.addImage(imgData, 'JPEG', 0, position, imgW, imgH, artworkAlias)
+
             heightLeft -= pdfH
           }
         } finally {
@@ -2046,7 +2118,7 @@ export const generateQuotationPDF = async (quotation) => {
       }
     }
 
-    doc.save(`${quotation.quote_number || 'QT'}_Essar.pdf`)
+    doc.save(makePdfFilename(quotation.quote_number || 'QT', cust.name, 'Customer'))
   } catch (e) {
     console.error('PDF error:', e)
     alert('PDF failed: ' + e.message)
@@ -2371,7 +2443,7 @@ export const generateSOPDF = async (so) => {
     drawDocumentFooterSection(doc, company, y, pageNum, so)
 
     addFootersAndPageNumbers(doc, so.so_number || 'SO')
-    doc.save(`${so.so_number || 'SO'}_Essar.pdf`)
+    doc.save(makePdfFilename(so.so_number || 'SO', cust.name, 'Customer'))
   } catch (e) {
     console.error('SO PDF:', e)
     alert('SO PDF failed: ' + e.message)
@@ -2494,7 +2566,7 @@ export const generatePOPDF = async (po) => {
     drawTerms(doc, y)
 
     addFootersAndPageNumbers(doc, po.po_number || 'PO')
-    doc.save(`${po.po_number || 'PO'}_Essar.pdf`)
+    doc.save(makePdfFilename(po.po_number || 'PO', vend.name, 'Vendor'))
   } catch (e) {
     console.error('PO PDF:', e)
     alert('PO PDF failed: ' + e.message)
@@ -2769,7 +2841,7 @@ export const generateTougheningChallanPDF = async (batch) => {
   setFont(doc, 8, 'normal', [71, 85, 105])
   drawText(doc, "Authorised Signatory", sigLineX1 + sigLineW / 2, sigLineY + 4.5, { align: 'center' })
 
-  const fileName = `${batch.tb_number || 'TB'}_JobWorkChallan.pdf`
+  const fileName = makePdfFilename(batch.tb_number || 'TB', vendorName, 'Vendor')
   doc.save(fileName)
   return doc
 }
@@ -3078,7 +3150,7 @@ export const generateDeliveryChallanPDF = async (dc) => {
     // 10. Page footers pass
     addFootersAndPageNumbers(doc, dc.dc_number || 'DC')
 
-    const fileName = `${dc.dc_number || 'DC'}_${company.short_name || 'Challan'}.pdf`
+    const fileName = makePdfFilename(dc.dc_number || 'DC', cust.name, 'Customer')
     doc.save(fileName)
     return doc
   } catch (err) {
