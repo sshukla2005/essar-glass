@@ -906,14 +906,13 @@ const GlassCard = ({
                 {group.cep && (
                   <Select 
                     size="small" 
-                    value={group.cep_polish_rate || 15} 
+                    value={group.cep_polish_rate === 'custom_mm' ? 'custom' : (group.cep_polish_rate || 15)} 
                     style={{ width: 132 }} 
                     options={[
                       { value: 7,  label: '₹7/rft' }, 
                       { value: 10, label: '₹10/rft' }, 
                       { value: 15, label: '₹15/rft' }, 
                       { value: 'custom', label: 'Custom ₹/rft' },
-                      { value: 'custom_mm', label: 'Custom ₹/mm' },
                     ]} 
                     onChange={val => updateGroup(group.group_key, 'cep_polish_rate', val)} 
                   />
@@ -926,12 +925,12 @@ const GlassCard = ({
                       placeholder="0"
                       min={0} 
                       prefix="₹" 
-                      addonAfter={group.cep_polish_rate === 'custom_mm' ? '/mm' : '/rft'}
+                      addonAfter="/rft"
                       style={{ width: 120, borderRadius: 6 }} 
                       onChange={val => updateGroup(group.group_key, 'cep_polish_rate_custom', val)} 
                     />
                     <Text style={{ fontSize: 9, color: '#94a3b8', lineHeight: '11px' }}>
-                      {group.cep_polish_rate === 'custom_mm' ? 'per mm perimeter' : 'per running foot'}
+                      per running foot
                     </Text>
                   </div>
                 )}
@@ -1044,98 +1043,7 @@ const GlassCard = ({
             />
           </div>
 
-          {/* Group Processes Panel */}
-          <div style={{ 
-            marginTop: 12, 
-            padding: '14px 18px', 
-            background: '#FAF8FF', 
-            borderRadius: 12, 
-            border: '1px dashed #C084FC' 
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: (group.processes || []).length > 0 ? 10 : 0 }}>
-              <Text strong style={{ fontSize: 13, color: '#7c3aed', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <SettingOutlined /> Group Process Charges (Hole, Cutout, etc.)
-              </Text>
-              {(group.processes || []).length > 0 && (
-                <Text type="secondary" style={{ fontSize: 12, fontWeight: 600 }}>
-                  Total: <Text style={{ color: '#7c3aed' }}>₹{(group.processes || []).reduce((s, p) => s + (p.amount || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Text>
-                </Text>
-              )}
-            </div>
-            {(group.processes || []).map((proc, pi) => (
-              <Row key={proc.proc_key} gutter={8} align="middle" style={{ marginBottom: 6 }}>
-                <Col span={6}>
-                  <Select 
-                    size="small" 
-                    placeholder="Select process" 
-                    value={proc.process_id} 
-                    style={{ width: '100%', borderRadius: 6 }}
-                    options={processMasters.filter(p => ['hole','cutout','farma','beveling'].includes(p.process_type)).map(p => ({ value: p.id, label: p.name }))}
-                    onChange={val => updateGroupProcess(group.group_key, proc.proc_key, 'process_id', val)} 
-                  />
-                </Col>
-                <Col span={3}>
-                  <InputNumber 
-                    size="small" 
-                    value={proc.qty_area} 
-                    min={0} 
-                    style={{ width: '100%', borderRadius: 6 }} 
-                    placeholder="Qty/Area" 
-                    onChange={val => updateGroupProcess(group.group_key, proc.proc_key, 'qty_area', val)} 
-                  />
-                </Col>
-                <Col span={2}>
-                  <Text type="secondary" style={{ fontSize: 11, textTransform: 'uppercase' }}>
-                    {proc.charge_type === 'per_sqft' ? 'sqft' : proc.charge_type === 'per_rft' ? 'rft' : proc.charge_type === 'per_sqmt' ? 'sqmt' : proc.charge_type === 'per_piece' ? 'pcs' : 'fixed'}
-                  </Text>
-                </Col>
-                <Col span={4}>
-                  <InputNumber 
-                    size="small" 
-                    value={proc.rate} 
-                    min={0} 
-                    prefix="₹" 
-                    style={{ width: '100%', borderRadius: 6 }} 
-                    onChange={val => updateGroupProcess(group.group_key, proc.proc_key, 'rate', val)} 
-                  />
-                </Col>
-                <Col span={4}>
-                  <InputNumber 
-                    size="small" 
-                    value={proc.cost_rate ?? parseFloat(((proc.rate || 0) * 0.70).toFixed(2))} 
-                    min={0} 
-                    prefix="₹" 
-                    placeholder="Cost" 
-                    style={{ width: '100%', borderRadius: 6, borderColor: '#f59e0b' }} 
-                    onChange={val => updateGroupProcess(group.group_key, proc.proc_key, 'cost_rate', val)} 
-                  />
-                </Col>
-                <Col span={3}>
-                  <Text strong style={{ color: '#7c3aed', fontSize: 13 }}>
-                    ₹{(proc.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                  </Text>
-                </Col>
-                <Col span={2} style={{ textAlign: 'right' }}>
-                  <Button 
-                    size="small" 
-                    type="text" 
-                    danger 
-                    icon={<DeleteOutlined />} 
-                    onClick={() => removeGroupProcess(group.group_key, proc.proc_key)} 
-                  />
-                </Col>
-              </Row>
-            ))}
-            <Button 
-              type="dashed" 
-              size="small" 
-              icon={<PlusOutlined />} 
-              onClick={() => addGroupProcess(group.group_key)} 
-              style={{ marginTop: 4, fontSize: 12, borderRadius: 6, borderColor: '#7c3aed', color: '#7c3aed' }}
-            >
-              Add Process
-            </Button>
-          </div>
+
         </div>
       </Collapse.Panel>
     </Collapse>

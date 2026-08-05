@@ -937,11 +937,10 @@ const QuotationForm = () => {
 
   const totals = useMemo(() => {
     const allSizes = groups.flatMap(g => g.sizes)
-    const allGroupProcesses = groups.flatMap(g => g.processes || [])
     const allSizeProcesses = groups.flatMap(g =>
       g.sizes.flatMap(s => s.size_processes || [])
     )
-    const allProcesses = [...allGroupProcesses, ...allSizeProcesses]
+    const allProcesses = [...allSizeProcesses]
 
     const subI = allSizes.reduce((s, l) => s + (l.subtotal || 0), 0)
     const procTotal = allProcesses.reduce((s, p) => s + (p.amount || 0), 0)
@@ -975,10 +974,6 @@ const QuotationForm = () => {
     groups.forEach(g => {
       g.sizes.forEach(s => {
         glassCost += s.cost_amount || 0
-      })
-      ;(g.processes || []).forEach(p => {
-        const procCostRate = p.cost_rate ?? (p.rate * 0.70)
-        glassCost += (p.qty_area || 0) * procCostRate
       })
     })
 
@@ -1358,12 +1353,9 @@ const QuotationForm = () => {
     const totalCepCost = rows.reduce((s, r) => s + (r.cep_cost || 0), 0)
     const totalSizeProcCost = rows.reduce((s, r) => s + (r.proc_cost || 0), 0)
 
-    // Group-level processes — use the editable cost_rate; 70% of selling only as fallback
-    const procSelling = (group.processes || []).reduce((s, p) => s + (p.amount || 0), 0)
-    const groupProcCost = parseFloat(((group.processes || []).reduce((s, p) => {
-      const cr = p.cost_rate ?? ((p.rate || 0) * 0.70)
-      return s + (p.qty_area || 0) * cr
-    }, 0)).toFixed(2))
+    // Group-level processes removed from UI — treat as zero
+    const procSelling = 0
+    const groupProcCost = 0
 
     // Size-level processes selling amount
     const sizeProcSelling = (group.sizes || [])
@@ -1616,18 +1608,11 @@ const QuotationForm = () => {
     const lbCost = laborItems.reduce((s, l) => s + (l.cost_amount || (l.qty || 0) * (l.cost_rate || 0)), 0)
     const wstSell = wastageItems.reduce((s, w) => s + (w.amount || 0), 0)
     const wstCost = wastageItems.reduce((s, w) => s + (w.cost_amount || (w.qty || 0) * (w.cost_rate || 0)), 0)
-    // Process SELLING — group + size processes. These rows are displayed in the
-    // breakdown and their COSTS are already in totals, but their selling was
-    // never added to the Grand Total (bug: GT showed 19,460 instead of 20,690).
+    // Group processes removed from UI — treat selling and cost as zero
     const procSellTotal = groups.reduce((s, g) =>
-      s + (g.processes || []).reduce((ss, p) => ss + (p.amount || 0), 0)
-      + g.sizes.reduce((ss, sz) =>
+      s + g.sizes.reduce((ss, sz) =>
         ss + (sz.size_processes || []).reduce((sss, sp) => sss + (sp.amount || 0), 0), 0), 0)
-    // Group process COST (est @70% when no cost_rate) — displayed as rows but
-    // was missing from grand total cost (glassProcTotal covers size procs only)
-    const groupProcCost = groups.reduce((s, g) =>
-      s + (g.processes || []).reduce((ss, p) =>
-        ss + (p.qty_area || 0) * (p.cost_rate ?? ((p.rate || 0) * 0.70)), 0), 0)
+    const groupProcCost = 0
     const dcSell = parseFloat(dcCharges || 0)
     const subBeforeGst = glassSellingTotal + procSellTotal + hwSell + lbSell + wstSell + dcSell
     let gstAmt = 0
@@ -2618,22 +2603,8 @@ const QuotationForm = () => {
                     )
                   }
 
-                  // Group processes — no cost_rate field, use 70% estimate
-                  const groupProcesses = (group.processes || [])
                   // Size processes — use actual cost_amount (cost_rate × qty_area)
                   const sizeProcesses = (group.sizes?.flatMap(s => s.size_processes || []) || [])
-
-                  groupProcesses.forEach((p, pi) => {
-                    if (p.amount > 0) {
-                      rows.push(
-                        <div key={`proc-${gi}-${pi}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4, fontSize: 11, color: '#6366f1', paddingLeft: 20, borderLeft: '2px solid #e9d5ff', marginLeft: 8 }}>
-                          <span style={{ flex: 1 }}>└ {p.process_name || p.name || 'Process'} <span style={{ color: '#9ca3af', fontSize: 10 }}>(est. @70%)</span></span>
-                          <span style={{ minWidth: 90, textAlign: 'right' }}>₹{Number(p.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-                          <span style={{ minWidth: 90, textAlign: 'right' }}>₹{Number(p.amount * 0.70).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-                        </div>
-                      )
-                    }
-                  })
 
                   sizeProcesses.forEach((p, pi) => {
                     if (p.amount > 0) {

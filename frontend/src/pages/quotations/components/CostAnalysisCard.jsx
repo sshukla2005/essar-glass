@@ -43,7 +43,6 @@ const CostAnalysisCard = ({
             // proc cost include karta hai — isi mismatch se margin galat
             // negative dikhta tha (e.g. -7.47% jabki asli +23.87%)
             const groupSubtotal = group.sizes.reduce((s, x) => s + (x.subtotal || 0), 0) +
-              (group.processes || []).reduce((s, p) => s + (p.amount || 0), 0) +
               group.sizes.reduce((s, x) =>
                 s + (x.size_processes || []).reduce((ss, sp) => ss + (sp.amount || 0), 0), 0)
             const prod = products.find(p => p.id === group.product_id)
@@ -80,11 +79,7 @@ const CostAnalysisCard = ({
               } catch {}
             }
 
-            const groupCost = group.sizes.reduce((s, x) => s + (x.cost_amount || 0), 0) +
-              (group.processes || []).reduce((s, p) => {
-                const procCostRate = p.cost_rate ?? (p.rate * 0.70)
-                return s + ((p.qty_area || 0) * procCostRate)
-              }, 0)
+            const groupCost = group.sizes.reduce((s, x) => s + (x.cost_amount || 0), 0)
             const groupMarginAmt = groupSubtotal - groupCost
             // ÷ cost (markup) — wahi client-approved formula jo Cost Wizard,
             // Cost vs Selling modal aur sidebar EST. MARGIN use karte hain
