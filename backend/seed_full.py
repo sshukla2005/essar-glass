@@ -1,9 +1,24 @@
+import os
 import sys
 sys.path.append(".")
 
 from app.database import SessionLocal
 from app.models import *
 from app.services.auth_service import hash_password
+
+super_pw = os.getenv("SEED_SUPERADMIN_PASSWORD")
+admin_pw = os.getenv("SEED_ADMIN_PASSWORD")
+sales_pw = os.getenv("SEED_SALES_PASSWORD")
+acc_pw = os.getenv("SEED_ACCOUNTS_PASSWORD")
+
+missing_vars = []
+if not super_pw: missing_vars.append("SEED_SUPERADMIN_PASSWORD")
+if not admin_pw: missing_vars.append("SEED_ADMIN_PASSWORD")
+if not sales_pw: missing_vars.append("SEED_SALES_PASSWORD")
+if not acc_pw: missing_vars.append("SEED_ACCOUNTS_PASSWORD")
+
+if missing_vars:
+    raise ValueError(f"Missing required seed password environment variables: {', '.join(missing_vars)}")
 
 db = SessionLocal()
 
@@ -21,10 +36,10 @@ print("Companies done")
 
 # Users
 users = [
-    User(id=1, username="superadmin", password=hash_password("EssarAdmin@2026"), name="Super Admin", role="superadmin", company_id=None, permissions=["all"]),
-    User(id=2, username="admin", password=hash_password("EssarUser@2026"), name="Fakhruddin Arsiwala", role="admin", company_id=1, permissions=["all"]),
-    User(id=3, username="sales", password=hash_password("EssarSales@2026"), name="Rajesh Patil", role="sales", company_id=1, permissions=["crm","quotations","sales_orders"]),
-    User(id=4, username="accounts", password=hash_password("EssarAcc@2026"), name="Priya Mehta", role="accounts", company_id=1, permissions=["invoices","payments"]),
+    User(id=1, username="superadmin", password=hash_password(super_pw), name="Super Admin", role="superadmin", company_id=1, permissions=["all"]),
+    User(id=2, username="admin", password=hash_password(admin_pw), name="Fakhruddin Arsiwala", role="admin", company_id=1, permissions=["all"]),
+    User(id=3, username="sales", password=hash_password(sales_pw), name="Rajesh Patil", role="sales", company_id=1, permissions=["crm","quotations","sales_orders"]),
+    User(id=4, username="accounts", password=hash_password(acc_pw), name="Priya Mehta", role="accounts", company_id=1, permissions=["invoices","payments"]),
 ]
 for u in users:
     db.merge(u)

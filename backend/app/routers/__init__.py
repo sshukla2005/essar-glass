@@ -125,10 +125,10 @@ def make_crud_router(
 
         if company_scoped:
             # ALWAYS override company_id from the token — never trust the body
-            if user.active_company_id is not None:
-                obj_data["company_id"] = user.active_company_id
-            elif not obj_data.get("company_id") and user.company_id:
-                obj_data["company_id"] = user.company_id
+            resolved_cid = user.active_company_id or user.company_id
+            if resolved_cid is None:
+                raise HTTPException(status_code=400, detail="No active company context — cannot create record")
+            obj_data["company_id"] = resolved_cid
         else:
             # Shared/global catalogue (e.g. Process Masters)
             obj_data["company_id"] = None
