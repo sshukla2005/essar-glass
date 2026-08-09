@@ -13,6 +13,7 @@
 - **Router Configuration**: Configured `ROUTER_CONFIGS` in `backend/main.py`:
   - `/companies`: Read accessible by all logged-in users (`read_roles=None`), write restricted to `superadmin` (`write_roles={'superadmin'}`).
   - `/users`: Read restricted to `admin` & `superadmin` (`read_roles={'admin', 'superadmin'}`), write restricted to `superadmin` (`write_roles={'superadmin'}`).
+  - *Approved Spec Deviation (G1)*: User management is superadmin-only by product decision. The original acceptance criterion "admin creates a user with role sales → 201" is void, replaced by "admin creates a user → 403".
 - **Security Guards**:
   - **Superadmin Escalation**: Prevents non-superadmins from creating or promoting users to `superadmin` role (returns `403`).
   - **Self-Lockout**: Prevents users from modifying their own `is_active` status or `role` via `PUT /users/{id}` (returns `403`).
