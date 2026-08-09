@@ -49,7 +49,7 @@ const UserManagement = () => {
 
   const { data: usersData, isLoading: usersLoading } = useQuery({
     queryKey: ['users-list'],
-    queryFn: () => userApi.list({ page: 1, page_size: 200 }).then(r => r.data)
+    queryFn: () => userApi.list({ page: 1, page_size: 200, is_active: 'all' }).then(r => r.data)
   })
   const users = (usersData?.items || []).filter(u => u.role !== 'superadmin')
 

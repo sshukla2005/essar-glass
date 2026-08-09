@@ -50,9 +50,13 @@ def make_crud_router(
         if company_scoped:
             q = apply_company_filter(q, model, user.active_company_id)
 
-        if is_active is not None:
-            active_bool = is_active.lower() == 'true'
-            if hasattr(model, 'is_active'):
+        if hasattr(model, 'is_active'):
+            if is_active is None:
+                q = q.filter(model.is_active == True)
+            elif is_active.lower() in ('all', 'any'):
+                pass
+            else:
+                active_bool = is_active.lower() in ('true', '1')
                 q = q.filter(model.is_active == active_bool)
 
         if so_id is not None and hasattr(model, 'so_id'):
