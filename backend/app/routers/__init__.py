@@ -124,10 +124,23 @@ def make_crud_router(
         obj_data = data.model_dump()
 
         if company_scoped:
-            # ALWAYS override company_id from the token — never trust the body
-            resolved_cid = user.active_company_id or user.company_id
-            if resolved_cid is None:
-                raise HTTPException(status_code=400, detail="No active company context — cannot create record")
+            from app.models.user import User as UserModel
+            from app.models.company import Company as CompanyModel
+
+            if model is UserModel and user.role == "superadmin" and obj_data.get("company_id") is not None:
+                target_cid = obj_data["company_id"]
+                target_company = db.query(CompanyModel).filter(
+                    CompanyModel.id == target_cid,
+                    CompanyModel.is_active == True
+                ).first()
+                if not target_company:
+                    raise HTTPException(status_code=400, detail=f"Target company {target_cid} does not exist or is inactive")
+                resolved_cid = target_cid
+            else:
+                # ALWAYS override company_id from the token — never trust the body
+                resolved_cid = user.active_company_id or user.company_id
+                if resolved_cid is None:
+                    raise HTTPException(status_code=400, detail="No active company context — cannot create record")
             obj_data["company_id"] = resolved_cid
         else:
             # Shared/global catalogue (e.g. Process Masters)

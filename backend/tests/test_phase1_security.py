@@ -242,3 +242,71 @@ def test_g2_sales_full_crud_regression_guard(db_session: Session):
         res_del = client.delete(f"{endpoint}/{item_id}", headers=headers)
         assert res_del.status_code == 200, f"Sales DELETE failed on {endpoint}: {res_del.text}"
 
+
+def test_g3_cross_company_user_creation(db_session: Session):
+    """Test G3 cross-company user creation rules for superadmin and non-superadmin."""
+    # 1. Superadmin creates user with company_id = 2 while active company is 1 -> 201, row lands on company 2
+    super1_token = create_access_token(1, "superadmin", company_id=1, active_company_id=1)
+    headers_super1 = {"Authorization": f"Bearer {super1_token}"}
+
+    res_super = client.post("/api/v1/users/", json={
+        "username": "g3_user_co2",
+        "password": "Password123!",
+        "name": "User for Co 2",
+        "role": "sales",
+        "company_id": 2
+    }, headers=headers_super1)
+    assert res_super.status_code == 201, f"Superadmin create user for Co 2 failed: {res_super.text}"
+    created_user_id = res_super.json()["id"]
+
+    try:
+        db_user = db_session.query(User).filter(User.id == created_user_id).first()
+        assert db_user is not None
+        assert db_user.company_id == 2
+
+        # Also test with cross-company token (home company 1, active company 2) for superadmin
+        super_cross_token = create_access_token(1, "superadmin", company_id=1, home_company_id=1, active_company_id=2)
+        headers_cross = {"Authorization": f"Bearer {super_cross_token}"}
+        res_cross_user = client.post("/api/v1/users/", json={
+            "username": "g3_user_cross",
+            "password": "Password123!",
+            "name": "User Cross Co",
+            "role": "sales",
+            "company_id": 1
+        }, headers=headers_cross)
+        assert res_cross_user.status_code == 201
+        cross_user_id = res_cross_user.json()["id"]
+        db_session.query(User).filter(User.id == cross_user_id).delete()
+        db_session.commit()
+
+        # 2. Superadmin creates user with a non-existent company_id -> 400
+        res_invalid_co = client.post("/api/v1/users/", json={
+            "username": "g3_invalid_co_user",
+            "password": "Password123!",
+            "name": "Invalid Co User",
+            "role": "sales",
+            "company_id": 9999
+        }, headers=headers_super1)
+        assert res_invalid_co.status_code == 400
+        assert "Target company 9999 does not exist or is inactive" in res_invalid_co.json()["detail"]
+
+        # 3. A sales user sending company_id on customer create -> field ignored, active company (1) used
+        sales_token = create_access_token(3, "sales", company_id=1, active_company_id=1)
+        headers_sales = {"Authorization": f"Bearer {sales_token}"}
+        res_cust = client.post("/api/v1/customers", json={
+            "name": "G3 Sales Customer",
+            "company_id": 2
+        }, headers=headers_sales)
+        assert res_cust.status_code == 201
+        cust_id = res_cust.json()["id"]
+        db_cust = db_session.query(Customer).filter(Customer.id == cust_id).first()
+        assert db_cust is not None
+        assert db_cust.company_id == 1  # Forced to active company 1
+        db_session.delete(db_cust)
+        db_session.commit()
+
+    finally:
+        db_session.query(User).filter(User.username == "g3_user_co2").delete()
+        db_session.commit()
+
+

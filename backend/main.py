@@ -77,13 +77,17 @@ class ReadOnlyMiddleware(BaseHTTPMiddleware):
         home_cid   = payload.get("home_company_id",   legacy_cid)
         active_cid = payload.get("active_company_id", legacy_cid)
 
+        role = payload.get("role", "")
+
         # Determine read-only status
         if home_cid is None or active_cid is None:
             is_read_only = False
         elif home_cid == active_cid:
             is_read_only = False
+        elif request.url.path.rstrip("/").startswith("/api/v1/users") and role == "superadmin":
+            # Superadmin administering users across companies is permitted
+            is_read_only = False
         else:
-            role = payload.get("role", "")
             if settings.ALLOW_SUPERADMIN_CROSS_EDIT and role == "superadmin":
                 is_read_only = False
             else:
@@ -202,7 +206,7 @@ ROUTER_CONFIGS = [
     # NOTE: Process Masters are intentionally a shared global catalogue across all companies
     {"prefix": "/process-masters", "tag": "Process Masters", "model": ProcessMaster,  "code_prefix": None,   "code_field": None, "company_scoped": False},
     {"prefix": "/warehouses",      "tag": "Warehouses",      "model": Warehouse,      "code_prefix": None,   "code_field": None},
-    {"prefix": "/users",           "tag": "Users",           "model": User,            "code_prefix": None,   "code_field": None, "read_roles": {"admin", "superadmin"}, "write_roles": {"admin", "superadmin"}},
+    {"prefix": "/users",           "tag": "Users",           "model": User,            "code_prefix": None,   "code_field": None, "read_roles": {"admin", "superadmin"}, "write_roles": {"superadmin"}},
     {"prefix": "/payments",        "tag": "Payments",        "model": Payment,         "code_prefix": "PMT",  "code_field": "payment_number"},
 ]
 
