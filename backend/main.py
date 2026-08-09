@@ -14,8 +14,9 @@ from app.deps import get_current_user
 # Import all models so Alembic sees them
 from app.models import *  # noqa
 
-# Create tables
-Base.metadata.create_all(bind=engine)
+# Create tables (dev/test only — production MUST use Alembic migrations)
+if settings.AUTO_CREATE_TABLES:
+    Base.metadata.create_all(bind=engine)
 
 # Create upload directory
 os.makedirs(f"{settings.UPLOAD_DIR}/artwork", exist_ok=True)
