@@ -7,6 +7,14 @@ from app.deps import get_current_user
 from app.utils.helpers import apply_company_filter, paginate, get_next_code, serialize_row, stash_extra_fields
 
 
+def _require_roles(allowed: set[str] | None):
+    def _dep(user = Depends(get_current_user)):
+        if allowed is not None and user.role not in allowed:
+            raise HTTPException(status_code=403, detail="Insufficient permissions")
+        return user
+    return _dep
+
+
 def make_crud_router(
     prefix: str,
     tag: str,
@@ -17,6 +25,8 @@ def make_crud_router(
     code_prefix: str = None,
     code_field: str  = None,
     company_scoped: bool = True,
+    read_roles: set[str] | None = None,
+    write_roles: set[str] | None = None,
 ):
     router = APIRouter(prefix=prefix, tags=[tag])
 
@@ -34,7 +44,7 @@ def make_crud_router(
         stage_id:     Optional[int] = Query(None),
         status:       Optional[str] = Query(None),
         db:    Session = Depends(get_db),
-        user         = Depends(get_current_user),
+        user         = Depends(_require_roles(read_roles)),
     ):
         q = db.query(model)
         if company_scoped:
@@ -74,7 +84,7 @@ def make_crud_router(
     @router.get("/dropdown")
     def dropdown(
         db:   Session = Depends(get_db),
-        user        = Depends(get_current_user),
+        user        = Depends(_require_roles(read_roles)),
     ):
         q = db.query(model)
         if company_scoped:
@@ -87,7 +97,7 @@ def make_crud_router(
     def get_item(
         item_id: int,
         db:      Session = Depends(get_db),
-        user           = Depends(get_current_user),
+        user           = Depends(_require_roles(read_roles)),
     ):
         item = db.query(model).filter(model.id == item_id).first()
         if not item:
@@ -109,7 +119,7 @@ def make_crud_router(
     def create_item(
         data: create_schema,
         db:   Session = Depends(get_db),
-        user        = Depends(get_current_user),
+        user        = Depends(_require_roles(write_roles)),
     ):
         obj_data = data.model_dump()
 
@@ -150,9 +160,12 @@ def make_crud_router(
                     group['artwork_file'] = None
 
         from app.models.user import User as UserModel
-        if model is UserModel and 'password' in obj_data and obj_data['password']:
-            from app.services.auth_service import hash_password
-            obj_data['password'] = hash_password(obj_data['password'])
+        if model is UserModel:
+            if obj_data.get("role") == "superadmin" and user.role != "superadmin":
+                raise HTTPException(status_code=403, detail="Insufficient permissions")
+            if 'password' in obj_data and obj_data['password']:
+                from app.services.auth_service import hash_password
+                obj_data['password'] = hash_password(obj_data['password'])
 
         obj_data = stash_extra_fields(model, obj_data)
 
@@ -167,7 +180,7 @@ def make_crud_router(
         item_id: int,
         data:    update_schema,
         db:      Session = Depends(get_db),
-        user           = Depends(get_current_user),
+        user           = Depends(_require_roles(write_roles)),
     ):
         item = db.query(model).filter(model.id == item_id).first()
         if not item:
@@ -207,9 +220,17 @@ def make_crud_router(
                     group['artwork_file'] = None
 
         from app.models.user import User as UserModel
-        if model is UserModel and 'password' in update_data and update_data['password']:
-            from app.services.auth_service import hash_password
-            update_data['password'] = hash_password(update_data['password'])
+        if model is UserModel:
+            if update_data.get("role") == "superadmin" and user.role != "superadmin":
+                raise HTTPException(status_code=403, detail="Insufficient permissions")
+            if item.id == user.id:
+                if "role" in update_data and update_data["role"] != user.role:
+                    raise HTTPException(status_code=403, detail="Cannot alter your own role")
+                if "is_active" in update_data and update_data["is_active"] != user.is_active:
+                    raise HTTPException(status_code=403, detail="Cannot alter your own active status")
+            if 'password' in update_data and update_data['password']:
+                from app.services.auth_service import hash_password
+                update_data['password'] = hash_password(update_data['password'])
 
         update_data = stash_extra_fields(model, update_data)
         if 'extra_data' in update_data:
@@ -228,7 +249,7 @@ def make_crud_router(
         item_id: int,
         data:    dict,
         db:      Session = Depends(get_db),
-        user           = Depends(get_current_user),
+        user           = Depends(_require_roles(write_roles)),
     ):
         item = db.query(model).filter(model.id == item_id).first()
         if not item:
@@ -253,7 +274,7 @@ def make_crud_router(
     def archive_item(
         item_id: int,
         db:      Session = Depends(get_db),
-        user           = Depends(get_current_user),
+        user           = Depends(_require_roles(write_roles)),
     ):
         item = db.query(model).filter(model.id == item_id).first()
         if not item:
@@ -267,6 +288,18 @@ def make_crud_router(
             and item.company_id != user.active_company_id
         ):
             raise HTTPException(status_code=404, detail="Not found")
+
+        from app.models.user import User as UserModel
+        if model is UserModel:
+            if item.id == user.id:
+                raise HTTPException(status_code=403, detail="Cannot archive or delete your own account")
+            if getattr(item, "role", None) == "superadmin":
+                active_superadmin_count = db.query(UserModel).filter(
+                    UserModel.role == "superadmin",
+                    UserModel.is_active == True
+                ).count()
+                if active_superadmin_count <= 1:
+                    raise HTTPException(status_code=403, detail="Cannot archive or delete the last remaining active superadmin")
 
         if hasattr(item, "is_active"):
             item.is_active = False
@@ -277,7 +310,7 @@ def make_crud_router(
     def delete_item(
         item_id: int,
         db:      Session = Depends(get_db),
-        user           = Depends(get_current_user),
+        user           = Depends(_require_roles(write_roles)),
     ):
         item = db.query(model).filter(model.id == item_id).first()
         if not item:
@@ -291,6 +324,18 @@ def make_crud_router(
             and item.company_id != user.active_company_id
         ):
             raise HTTPException(status_code=404, detail="Not found")
+
+        from app.models.user import User as UserModel
+        if model is UserModel:
+            if item.id == user.id:
+                raise HTTPException(status_code=403, detail="Cannot archive or delete your own account")
+            if getattr(item, "role", None) == "superadmin":
+                active_superadmin_count = db.query(UserModel).filter(
+                    UserModel.role == "superadmin",
+                    UserModel.is_active == True
+                ).count()
+                if active_superadmin_count <= 1:
+                    raise HTTPException(status_code=403, detail="Cannot archive or delete the last remaining active superadmin")
 
         db.delete(item)
         db.commit()

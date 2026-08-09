@@ -180,50 +180,48 @@ app.include_router(inter_company_router, prefix=f"{PREFIX}")
 
 
 # Auto CRUD routers
-for router_cfg in [
-    # (prefix, tag, model, code_prefix, code_field)
-    ("/companies",    "Companies",   Company,        "COMP", None),
-    ("/customers",    "Customers",   Customer,       "CUST", "customer_code"),
-    ("/vendors",      "Vendors",     Vendor,         "VEND", "vendor_code"),
-    ("/products",     "Products",    Product,        "PROD", "internal_ref"),
-    ("/employees",    "Employees",   Employee,       "EMP",  "employee_code"),
-    ("/crm/stages",   "CRM Stages",  CRMStage,       None,   None),
-    ("/crm/leads",    "CRM Leads",   CRMLead,        "OPP",  "lead_number"),
-    ("/quotations",   "Quotations",  Quotation,      "QT",   "quote_number"),
-    ("/sales-orders", "Sales Orders",SalesOrder,     "SO",   "so_number"),
-    ("/purchase-orders","PO",        PurchaseOrder,  "PO",   "po_number"),
-    ("/delivery",     "Delivery",    DeliveryChallan,"DC",   "dc_number"),
-    ("/invoices",     "Invoices",    Invoice,        "INV",  "invoice_number"),
-    ("/inventory",    "Inventory",   StockMovement,  "SM",   "move_number"),
-    ("/workshop",     "Workshop",    WorkshopOrder,  "WO",   "wo_number"),
-    ("/toughening",   "Toughening",  TougheningBatch,"TB",   "tb_number"),
+ROUTER_CONFIGS = [
+    {"prefix": "/companies",       "tag": "Companies",       "model": Company,         "code_prefix": "COMP", "code_field": None, "company_scoped": True, "read_roles": None, "write_roles": {"superadmin"}},
+    {"prefix": "/customers",       "tag": "Customers",       "model": Customer,        "code_prefix": "CUST", "code_field": "customer_code"},
+    {"prefix": "/vendors",         "tag": "Vendors",         "model": Vendor,          "code_prefix": "VEND", "code_field": "vendor_code"},
+    {"prefix": "/products",        "tag": "Products",        "model": Product,         "code_prefix": "PROD", "code_field": "internal_ref"},
+    {"prefix": "/employees",       "tag": "Employees",       "model": Employee,        "code_prefix": "EMP",  "code_field": "employee_code"},
+    {"prefix": "/crm/stages",      "tag": "CRM Stages",      "model": CRMStage,        "code_prefix": None,   "code_field": None},
+    {"prefix": "/crm/leads",       "tag": "CRM Leads",       "model": CRMLead,         "code_prefix": "OPP",  "code_field": "lead_number"},
+    {"prefix": "/quotations",      "tag": "Quotations",      "model": Quotation,       "code_prefix": "QT",   "code_field": "quote_number"},
+    {"prefix": "/sales-orders",    "tag": "Sales Orders",    "model": SalesOrder,      "code_prefix": "SO",   "code_field": "so_number"},
+    {"prefix": "/purchase-orders", "tag": "PO",              "model": PurchaseOrder,   "code_prefix": "PO",   "code_field": "po_number"},
+    {"prefix": "/delivery",        "tag": "Delivery",        "model": DeliveryChallan, "code_prefix": "DC",   "code_field": "dc_number"},
+    {"prefix": "/invoices",        "tag": "Invoices",        "model": Invoice,         "code_prefix": "INV",  "code_field": "invoice_number"},
+    {"prefix": "/inventory",       "tag": "Inventory",       "model": StockMovement,   "code_prefix": "SM",   "code_field": "move_number"},
+    {"prefix": "/workshop",        "tag": "Workshop",        "model": WorkshopOrder,   "code_prefix": "WO",   "code_field": "wo_number"},
+    {"prefix": "/toughening",      "tag": "Toughening",      "model": TougheningBatch, "code_prefix": "TB",   "code_field": "tb_number"},
     # NOTE: Process Masters are intentionally a shared global catalogue across all companies
-    ("/process-masters", "Process Masters", ProcessMaster, None, None, False),
-    ("/warehouses",      "Warehouses",      Warehouse,     None, None),
-    ("/users",        "Users",       User,           None,   None),
-    ("/payments",     "Payments",    Payment,        "PMT",  "payment_number"),
-]:
-    if len(router_cfg) == 6:
-        prefix, tag, model, code_pref, code_fld, company_scoped = router_cfg
-    else:
-        prefix, tag, model, code_pref, code_fld = router_cfg
-        company_scoped = True
+    {"prefix": "/process-masters", "tag": "Process Masters", "model": ProcessMaster,  "code_prefix": None,   "code_field": None, "company_scoped": False},
+    {"prefix": "/warehouses",      "tag": "Warehouses",      "model": Warehouse,      "code_prefix": None,   "code_field": None},
+    {"prefix": "/users",           "tag": "Users",           "model": User,            "code_prefix": None,   "code_field": None, "read_roles": {"admin", "superadmin"}, "write_roles": {"admin", "superadmin"}},
+    {"prefix": "/payments",        "tag": "Payments",        "model": Payment,         "code_prefix": "PMT",  "code_field": "payment_number"},
+]
 
-    from pydantic import BaseModel
-    class DynCreate(BaseModel):
-        model_config = {"extra": "allow"}
-    class DynUpdate(BaseModel):
-        model_config = {"extra": "allow"}
+from pydantic import BaseModel
+class DynCreate(BaseModel):
+    model_config = {"extra": "allow"}
+class DynUpdate(BaseModel):
+    model_config = {"extra": "allow"}
 
+for cfg in ROUTER_CONFIGS:
     r = make_crud_router(
-        prefix=f"{PREFIX}{prefix}",
-        tag=tag, model=model,
+        prefix=f"{PREFIX}{cfg['prefix']}",
+        tag=cfg["tag"],
+        model=cfg["model"],
         create_schema=DynCreate,
         update_schema=DynUpdate,
         response_schema=DynCreate,
-        code_prefix=code_pref,
-        code_field=code_fld,
-        company_scoped=company_scoped,
+        code_prefix=cfg.get("code_prefix"),
+        code_field=cfg.get("code_field"),
+        company_scoped=cfg.get("company_scoped", True),
+        read_roles=cfg.get("read_roles"),
+        write_roles=cfg.get("write_roles"),
     )
     app.include_router(r)
 
