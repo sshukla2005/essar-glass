@@ -14,6 +14,11 @@ def get_next_code(
     When company_id is supplied (and the model has a company_id column) the
     sequence is scoped per-company so that two companies can independently
     have QT0001, SO0001, etc.
+
+    LOCKING REQUIREMENT (GST Compliance):
+    Do NOT filter on is_active == True here. All rows (including soft-deleted
+    ones) must be scanned so that document numbers (e.g. INV0042) are never
+    reissued after soft deletion.
     """
     from sqlalchemy import func
 

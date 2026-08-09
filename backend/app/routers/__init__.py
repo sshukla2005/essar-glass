@@ -337,7 +337,10 @@ def make_crud_router(
                 if active_superadmin_count <= 1:
                     raise HTTPException(status_code=403, detail="Cannot archive or delete the last remaining active superadmin")
 
-        db.delete(item)
+        if hasattr(model, "is_active"):
+            item.is_active = False
+        else:
+            db.delete(item)
         db.commit()
         return {"message": "Deleted"}
 
