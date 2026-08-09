@@ -26,6 +26,8 @@ def run_verification():
             cgst = float(row["cgst"]) if row["cgst"] is not None else 0.0
             sgst = float(row["sgst"]) if row["sgst"] is not None else 0.0
             igst = float(row["igst"]) if row["igst"] is not None else 0.0
+            margin_amt = float(totals_dict["marginAmt"]) if (totals_dict and totals_dict.get("marginAmt") is not None) else None
+            margin_pct = float(totals_dict["marginPct"]) if (totals_dict and totals_dict.get("marginPct") is not None) else None
             after["quotations"].append({
                 "id": row["id"],
                 "quote_number": row["quote_number"],
@@ -36,8 +38,8 @@ def run_verification():
                 "tax_amount": cgst + sgst + igst,
                 "total_amount": float(row["total_amount"]) if row["total_amount"] is not None else 0.0,
                 "balance_due": float(row["balance_due"]) if row["balance_due"] is not None else 0.0,
-                "margin_amount": None,
-                "margin_pct": None,
+                "margin_amount": margin_amt,
+                "margin_pct": margin_pct,
                 "totals_dict": totals_dict,
                 "lines_count": len(lines_data)
             })
@@ -55,6 +57,8 @@ def run_verification():
             totals_dict = row["totals"] if isinstance(row["totals"], dict) else json.loads(row["totals"]) if row["totals"] else None
             lines_data = row["lines"] if isinstance(row["lines"], list) else json.loads(row["lines"]) if row["lines"] else []
             tot_amt = float(row["total_amount"]) if row["total_amount"] is not None else 0.0
+            margin_amt = float(totals_dict["marginAmt"]) if (totals_dict and totals_dict.get("marginAmt") is not None) else None
+            margin_pct = float(totals_dict["marginPct"]) if (totals_dict and totals_dict.get("marginPct") is not None) else None
             after["sales_orders"].append({
                 "id": row["id"],
                 "so_number": row["so_number"],
@@ -62,8 +66,8 @@ def run_verification():
                 "tax_amount": float(row["tax_amount"]) if row["tax_amount"] is not None else 0.0,
                 "total_amount": tot_amt,
                 "balance_due": tot_amt,
-                "margin_amount": None,
-                "margin_pct": None,
+                "margin_amount": margin_amt,
+                "margin_pct": margin_pct,
                 "totals_dict": totals_dict,
                 "lines_count": len(lines_data)
             })
@@ -72,22 +76,23 @@ def run_verification():
         json.dump(after, f, indent=2)
 
     diffs = []
+    check_fields = ["subtotal", "total_amount", "balance_due", "margin_amount", "margin_pct", "lines_count"]
     # Compare key fields
     for b_q, a_q in zip(baseline["quotations"], after["quotations"]):
-        for k in ["subtotal", "total_amount", "balance_due", "lines_count"]:
-            if b_q[k] != a_q[k]:
-                diffs.append(f"Quotation {b_q['id']} ({b_q['quote_number']}) field '{k}': baseline {b_q[k]} vs after {a_q[k]}")
+        for k in check_fields:
+            if b_q.get(k) != a_q.get(k):
+                diffs.append(f"Quotation {b_q['id']} ({b_q['quote_number']}) field '{k}': baseline {b_q.get(k)} vs after {a_q.get(k)}")
 
     for b_so, a_so in zip(baseline["sales_orders"], after["sales_orders"]):
-        for k in ["subtotal", "total_amount", "balance_due", "lines_count"]:
-            if b_so[k] != a_so[k]:
-                diffs.append(f"SalesOrder {b_so['id']} ({b_so['so_number']}) field '{k}': baseline {b_so[k]} vs after {a_so[k]}")
+        for k in check_fields:
+            if b_so.get(k) != a_so.get(k):
+                diffs.append(f"SalesOrder {b_so['id']} ({b_so['so_number']}) field '{k}': baseline {b_so.get(k)} vs after {a_so.get(k)}")
 
     print("=" * 70)
-    print("      PHASE 1 FINANCIAL INVARIANCE REPORT")
+    print("      PHASE 1 FINANCIAL INVARIANCE REPORT (WITH MARGINS)")
     print("=" * 70)
     if not diffs:
-        print("✅ SUCCESS: 100% INVARIANCE CONFIRMED — 0 FINANCIAL DIFFS DETECTED!")
+        print("✅ SUCCESS: 100% INVARIANCE CONFIRMED — 0 FINANCIAL / MARGIN DIFFS DETECTED!")
     else:
         print(f"❌ FAILED: {len(diffs)} DIFFS DETECTED:")
         for d in diffs:
