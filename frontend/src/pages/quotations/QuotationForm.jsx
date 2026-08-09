@@ -284,6 +284,7 @@ const QuotationForm = () => {
   const [laborItems, setLaborItems] = useState([])
   const [wastageItems, setWastageItems] = useState([])
   const [processRateCard, setProcessRateCard] = useState([]) // per-quotation rate card
+  const rateCardRef = useRef(null)
 
   const emptyHardware = () => ({
     hw_key: Date.now() + Math.random(),
@@ -500,8 +501,9 @@ const QuotationForm = () => {
         quote_date: record.quote_date ? dayjs(record.quote_date) : null,
         valid_until: record.valid_until ? dayjs(record.valid_until) : null,
       })
+      let reconstructed = null
       if (record.lines?.length) {
-        const reconstructed = reconstructGroups(record.lines)
+        reconstructed = reconstructGroups(record.lines)
         // Backend valid_columns filter strips manual_cost_price from lines
         // Restore from record.groups which is saved as-is
         if (record.groups?.length) {
@@ -533,7 +535,31 @@ const QuotationForm = () => {
       if (record.hardware_items) setHardwareItems(record.hardware_items)
       if (record.labor_items) setLaborItems(record.labor_items)
       if (record.wastage_items) setWastageItems(record.wastage_items)
-      if (record.process_rate_card?.length) setProcessRateCard(record.process_rate_card)
+
+      let currentCard = record.process_rate_card?.length ? [...record.process_rate_card] : []
+      const cardPids = new Set(currentCard.map(r => r.process_id).filter(Boolean))
+      const backfillRows = []
+      const groupsToCheck = reconstructed || groups || []
+      groupsToCheck.forEach(g => {
+        (g.sizes || []).forEach(s => {
+          (s.size_processes || []).forEach(sp => {
+            if (sp.process_id && !cardPids.has(sp.process_id)) {
+              cardPids.add(sp.process_id)
+              backfillRows.push({
+                prc_key: `prc_${Date.now()}_${Math.random()}`,
+                process_id: sp.process_id,
+                process_name: sp.process_name || processMasters.find(p => p.id === sp.process_id)?.name || '',
+                selling_rate: sp.rate ?? 0,
+                cost_rate: sp.cost_rate ?? 0,
+              })
+            }
+          })
+        })
+      })
+      if (backfillRows.length > 0) {
+        currentCard = [...currentCard, ...backfillRows]
+      }
+      setProcessRateCard(currentCard)
     }
     // Defer enabling dirty tracking until the next tick so that all the
     // setState calls above have flushed and won't trigger the watcher.
@@ -840,6 +866,14 @@ const QuotationForm = () => {
   }
 
   const updateSizeProcess = (gkey, skey, spkey, field, value) => {
+    // Process rates are owned by the Process Rate Card. Direct per-row writes
+    // are rejected so the two can never diverge. See updateRateCard().
+    if (field === 'rate' || field === 'cost_rate') {
+      if (import.meta.env.DEV) {
+        console.warn('[rate-card] blocked direct size-process rate write', field)
+      }
+      return
+    }
     setGroups(prev => prev.map(g => {
       if (g.group_key !== gkey) return g
       return {
@@ -974,6 +1008,60 @@ const QuotationForm = () => {
   /** Remove a rate card row. Does NOT clear per-line rates (they keep their values). */
   const removeRateCardRow = (prc_key) => {
     setProcessRateCard(prev => prev.filter(r => r.prc_key !== prc_key))
+  }
+
+  const divergentProcessIds = useMemo(() => {
+    const processRatesMap = new Map()
+    groups.forEach(g => {
+      (g.sizes || []).forEach(s => {
+        (s.size_processes || []).forEach(sp => {
+          if (!sp.process_id) return
+          if (!processRatesMap.has(sp.process_id)) {
+            processRatesMap.set(sp.process_id, new Set())
+          }
+          processRatesMap.get(sp.process_id).add(`${sp.rate}_${sp.cost_rate}`)
+        })
+      })
+    })
+    const set = new Set()
+    processRatesMap.forEach((ratesSet, pid) => {
+      if (ratesSet.size > 1) {
+        set.add(pid)
+      } else {
+        const card = (processRateCard || []).find(c => c.process_id === pid)
+        if (card) {
+          const [rStr] = Array.from(ratesSet)
+          const [rRate, rCost] = rStr.split('_').map(Number)
+          if (rRate !== card.selling_rate || rCost !== card.cost_rate) {
+            set.add(pid)
+          }
+        }
+      }
+    })
+    return set
+  }, [groups, processRateCard])
+
+  const normaliseRates = () => {
+    const cardMap = new Map((processRateCard || []).map(r => [r.process_id, r]))
+    setGroups(prev => prev.map(g => ({
+      ...g,
+      sizes: g.sizes.map(s => ({
+        ...s,
+        size_processes: (s.size_processes || []).map(sp => {
+          const card = cardMap.get(sp.process_id)
+          if (!card) return sp
+          const updatedRate = card.selling_rate ?? sp.rate
+          const updatedCost = card.cost_rate ?? sp.cost_rate
+          return {
+            ...sp,
+            rate: updatedRate,
+            cost_rate: updatedCost,
+            amount: parseFloat(((sp.qty_area || 0) * updatedRate).toFixed(2)),
+            cost_amount: parseFloat(((sp.qty_area || 0) * updatedCost).toFixed(2)),
+          }
+        })
+      }))
+    })))
   }
 
 
@@ -2059,6 +2147,8 @@ const QuotationForm = () => {
                   message={message}
                   CEILING_OPTIONS={CEILING_OPTIONS}
                   productApi={productApi}
+                  processRateCard={processRateCard}
+                  onEditRates={() => rateCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
                 />
               ))}
             </div>
@@ -2116,13 +2206,18 @@ const QuotationForm = () => {
             )}
 
             {/* ── Section 5.5: Process Rate Card ── */}
-            <ProcessRateCardSection
-              processRateCard={processRateCard}
-              updateRateCard={updateRateCard}
-              addRateCardRow={addRateCardRow}
-              removeRateCardRow={removeRateCardRow}
-              processMasters={processMasters}
-            />
+            <div ref={rateCardRef}>
+              <ProcessRateCardSection
+                processRateCard={processRateCard}
+                updateRateCard={updateRateCard}
+                addRateCardRow={addRateCardRow}
+                removeRateCardRow={removeRateCardRow}
+                processMasters={processMasters}
+                divergentProcessIds={divergentProcessIds}
+                onNormaliseRates={normaliseRates}
+                groups={groups}
+              />
+            </div>
 
             {/* ── Section 6: Notes ── */}
             <NotesCard />

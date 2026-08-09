@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Form, Input, InputNumber, Select, Row, Col, Divider, DatePicker, Button, Table, Steps, Space, Tag, Card, Modal, Checkbox, App, Typography } from 'antd'
-import { SendOutlined, CheckCircleOutlined, PlusOutlined, InboxOutlined, DownloadOutlined, DeleteOutlined } from '@ant-design/icons'
+import { Form, Input, InputNumber, Select, Row, Col, Divider, DatePicker, Button, Table, Steps, Space, Tag, Card, Modal, App, Typography, Progress } from 'antd'
+import { SendOutlined, PlusOutlined, InboxOutlined, DownloadOutlined, DeleteOutlined, StopOutlined } from '@ant-design/icons'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import dayjs from 'dayjs'
@@ -11,14 +11,16 @@ import { generateTougheningChallanPDF } from '../../utils/pdfGenerator'
 
 const { TextArea } = Input
 const { Text } = Typography
+const { Option } = Select
 
 const STATUS_STEPS = ['draft', 'sent', 'partial_received', 'received']
 const STATUS_IDX = { draft: 0, sent: 1, partial_received: 2, received: 3 }
-const ITEM_STATUSES = [
-  { value: 'pending', label: 'Pending' },
-  { value: 'sent', label: 'Sent' },
-  { value: 'received', label: 'Received' },
-  { value: 'rejected', label: 'Rejected' },
+
+const BREAKAGE_REASONS = [
+  'Broken at vendor',
+  'Broken in transit',
+  'Lost',
+  'Other'
 ]
 
 const TougheningForm = () => {
@@ -34,6 +36,11 @@ const TougheningForm = () => {
   const [selectedWoItems, setSelectedWoItems] = useState([])
   const [pdfLoading, setPdfLoading] = useState(false)
   const [selectedItemKeys, setSelectedItemKeys] = useState([])
+
+  // Close Batch Modal State
+  const [closeModalOpen, setCloseModalOpen] = useState(false)
+  const [closeReason, setCloseReason] = useState('Broken at vendor')
+  const [closeNotes, setCloseNotes] = useState('')
 
   const { data: record, isLoading } = useQuery({
     queryKey: ['toughening_batches', id], queryFn: () => tougheningBatchApi.get(id).then(r => r.data), enabled: isEdit,
@@ -69,19 +76,39 @@ const TougheningForm = () => {
       })
       const rawItems = record.items?.length ? record.items : (record.lines || [])
       if (rawItems.length) {
-        setItems(rawItems.map((it, i) => calcTghLine({
-          ...it,
-          key: it.id || Date.now() + i,
-          // normalize field names — WO lines use act_w_mm/act_h_mm
-          width_mm: it.width_mm || it.act_w_mm || 0,
-          height_mm: it.height_mm || it.act_h_mm || 0,
-          quantity: it.qty || it.quantity || 1,
-          tgh_rate: it.tgh_rate || 1200,
-          item_status: it.item_status || 'pending',
-          received_done: Boolean(it.received_done),
-          wo_number: it.wo_number || it.source_wo || record.wo_number || '',
-          so_number: it.so_number || it.source_so || record.so_number || '',
-        })))
+        setItems(rawItems.map((it, i) => {
+          const qty = it.qty || it.quantity || 1
+          let qty_received = typeof it.qty_received === 'number' ? it.qty_received : 0
+          let qty_posted = typeof it.qty_posted === 'number' ? it.qty_posted : 0
+          let qty_short = typeof it.qty_short === 'number' ? it.qty_short : 0
+          let short_reason = it.short_reason || ''
+
+          // Legacy backward compatibility mapping
+          if (typeof it.qty_received !== 'number' && typeof it.qty_posted !== 'number') {
+            if (it.item_status === 'received' || it.received_done === true) {
+              qty_received = qty
+              qty_posted = qty
+            } else if (it.item_status === 'rejected') {
+              qty_short = qty
+              short_reason = 'Legacy: rejected'
+            }
+          }
+
+          return calcTghLine({
+            ...it,
+            key: it.id || Date.now() + i,
+            width_mm: it.width_mm || it.act_w_mm || 0,
+            height_mm: it.height_mm || it.act_h_mm || 0,
+            quantity: qty,
+            tgh_rate: it.tgh_rate || 1200,
+            qty_received,
+            qty_posted,
+            qty_short,
+            short_reason,
+            wo_number: it.wo_number || it.source_wo || record.wo_number || '',
+            so_number: it.so_number || it.source_so || record.so_number || '',
+          })
+        }))
       }
     }
   }, [record, form, vendors])
@@ -111,7 +138,10 @@ const TougheningForm = () => {
           quantity: l.qty || l.quantity || 1,
           wo_number: wo.wo_number,
           so_number: wo.so_number,
-          item_status: 'pending',
+          qty_received: 0,
+          qty_posted: 0,
+          qty_short: 0,
+          short_reason: '',
           tgh_rate: l.tgh_rate || 1200,
         })))
       }
@@ -144,8 +174,36 @@ const TougheningForm = () => {
     const total_sqmt = items.reduce((s, it) => s + (it.charged_sqmt || 0), 0)
     const total_amount = items.reduce((s, it) => s + (it.tgh_amount || 0), 0)
     const total_qty = items.reduce((s, it) => s + (it.quantity || 0), 0)
-    return { total_sqmt: parseFloat(total_sqmt.toFixed(6)), total_amount: parseFloat(total_amount.toFixed(2)), total_qty }
+    const total_received = items.reduce((s, it) => s + (it.qty_received || 0), 0)
+    const total_short = items.reduce((s, it) => s + (it.qty_short || 0), 0)
+    const total_pending = items.reduce((s, it) => {
+      const q = it.quantity || 0
+      const r = it.qty_received || 0
+      const sh = it.qty_short || 0
+      return s + Math.max(0, q - r - sh)
+    }, 0)
+
+    return {
+      total_sqmt: parseFloat(total_sqmt.toFixed(6)),
+      total_amount: parseFloat(total_amount.toFixed(2)),
+      total_qty,
+      total_received,
+      total_short,
+      total_pending
+    }
   }, [items])
+
+  const derivedStatus = useMemo(() => {
+    const curStatus = record?.status || 'draft'
+    if (curStatus === 'draft') return 'draft'
+    if (totals.total_qty > 0 && (totals.total_received + totals.total_short >= totals.total_qty)) {
+      return 'received'
+    }
+    if (totals.total_received > 0) {
+      return 'partial_received'
+    }
+    return 'sent'
+  }, [record?.status, totals])
 
   const saveMutation = useMutation({
     mutationFn: (data) => isEdit ? tougheningBatchApi.update(id, data) : tougheningBatchApi.create(data),
@@ -172,28 +230,42 @@ const TougheningForm = () => {
     })
   }
 
-  const receiveMutation = useMutation({
+  // Stock Receipt Posting Mutation (Delta-based)
+  const postReceiptMutation = useMutation({
     mutationFn: async () => {
-      const newlyReceived = items.filter(it => it.item_status === 'received' && !it.received_done)
-      if (newlyReceived.length === 0) {
-        message.warning('Mark at least one item as Received (in the item Status column) first')
+      const linesToPost = items.filter(it => (it.qty_received || 0) > (it.qty_posted || 0))
+      if (linesToPost.length === 0) {
+        message.warning('Enter a received quantity first')
         return null
       }
-      for (const it of newlyReceived) {
-        if (it.product_id) {
+
+      for (const it of linesToPost) {
+        const delta = (it.qty_received || 0) - (it.qty_posted || 0)
+        if (delta > 0 && it.product_id) {
           await stockMovementApi.create({
-            product_id: it.product_id, quantity: it.quantity, movement_type: 'in',
-            reference: record?.tb_number, remarks: `Toughened glass received: ${it.description}`, date: new Date().toISOString()
+            product_id: it.product_id,
+            quantity: delta,
+            movement_type: 'in',
+            reference: record?.tb_number,
+            remarks: `Toughened glass received: ${it.description}`,
+            date: new Date().toISOString()
           })
         }
       }
-      const updatedItems = items.map(it =>
-        it.item_status === 'received' ? { ...it, received_done: true } : it
-      )
-      setItems(updatedItems)
 
-      const allDone = updatedItems.every(it => it.item_status === 'received' || it.item_status === 'rejected' || it.received_done)
-      const newStatus = allDone ? 'received' : 'partial_received'
+      const updatedItems = items.map(it => {
+        if ((it.qty_received || 0) > (it.qty_posted || 0)) {
+          return { ...it, qty_posted: it.qty_received }
+        }
+        return it
+      })
+
+      const totQty = updatedItems.reduce((s, i) => s + (i.quantity || 0), 0)
+      const totRec = updatedItems.reduce((s, i) => s + (i.qty_received || 0), 0)
+      const totSh = updatedItems.reduce((s, i) => s + (i.qty_short || 0), 0)
+      const newStatus = (totQty > 0 && (totRec + totSh >= totQty)) ? 'received' : 'partial_received'
+
+      setItems(updatedItems)
 
       const formVals = form.getFieldsValue()
       await tougheningBatchApi.update(id, {
@@ -211,10 +283,46 @@ const TougheningForm = () => {
       if (!newStatus) return
       message.success(newStatus === 'received'
         ? 'All items received from toughening'
-        : 'Partial receipt recorded — remaining items still pending')
+        : 'Receipt posted successfully')
       queryClient.invalidateQueries({ queryKey: ['toughening_batches', id] })
     }
   })
+
+  // Close Batch Handler (Breakage write-off)
+  const handleCloseBatchConfirm = async () => {
+    if (closeReason === 'Other' && !closeNotes.trim()) {
+      message.error('Please enter notes when reason is Other')
+      return
+    }
+    const reasonText = closeReason === 'Other' ? `Other: ${closeNotes.trim()}` : closeReason
+
+    const updatedItems = items.map(it => {
+      const q = it.quantity || 0
+      const r = it.qty_received || 0
+      const sh = it.qty_short || 0
+      const pending = Math.max(0, q - r - sh)
+      if (pending > 0) {
+        return { ...it, qty_short: sh + pending, short_reason: reasonText }
+      }
+      return it
+    })
+
+    setItems(updatedItems)
+    setCloseModalOpen(false)
+
+    const formVals = form.getFieldsValue()
+    await tougheningBatchApi.update(id, {
+      ...record,
+      ...formVals,
+      sent_date: formVals.sent_date ? formVals.sent_date.format('YYYY-MM-DD') : record?.sent_date,
+      expected_return: formVals.expected_return ? formVals.expected_return.format('YYYY-MM-DD') : record?.expected_return,
+      lines: updatedItems.map(({ key, ...rest }) => rest),
+      status: 'received'
+    })
+    await tougheningBatchApi.changeStatus(id, 'received')
+    message.success('Batch closed. Pending pieces written off as short.')
+    queryClient.invalidateQueries({ queryKey: ['toughening_batches', id] })
+  }
 
   const handleSave = async (andNew = false) => {
     try {
@@ -229,8 +337,6 @@ const TougheningForm = () => {
       } else {
         values.vendor_name = vendor?.name || record?.vendor_name || ''
       }
-      // Model column is `lines`, not `items` — sending `items` gets silently
-      // stripped by the backend's valid_columns filter, losing all line data.
       values.lines = items.map(({ key, ...rest }) => rest)
       values.total_sqmt = totals.total_sqmt
       values.total_amount = totals.total_amount
@@ -272,7 +378,10 @@ const TougheningForm = () => {
       quantity: l.qty || l.quantity || 1,
       wo_number: wo.wo_number,
       so_number: wo.so_number,
-      item_status: 'pending',
+      qty_received: 0,
+      qty_posted: 0,
+      qty_short: 0,
+      short_reason: '',
       tgh_rate: l.tgh_rate || 1200,
     }))
     setItems(prev => [...prev, ...newItems])
@@ -281,7 +390,7 @@ const TougheningForm = () => {
     message.success(`Added ${newItems.length} items from ${wo.wo_number}`)
   }
 
-  const status = record?.status || 'draft'
+  const status = derivedStatus
   const fmt = (v) => `₹ ${Number(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
 
   const itemColumns = [
@@ -299,10 +408,51 @@ const TougheningForm = () => {
       <InputNumber size="small" value={v} min={0} style={{ width: '100%' }} onChange={val => updateItem(row.key, 'tgh_rate', val)} />
     )},
     { title: 'Amount', width: 110, dataIndex: 'tgh_amount', align: 'right', render: v => <Text strong style={{ color: '#059669' }}>{fmt(v)}</Text> },
-    { title: 'Status', width: 110, dataIndex: 'item_status', render: (v, row) => (
-      <Select size="small" value={v || 'pending'} options={ITEM_STATUSES} style={{ width: '100%' }}
-        onChange={val => updateItem(row.key, 'item_status', val)} />
-    )},
+    {
+      title: 'Received',
+      width: 140,
+      dataIndex: 'qty_received',
+      render: (v, row) => (
+        <Space size={4}>
+          <InputNumber
+            size="small"
+            min={0}
+            max={row.quantity}
+            precision={0}
+            value={v || 0}
+            style={{ width: 70 }}
+            onChange={val => {
+              const num = typeof val === 'number' && !isNaN(val) ? val : 0
+              const clamped = Math.max(0, Math.min(row.quantity, num))
+              updateItem(row.key, 'qty_received', clamped)
+            }}
+          />
+          <Button
+            type="link"
+            size="small"
+            style={{ padding: 0, fontSize: 11 }}
+            onClick={() => updateItem(row.key, 'qty_received', row.quantity)}
+          >
+            All
+          </Button>
+        </Space>
+      )
+    },
+    {
+      title: 'Pending',
+      width: 80,
+      align: 'center',
+      render: (_, row) => {
+        const q = row.quantity || 0
+        const r = row.qty_received || 0
+        const sh = row.qty_short || 0
+        const pending = Math.max(0, q - r - sh)
+        if (pending > 0) {
+          return <Text strong style={{ color: '#f59e0b' }}>{pending}</Text>
+        }
+        return <Text type="secondary">0</Text>
+      }
+    },
     {
       title: '', width: 50, fixed: 'right',
       render: (_, row) => (
@@ -355,8 +505,35 @@ const TougheningForm = () => {
             >
               Download Challan
             </Button>
-            {status === 'draft' && <Button type="primary" icon={<SendOutlined />} onClick={() => changeStage('sent', () => statusMutation.mutate('sent'))} style={{ background: '#3b82f6' }}>Send to Vendor</Button>}
-            {(status === 'sent' || status === 'partial_received') && <Button type="primary" icon={<InboxOutlined />} onClick={() => changeStage('received items', () => receiveMutation.mutate())} loading={receiveMutation.isPending} style={{ background: '#10b981' }}>Receive Marked Items</Button>}
+
+            {status === 'draft' && (
+              <Button type="primary" icon={<SendOutlined />} onClick={() => changeStage('sent', () => statusMutation.mutate('sent'))} style={{ background: '#3b82f6' }}>
+                Send to Vendor
+              </Button>
+            )}
+
+            {(status === 'sent' || status === 'partial_received') && (
+              <Button
+                type="primary"
+                icon={<InboxOutlined />}
+                onClick={() => postReceiptMutation.mutate()}
+                loading={postReceiptMutation.isPending}
+                style={{ background: '#10b981', borderColor: '#10b981' }}
+              >
+                Post Receipt
+              </Button>
+            )}
+
+            {status === 'partial_received' && (
+              <Button
+                danger
+                icon={<StopOutlined />}
+                onClick={() => setCloseModalOpen(true)}
+              >
+                Close Batch
+              </Button>
+            )}
+
             {status === 'partial_received' && <Tag color="orange" style={{ padding: '6px 12px', fontSize: 14 }}>◐ PARTIAL RECEIVED</Tag>}
             {status === 'received' && <Tag color="green" style={{ padding: '6px 12px', fontSize: 14 }}>✅ RECEIVED</Tag>}
           </Space>
@@ -376,7 +553,6 @@ const TougheningForm = () => {
                 allowClear
                 placeholder="Select vendor"
                 options={[
-                  // Include custom vendor_name from record as an option if not in vendorApi list
                   ...(record?.vendor_name && !(Array.isArray(vendors) ? vendors : (vendors?.items || [])).find(v => v.name === record.vendor_name)
                     ? [{ value: `__custom__${record.vendor_name}`, label: `${record.vendor_name} (from WO)` }]
                     : []
@@ -388,7 +564,6 @@ const TougheningForm = () => {
                 }
               />
             </Form.Item>
-            {/* Show vendor_name from WO if no vendor_id matched */}
             {record?.vendor_name && !form.getFieldValue('vendor_id') && (
               <div style={{
                 marginTop: -16, marginBottom: 8,
@@ -430,18 +605,42 @@ const TougheningForm = () => {
         <Table
           dataSource={items} columns={itemColumns} rowKey="key" size="small"
           pagination={false} scroll={{ x: 1400 }} style={{ marginBottom: 16 }}
+          rowClassName={(row) => {
+            const q = row.quantity || 0
+            const r = row.qty_received || 0
+            const sh = row.qty_short || 0
+            const pending = Math.max(0, q - r - sh)
+            if (pending === 0) return 'row-fully-received'
+            if (r > 0) return 'row-partially-received'
+            return ''
+          }}
           rowSelection={{
             selectedRowKeys: selectedItemKeys,
             onChange: setSelectedItemKeys,
           }}
         />
 
-        {/* Totals */}
+        {/* CSS inline for row background tinting */}
+        <style>{`
+          .row-fully-received td { background-color: #f0fdf4 !important; }
+          .row-partially-received td { background-color: #fffbeb !important; }
+        `}</style>
+
+        {/* Totals & Progress Summary */}
         <Row justify="end">
           <Col span={8}>
             <Card size="small" style={{ background: '#fef2f2', borderColor: '#fca5a5', borderRadius: 10 }}>
-              <Row justify="space-between" style={{ marginBottom: 8 }}><Col>Items Count</Col><Col><Text strong>{totals.total_qty}</Text></Col></Row>
-              <Row justify="space-between" style={{ marginBottom: 8 }}><Col>Total Sqmt</Col><Col><Text strong>{totals.total_sqmt.toFixed(4)}</Text></Col></Row>
+              <Row justify="space-between" style={{ marginBottom: 6 }}><Col>Items Count</Col><Col><Text strong>{totals.total_qty}</Text></Col></Row>
+              <Row justify="space-between" style={{ marginBottom: 6 }}><Col>Total Sqmt</Col><Col><Text strong>{totals.total_sqmt.toFixed(4)}</Text></Col></Row>
+              <Row justify="space-between" style={{ marginBottom: 6 }}><Col>Received</Col><Col><Text strong style={{ color: '#10b981' }}>{totals.total_received}</Text></Col></Row>
+              <Row justify="space-between" style={{ marginBottom: 6 }}><Col>Pending</Col><Col><Text strong style={{ color: '#f59e0b' }}>{totals.total_pending}</Text></Col></Row>
+              <div style={{ marginBottom: 8 }}>
+                <Progress
+                  percent={totals.total_qty > 0 ? Math.min(100, Math.round((totals.total_received / totals.total_qty) * 100)) : 0}
+                  strokeColor="#10b981"
+                  size="small"
+                />
+              </div>
               <Divider style={{ margin: '8px 0' }} />
               <Row justify="space-between"><Col><b style={{ fontSize: 16 }}>Total Amount</b></Col><Col><b style={{ fontSize: 16, color: '#dc2626' }}>{fmt(totals.total_amount)}</b></Col></Row>
             </Card>
@@ -466,6 +665,40 @@ const TougheningForm = () => {
             ))}
           </div>
         )}
+      </Modal>
+
+      {/* Close Batch Modal (Breakage Write-Off) */}
+      <Modal
+        title="Close Toughening Batch"
+        open={closeModalOpen}
+        onCancel={() => setCloseModalOpen(false)}
+        onOk={handleCloseBatchConfirm}
+        okText="Confirm Write-off & Close"
+        okButtonProps={{ danger: true }}
+      >
+        <div style={{ marginBottom: 16 }}>
+          <Text>
+            This batch has <b>{totals.total_pending}</b> pending piece(s). Closing the batch will write off the remaining pieces as short (no stock movements will be created).
+          </Text>
+        </div>
+        <Form layout="vertical">
+          <Form.Item label="Reason for Shortage / Breakage" required>
+            <Select value={closeReason} onChange={setCloseReason}>
+              {BREAKAGE_REASONS.map(r => (
+                <Option key={r} value={r}>{r}</Option>
+              ))}
+            </Select>
+          </Form.Item>
+          {closeReason === 'Other' && (
+            <Form.Item label="Notes (Mandatory for Other)" required>
+              <Input
+                placeholder="Enter details..."
+                value={closeNotes}
+                onChange={e => setCloseNotes(e.target.value)}
+              />
+            </Form.Item>
+          )}
+        </Form>
       </Modal>
     </MasterForm>
   )

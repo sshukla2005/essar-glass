@@ -16,6 +16,8 @@ import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '../../hooks/useAuth'
 import { companyApi } from '../../api'
 
+import ErrorBoundary from '../common/ErrorBoundary'
+
 const { Sider, Header, Content } = Layout
 const { Text } = Typography
 
@@ -338,7 +340,9 @@ const AppLayout = () => {
         </Header>
 
         <Content style={{ background: '#f8fafc', minHeight: 'calc(100vh - 64px)' }}>
-          <Outlet />
+          <ErrorBoundary>
+            <Outlet />
+          </ErrorBoundary>
         </Content>
       </Layout>
       <AIAssistant />

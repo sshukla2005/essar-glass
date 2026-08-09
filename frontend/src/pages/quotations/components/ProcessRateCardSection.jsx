@@ -6,6 +6,8 @@ import {
   Typography,
   Space,
   Tooltip,
+  Alert,
+  Modal,
 } from 'antd'
 import {
   PlusOutlined,
@@ -24,11 +26,14 @@ const { Text } = Typography
  * line, its rates auto-fill from (and stay in sync with) this card.
  *
  * Props:
- *   processRateCard   – array of { prc_key, process_id, process_name, selling_rate, cost_rate }
- *   updateRateCard    – fn(prc_key, field, value)  → updates one field + propagates to all lines
- *   addRateCardRow    – fn()                        → adds a blank row
- *   removeRateCardRow – fn(prc_key)                → removes row + optionally clears line rates
- *   processMasters    – full process master list (for the manual-add select)
+ *   processRateCard     – array of { prc_key, process_id, process_name, selling_rate, cost_rate }
+ *   updateRateCard      – fn(prc_key, field, value)  → updates one field + propagates to all lines
+ *   addRateCardRow      – fn()                        → adds a blank row
+ *   removeRateCardRow   – fn(prc_key)                → removes row + optionally clears line rates
+ *   processMasters      – full process master list (for the manual-add select)
+ *   divergentProcessIds – Set or Array of process_ids that diverge across rows
+ *   onNormaliseRates    – fn()                        → updates all rows to card rates
+ *   groups              – groups array to count affected rows for Normalise modal
  */
 const ProcessRateCardSection = ({
   processRateCard = [],
@@ -36,6 +41,9 @@ const ProcessRateCardSection = ({
   addRateCardRow,
   removeRateCardRow,
   processMasters = [],
+  divergentProcessIds = new Set(),
+  onNormaliseRates,
+  groups = [],
 }) => {
   // Only hole/cutout/farma/beveling are used in size-specific processes
   const eligibleMasters = processMasters.filter(p =>
@@ -44,6 +52,35 @@ const ProcessRateCardSection = ({
 
   // IDs already in the card so we can exclude them from the "add" select
   const usedIds = new Set(processRateCard.map(r => r.process_id).filter(Boolean))
+
+  const hasDivergence = (divergentProcessIds instanceof Set ? divergentProcessIds.size > 0 : (divergentProcessIds?.length || 0) > 0)
+
+  const handleNormalise = () => {
+    let affectedCount = 0
+    const cardMap = new Map(processRateCard.map(r => [r.process_id, r]))
+    groups.forEach(g => {
+      (g.sizes || []).forEach(s => {
+        (s.size_processes || []).forEach(sp => {
+          if (!sp.process_id) return
+          const card = cardMap.get(sp.process_id)
+          if (card) {
+            if (sp.rate !== card.selling_rate || sp.cost_rate !== card.cost_rate) {
+              affectedCount++
+            }
+          }
+        })
+      })
+    })
+
+    Modal.confirm({
+      title: 'Normalise process rates?',
+      content: `This will update ${affectedCount} process row(s) across this document to match the Process Rate Card.`,
+      okText: 'Normalise all rows to card rates',
+      okType: 'primary',
+      cancelText: 'Cancel',
+      onOk: () => onNormaliseRates?.(),
+    })
+  }
 
   return (
     <div style={{
@@ -92,6 +129,24 @@ const ProcessRateCardSection = ({
 
       {/* ── Body ── */}
       <div style={{ padding: '12px 20px 16px' }}>
+        {hasDivergence && (
+          <Alert
+            type="warning"
+            showIcon
+            style={{ marginBottom: 12, borderRadius: 8 }}
+            message="Some rows use this process at a different rate than shown here. Editing a rate below will set all rows to the new value."
+            action={
+              <Button
+                size="small"
+                type="primary"
+                style={{ background: '#d97706', borderColor: '#d97706', borderRadius: 6 }}
+                onClick={handleNormalise}
+              >
+                Normalise all rows to card rates
+              </Button>
+            }
+          />
+        )}
         {processRateCard.length === 0 ? (
           <Text type="secondary" style={{ fontSize: 12, display: 'block', textAlign: 'center', padding: '12px 0' }}>
             No processes yet. Add a process below or select one in a glass line — it will auto-appear here.

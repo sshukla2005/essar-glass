@@ -131,6 +131,7 @@ const SalesOrderForm = () => {
   const [isDirty, setIsDirty] = useState(false)
   const [leavePrompt, setLeavePrompt] = useState(null)
   const hydratedRef = useRef(false)
+  const rateCardRef = useRef(null)
 
   const [soUnit, setSoUnit] = useState('inch')
   const [dropdownConfig] = useState(getDropdownConfig())
@@ -187,42 +188,40 @@ const SalesOrderForm = () => {
     } catch { return 15 }
   }
 
+  const emptySize = () => ({
+    size_key: Date.now() + Math.random(),
+    width_inch: null, height_inch: null, quantity: 1,
+    area_sqft_pc: 0, total_sqft: 0, running_ft: 0,
+    charged_sqft: 0, charged_w_inch: 0, charged_h_inch: 0,
+    _charged_w_manual: false, _charged_h_manual: false,
+    cost_ceil_w: null, cost_ceil_h: null, cost_charged_w: null, cost_charged_h: null,
+    cost_charged_sqft: null, _cost_charged_w_manual: false, _cost_charged_h_manual: false,
+    glass_cost: 0, cep_cost: 0, proc_cost: 0, cost_amount: 0,
+    margin_amount: 0, margin_pct: 0, cep_rft: 0, cep_charges: 0,
+    tgh_sqmt: 0, tgh_charge: 0, _tgh_charge_manual: false,
+    subtotal: 0, tax_amount: 0, line_total: 0,
+    size_processes: []
+  })
+
+  const emptyGroupProcess = () => ({
+    proc_key: Date.now() + Math.random(),
+    process_id: null, charge_type: 'per_sqft', qty_area: 0, rate: 0, amount: 0,
+  })
+
   const emptyGroup = () => ({
     group_key: Date.now() + Math.random(),
-    glass_thickness: null,
-    glass_type: null,
-    glass_category: null,
-    ceiling_inches: 6,
-    ceiling_w_inches: 6,
-    ceiling_h_inches: 6,
-    wizard_cost_ceil_w: 3,
-    wizard_cost_ceil_h: 3,
-    wizard_cost_ceil_w_custom_mm: 30,
-    wizard_cost_ceil_h_custom_mm: 30,
-    wizard_cep_cost_rate: 5,
-    ceiling_w_custom_mm: 30,
-    ceiling_h_custom_mm: 30,
-    cep_polish_rate: getPolishingRate(),
-    cep_polish_rate_custom: null,
-    artwork_master_id: null,
-    artwork_name: null,
-    artwork_file_data: null,
-    is_toughened: false,
-    base_glass_rate: 0,
-    manual_cost_price: null,
-    product_id: null,
-    description: '',
-    rate: 0,
-    rate_rft: 0,
-    cep: false,
-    pricing_method: 'per_sqft',
-    discount_pct: 0,
-    tax_rate: 18,
-    custom_costing: false,
-    manual_rate: null,
-    cep_rft_multiplier: null,
-    sizes: [emptySize()],
-    processes: []
+    glass_thickness: null, glass_type: null, glass_category: null,
+    ceiling_inches: 6, ceiling_w_inches: 6, ceiling_h_inches: 6,
+    wizard_cost_ceil_w: 3, wizard_cost_ceil_h: 3,
+    wizard_cost_ceil_w_custom_mm: 30, wizard_cost_ceil_h_custom_mm: 30,
+    wizard_cep_cost_rate: 5, ceiling_w_custom_mm: 30, ceiling_h_custom_mm: 30,
+    cep_polish_rate: getPolishingRate(), cep_polish_rate_custom: null,
+    artwork_master_id: null, artwork_name: null, artwork_file_data: null,
+    is_toughened: false, base_glass_rate: 0, manual_cost_price: null,
+    product_id: null, description: '', rate: 0, rate_rft: 0, cep: false,
+    pricing_method: 'per_sqft', discount_pct: 0, tax_rate: 18,
+    custom_costing: false, manual_rate: null, cep_rft_multiplier: null,
+    sizes: [emptySize()], processes: []
   })
 
   const [groups, setGroups] = useState([emptyGroup()])
@@ -608,6 +607,12 @@ const SalesOrderForm = () => {
   }
 
   const updateSizeProcess = (gkey, skey, spkey, field, value) => {
+    if (field === 'rate' || field === 'cost_rate') {
+      if (import.meta.env.DEV) {
+        console.warn('[rate-card] blocked direct size-process rate write', field)
+      }
+      return
+    }
     setGroups(prev => prev.map(g => {
       if (g.group_key !== gkey) return g
       return {
@@ -729,6 +734,60 @@ const SalesOrderForm = () => {
 
   const removeRateCardRow = (prc_key) => {
     setProcessRateCard(prev => prev.filter(r => r.prc_key !== prc_key))
+  }
+
+  const divergentProcessIds = useMemo(() => {
+    const processRatesMap = new Map()
+    groups.forEach(g => {
+      (g.sizes || []).forEach(s => {
+        (s.size_processes || []).forEach(sp => {
+          if (!sp.process_id) return
+          if (!processRatesMap.has(sp.process_id)) {
+            processRatesMap.set(sp.process_id, new Set())
+          }
+          processRatesMap.get(sp.process_id).add(`${sp.rate}_${sp.cost_rate}`)
+        })
+      })
+    })
+    const set = new Set()
+    processRatesMap.forEach((ratesSet, pid) => {
+      if (ratesSet.size > 1) {
+        set.add(pid)
+      } else {
+        const card = (processRateCard || []).find(c => c.process_id === pid)
+        if (card) {
+          const [rStr] = Array.from(ratesSet)
+          const [rRate, rCost] = rStr.split('_').map(Number)
+          if (rRate !== card.selling_rate || rCost !== card.cost_rate) {
+            set.add(pid)
+          }
+        }
+      }
+    })
+    return set
+  }, [groups, processRateCard])
+
+  const normaliseRates = () => {
+    const cardMap = new Map((processRateCard || []).map(r => [r.process_id, r]))
+    setGroups(prev => prev.map(g => ({
+      ...g,
+      sizes: g.sizes.map(s => ({
+        ...s,
+        size_processes: (s.size_processes || []).map(sp => {
+          const card = cardMap.get(sp.process_id)
+          if (!card) return sp
+          const updatedRate = card.selling_rate ?? sp.rate
+          const updatedCost = card.cost_rate ?? sp.cost_rate
+          return {
+            ...sp,
+            rate: updatedRate,
+            cost_rate: updatedCost,
+            amount: parseFloat(((sp.qty_area || 0) * updatedRate).toFixed(2)),
+            cost_amount: parseFloat(((sp.qty_area || 0) * updatedCost).toFixed(2)),
+          }
+        })
+      }))
+    })))
   }
 
   const updateGroupProcess = (gkey, pkey, field, value) => {
@@ -980,8 +1039,9 @@ const SalesOrderForm = () => {
         delivery_date: record.delivery_date ? dayjs(record.delivery_date) : null,
       })
 
+      let reconstructed = null
       if (record.lines?.length) {
-        const reconstructed = reconstructGroups(record.lines)
+        reconstructed = reconstructGroups(record.lines)
         if (record.groups?.length) {
           reconstructed.forEach((g, idx) => {
             const saved = record.groups[idx]
@@ -1044,7 +1104,31 @@ const SalesOrderForm = () => {
         })))
       }
       setGstMode(record.gst_mode || (record.is_inter_state ? 'igst' : 'cgst_sgst'))
-      if (record.process_rate_card?.length) setProcessRateCard(record.process_rate_card)
+
+      let currentCard = record.process_rate_card?.length ? [...record.process_rate_card] : []
+      const cardPids = new Set(currentCard.map(r => r.process_id).filter(Boolean))
+      const backfillRows = []
+      const groupsToCheck = reconstructed || groups || []
+      groupsToCheck.forEach(g => {
+        (g.sizes || []).forEach(s => {
+          (s.size_processes || []).forEach(sp => {
+            if (sp.process_id && !cardPids.has(sp.process_id)) {
+              cardPids.add(sp.process_id)
+              backfillRows.push({
+                prc_key: `prc_${Date.now()}_${Math.random()}`,
+                process_id: sp.process_id,
+                process_name: sp.process_name || processMasters.find(p => p.id === sp.process_id)?.name || '',
+                selling_rate: sp.rate ?? 0,
+                cost_rate: sp.cost_rate ?? 0,
+              })
+            }
+          })
+        })
+      })
+      if (backfillRows.length > 0) {
+        currentCard = [...currentCard, ...backfillRows]
+      }
+      setProcessRateCard(currentCard)
       setTimeout(() => { hydratedRef.current = true }, 0)
     }
   }, [record, form])
@@ -2006,6 +2090,8 @@ const SalesOrderForm = () => {
                 message={message}
                 CEILING_OPTIONS={CEILING_OPTIONS}
                 productApi={productApi}
+                processRateCard={processRateCard}
+                onEditRates={() => rateCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
               />
             ))}
 
@@ -2054,13 +2140,18 @@ const SalesOrderForm = () => {
             </div>
 
             {/* Notes Card */}
-            <ProcessRateCardSection
-              processRateCard={processRateCard}
-              updateRateCard={updateRateCard}
-              addRateCardRow={addRateCardRow}
-              removeRateCardRow={removeRateCardRow}
-              processMasters={processMasters}
-            />
+            <div ref={rateCardRef}>
+              <ProcessRateCardSection
+                processRateCard={processRateCard}
+                updateRateCard={updateRateCard}
+                addRateCardRow={addRateCardRow}
+                removeRateCardRow={removeRateCardRow}
+                processMasters={processMasters}
+                divergentProcessIds={divergentProcessIds}
+                onNormaliseRates={normaliseRates}
+                groups={groups}
+              />
+            </div>
             <NotesCard />
 
             {/* Cost Analysis Card */}

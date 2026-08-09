@@ -24,7 +24,8 @@ import {
   ThunderboltOutlined,
   SettingOutlined,
   PictureOutlined,
-  CloseOutlined
+  CloseOutlined,
+  LockOutlined
 } from '@ant-design/icons'
 import FractionInput, { toFraction } from './FractionInput'
 import { calcGroupSize, getAutoChargedDim } from '../../../utils/quotationCalc'
@@ -38,9 +39,20 @@ const SizeProcessList = ({
   processMasters,
   updateSizeProcess,
   removeSizeProcess,
-  addSizeProcess
+  addSizeProcess,
+  processRateCard = [],
+  onEditRates
 }) => {
   const sizeProcesses = size.size_processes || []
+
+  const resolveRates = (proc) => {
+    const card = (processRateCard || []).find(r => r.process_id === proc.process_id)
+    return {
+      sell: card?.selling_rate ?? proc.rate ?? 0,
+      cost: card?.cost_rate    ?? proc.cost_rate ?? 0,
+      fromCard: Boolean(card),
+    }
+  }
 
   const columns = [
     {
@@ -90,35 +102,56 @@ const SizeProcessList = ({
       }
     },
     {
-      title: 'Selling Rate',
+      title: (
+        <span>
+          Selling Rate <LockOutlined style={{ fontSize: 10, color: '#64748b' }} />
+        </span>
+      ),
       dataIndex: 'rate',
-      width: 110,
-      render: (val, proc) => (
-        <InputNumber
-          size="small"
-          value={val}
-          min={0}
-          prefix="₹"
-          style={{ width: '100%', borderRadius: 4 }}
-          onChange={newVal => updateSizeProcess(groupKey, size.size_key, proc.sproc_key, 'rate', newVal)}
-        />
-      )
+      width: 130,
+      render: (_, proc) => {
+        const rates = resolveRates(proc)
+        return (
+          <Tooltip title="Set in the Process Rate Card below — applies to every row using this process.">
+            <Space size={4} align="center">
+              <Text strong style={{ color: '#10b981', fontSize: 12 }}>
+                ₹{Number(rates.sell).toFixed(2)}
+              </Text>
+              {!rates.fromCard && proc.process_id && (
+                <Tooltip title="Rate saved on this row before the Rate Card existed. Open the Process Rate Card to manage it.">
+                  <Tag color="warning" style={{ fontSize: 9, margin: 0, padding: '0 4px', lineHeight: '14px' }}>LEGACY</Tag>
+                </Tooltip>
+              )}
+            </Space>
+          </Tooltip>
+        )
+      }
     },
     {
-      title: 'Cost Rate',
+      title: (
+        <span>
+          Cost Rate <LockOutlined style={{ fontSize: 10, color: '#64748b' }} />
+        </span>
+      ),
       dataIndex: 'cost_rate',
-      width: 110,
-      render: (val, proc) => (
-        <InputNumber
-          size="small"
-          value={val || 0}
-          min={0}
-          prefix="₹"
-          placeholder="Cost"
-          style={{ width: '100%', borderColor: '#f59e0b', borderRadius: 4 }}
-          onChange={newVal => updateSizeProcess(groupKey, size.size_key, proc.sproc_key, 'cost_rate', newVal)}
-        />
-      )
+      width: 130,
+      render: (_, proc) => {
+        const rates = resolveRates(proc)
+        return (
+          <Tooltip title="Set in the Process Rate Card below — applies to every row using this process.">
+            <Space size={4} align="center">
+              <Text strong style={{ color: '#f59e0b', fontSize: 12 }}>
+                ₹{Number(rates.cost).toFixed(2)}
+              </Text>
+              {!rates.fromCard && proc.process_id && (
+                <Tooltip title="Rate saved on this row before the Rate Card existed. Open the Process Rate Card to manage it.">
+                  <Tag color="warning" style={{ fontSize: 9, margin: 0, padding: '0 4px', lineHeight: '14px' }}>LEGACY</Tag>
+                </Tooltip>
+              )}
+            </Space>
+          </Tooltip>
+        )
+      }
     },
     {
       title: 'Amount',
@@ -159,11 +192,23 @@ const SizeProcessList = ({
         <Text strong style={{ fontSize: 12, color: '#475569', display: 'flex', alignItems: 'center', gap: 6 }}>
           <ThunderboltOutlined style={{ color: '#7c3aed' }} /> Size-Specific Processes
         </Text>
-        {sizeProcesses.length > 0 && (
-          <Text style={{ fontSize: 11, color: '#6366f1', fontWeight: 600 }}>
-            Subtotal: ₹{sizeProcesses.reduce((s, p) => s + (p.amount || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-          </Text>
-        )}
+        <Space size={12}>
+          {onEditRates && (
+            <Button
+              type="link"
+              size="small"
+              onClick={onEditRates}
+              style={{ padding: 0, height: 'auto', fontSize: 11, color: '#7c3aed' }}
+            >
+              Edit rates ↓
+            </Button>
+          )}
+          {sizeProcesses.length > 0 && (
+            <Text style={{ fontSize: 11, color: '#6366f1', fontWeight: 600 }}>
+              Subtotal: ₹{sizeProcesses.reduce((s, p) => s + (p.amount || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+            </Text>
+          )}
+        </Space>
       </div>
 
       {sizeProcesses.length > 0 && (
@@ -209,7 +254,9 @@ const SizeTable = ({
   addSize,
   removeSize,
   setGroups,
-  products
+  products,
+  processRateCard = [],
+  onEditRates
 }) => {
   const columns = [
     {
@@ -433,6 +480,8 @@ const SizeTable = ({
             updateSizeProcess={updateSizeProcess}
             removeSizeProcess={removeSizeProcess}
             addSizeProcess={addSizeProcess}
+            processRateCard={processRateCard}
+            onEditRates={onEditRates}
           />
         ),
         rowExpandable: () => true,
@@ -500,7 +549,9 @@ const GlassCard = ({
   queryClient,
   message,
   CEILING_OPTIONS,
-  productApi
+  productApi,
+  processRateCard = [],
+  onEditRates
 }) => {
   const groupTotal = group.sizes.reduce((s, x) => s + (x.subtotal || 0), 0)
 
@@ -1040,6 +1091,8 @@ const GlassCard = ({
               removeSize={removeSize}
               setGroups={setGroups}
               products={products}
+              processRateCard={processRateCard}
+              onEditRates={onEditRates}
             />
           </div>
 
