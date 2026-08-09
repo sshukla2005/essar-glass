@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     ALLOWED_ORIGINS: str = "http://localhost:5173"
     UPLOAD_DIR: str = "uploads"
     MAX_UPLOAD_SIZE: int = 5242880
+    AUTO_CREATE_TABLES: bool = False
 
     # ── Company isolation flags ──────────────────────────────────────────
     # ASSUMPTION 1: Read-only-on-switch applies to ALL roles including
@@ -26,3 +27,8 @@ class Settings(BaseSettings):
         env_file = ".env"
 
 settings = Settings()
+
+if len(settings.SECRET_KEY) < 32:
+    raise ValueError("SECRET_KEY must be at least 32 characters long for security.")
+if settings.SECRET_KEY == "your-super-secret-jwt-key-change-this-in-production-1234567890":
+    raise ValueError("SECRET_KEY is using the committed default placeholder! Change it in .env.")
