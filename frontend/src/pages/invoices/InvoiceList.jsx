@@ -17,7 +17,7 @@ const InvoiceList = () => {
   
   const columns = [
     { title: 'Invoice No', dataIndex: 'invoice_number', width: 120 },
-    { title: 'Customer', dataIndex: 'customer_id', render: v => customers.find(c => c.value === v)?.label || v },
+    { title: 'Customer', dataIndex: 'customer_name', render: (v, r) => v || r.customer_id || '—' },
     { title: 'SO Ref', dataIndex: 'so_id', render: v => v ? `SO${String(v).padStart(4,'0')}` : '—' },
     { title: 'Invoice Date', dataIndex: 'invoice_date' },
     { title: 'Total', dataIndex: 'total_amount', render: v => <span style={{ color: '#0f172a', fontWeight: 600 }}>₹ {Number(v||0).toLocaleString('en-IN')}</span> },

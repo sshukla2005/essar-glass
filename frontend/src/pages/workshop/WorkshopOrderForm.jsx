@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { Form, Input, Select, Row, Col, Divider, DatePicker, Button, Table, Steps, Space, Tag, Checkbox, Card, Badge, App, Typography, InputNumber, Switch, Modal } from 'antd'
+import { Form, Input, Select, Row, Col, Divider, DatePicker, Button, Table, Steps, Space, Tag, Checkbox, Card, Badge, App, Typography, InputNumber, Switch, Modal, Alert } from 'antd'
 import { PlusOutlined, DeleteOutlined, ToolOutlined, FireOutlined, FileTextOutlined, CheckCircleOutlined, PlayCircleOutlined, DownloadOutlined, SwapOutlined, LinkOutlined } from '@ant-design/icons'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -16,7 +16,6 @@ import autoTable from 'jspdf-autotable'
 import ExcelJS from 'exceljs'
 import { saveAs } from 'file-saver'
 import FractionInput, { toFraction } from '../quotations/components/FractionInput'
-import InterCompanyBanner from '../../components/common/InterCompanyBanner'
 import { computeLineWeightKg } from '../../utils/glassCalc'
 import { makePdfFilename } from '../../utils/pdfGenerator'
 
@@ -648,6 +647,19 @@ const WorkshopOrderForm = () => {
       const updated = { ...l, [field]: value }
       if (field === 'act_w_in') updated.act_w_mm = inchToMm(value)
       if (field === 'act_h_in') updated.act_h_mm = inchToMm(value)
+      if (field === 'qty_cut') {
+        const cutVal = Math.max(0, Math.min(Number(l.qty || 1), Math.floor(Number(value || 0))))
+        updated.qty_cut = cutVal
+        const nowIso = new Date().toISOString()
+        if (cutVal > 0 && !updated.cut_started_at) {
+          updated.cut_started_at = nowIso
+        }
+        if (cutVal >= Number(l.qty || 1) && Number(l.qty || 1) > 0) {
+          if (!updated.cut_completed_at) updated.cut_completed_at = nowIso
+        } else {
+          updated.cut_completed_at = null
+        }
+      }
       return updated
     }))
   }
@@ -687,6 +699,58 @@ const WorkshopOrderForm = () => {
     { title: 'Act H (mm)', width: 100, dataIndex: 'act_h_mm', render: (v) => <InputNumber size="small" value={v} disabled /> },
     { title: 'Qty', width: 80, dataIndex: 'qty', render: (v, row) => <InputNumber size="small" value={v} onChange={val => updateLine(row.key, 'qty', val)} /> },
     {
+      title: 'Cut',
+      width: 110,
+      dataIndex: 'qty_cut',
+      render: (v, row) => {
+        const qty = Number(row.qty || 1)
+        const cut = Number(v || 0)
+        return (
+          <Space size={4}>
+            <InputNumber
+              size="small"
+              min={0}
+              max={qty}
+              precision={0}
+              style={{ width: 55 }}
+              value={cut}
+              disabled={isCompletedOrCancelled}
+              onChange={val => updateLine(row.key, 'qty_cut', val)}
+            />
+            <Button
+              type="link"
+              size="small"
+              style={{ padding: 0, fontSize: 11 }}
+              disabled={isCompletedOrCancelled}
+              onClick={() => updateLine(row.key, 'qty_cut', qty)}
+            >
+              All
+            </Button>
+          </Space>
+        )
+      }
+    },
+    {
+      title: 'Pending',
+      width: 70,
+      align: 'right',
+      render: (_, row) => {
+        const qty = Number(row.qty || 1)
+        const cut = Number(row.qty_cut || 0)
+        const pending = Math.max(0, qty - cut)
+        const isPositive = pending > 0
+        return (
+          <span style={{
+            fontWeight: isPositive ? 700 : 400,
+            color: isPositive ? '#d97706' : '#94a3b8',
+            fontSize: 12
+          }}>
+            {pending}
+          </span>
+        )
+      }
+    },
+    {
       title: 'Weight (kg)',
       width: 90,
       align: 'right',
@@ -700,8 +764,20 @@ const WorkshopOrderForm = () => {
       }
     },
     {
-      title: 'Actions', width: 280, render: (_, row) => (
+      title: 'Actions', width: 340, render: (_, row) => (
         <Space wrap>
+          {!row.cut_started_at && (row.qty_cut || 0) === 0 && (
+            <Button
+              size="small"
+              type="dashed"
+              icon={<PlayCircleOutlined />}
+              style={{ color: '#0284c7', borderColor: '#38bdf8', fontSize: 11 }}
+              disabled={isCompletedOrCancelled}
+              onClick={() => updateLine(row.key, 'cut_started_at', new Date().toISOString())}
+            >
+              Start Cutting
+            </Button>
+          )}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
             <Checkbox
               checked={row.has_process}
@@ -754,6 +830,82 @@ const WorkshopOrderForm = () => {
     mutationFn: (newStatus) => workshopOrderApi.changeStatus(id, newStatus),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['workshop_orders', id] }),
   })
+
+  const isCompletedOrCancelled = record?.status === 'completed' || record?.status === 'cancelled';
+
+  const mismatchState = useMemo(() => {
+    if (!record || !lines || lines.length === 0) return null;
+
+    const allCut = lines.every(l => {
+      const qty = Number(l.qty || l.quantity || 0);
+      const cut = Number(l.qty_cut || 0);
+      return qty > 0 && cut >= qty;
+    });
+
+    if (record.status === 'completed' && !allCut) {
+      return {
+        type: 'completed_but_uncut',
+        message: 'This Workshop Order is marked COMPLETED, but some lines are still uncut.',
+        actionText: 'Mark All Lines as Cut',
+      };
+    }
+
+    if (record.status !== 'completed' && record.status !== 'cancelled' && allCut) {
+      return {
+        type: 'cut_but_not_completed',
+        message: 'All lines are fully cut, but the Workshop Order status is not COMPLETED.',
+        actionText: 'Mark Order as Completed',
+      };
+    }
+
+    return null;
+  }, [record, lines]);
+
+  const handleReconcile = async () => {
+    if (!mismatchState) return;
+
+    if (mismatchState.type === 'completed_but_uncut') {
+      const nowIso = new Date().toISOString();
+      const updatedLines = lines.map(l => {
+        const qty = Number(l.qty || l.quantity || 1);
+        return {
+          ...l,
+          qty_cut: qty,
+          cut_started_at: l.cut_started_at || nowIso,
+          cut_completed_at: l.cut_completed_at || nowIso,
+        };
+      });
+      setLines(updatedLines);
+
+      // Trigger saving to backend
+      const values = form.getFieldsValue();
+      if (values.order_date) values.order_date = values.order_date.format('YYYY-MM-DD');
+      if (values.required_by) values.required_by = values.required_by.format('YYYY-MM-DD');
+      const cust = customerList.find(c => c.id === values.customer_id);
+      values.customer_name = cust?.name || '';
+      const so = soList.find(s => s.id === values.so_id);
+      values.so_number = so?.so_number || '';
+      values.lines = updatedLines.map(({ key, ...rest }) => rest);
+      values.jobwork_vendor = selectedJobworkVendor || null;
+      const cleanMaps = artworkMaps.filter(m => m.image || (m.panels || []).length > 0);
+      values.artwork_panels = cleanMaps;
+      values.artwork_image = cleanMaps[0]?.image || null;
+
+      try {
+        await saveMutation.mutateAsync(values);
+        message.success('Lines reconciled successfully!');
+      } catch (err) {
+        message.error('Failed to reconcile: ' + (err?.message || ''));
+      }
+    } else if (mismatchState.type === 'cut_but_not_completed') {
+      try {
+        await statusMutation.mutateAsync('completed');
+        message.success('Workshop Order marked as completed!');
+      } catch (err) {
+        message.error('Failed to reconcile status: ' + (err?.message || ''));
+      }
+    }
+  };
 
   const lineHasArtwork = (l) =>
     !!(l.artwork_file_data || l.artwork_id || l.artwork_master_id || l.artwork_image || l.artwork_name || l.artwork_file || l.artwork_file_name)
@@ -1573,7 +1725,23 @@ const WorkshopOrderForm = () => {
       breadcrumbs={[{ label: 'Workshop' }, { label: 'Workshop Orders', path: '/workshop/orders' }, { label: isEdit ? record?.wo_number || 'Edit' : 'New' }]}
       onSave={() => handleSave(false)} onSaveNew={() => handleSave(true)} onDiscard={() => guardedNavigate('/workshop/orders')} onBack={() => guardedNavigate('/workshop/orders')}>
 
-      <InterCompanyBanner docType="wo" linkedRef={record?.linked_ref} />
+
+      {mismatchState && (
+        <Alert
+          message="Data Consistency Warning"
+          description={
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>{mismatchState.message}</span>
+              <Button type="primary" size="small" onClick={handleReconcile} style={{ background: '#d97706', borderColor: '#d97706' }}>
+                {mismatchState.actionText}
+              </Button>
+            </div>
+          }
+          type="warning"
+          showIcon
+          style={{ marginBottom: 16 }}
+        />
+      )}
 
       {/* Smart Buttons */}
       {isEdit && (
@@ -1720,6 +1888,16 @@ const WorkshopOrderForm = () => {
         </div>
         <Table
           dataSource={lines} columns={lineColumns} rowKey="key" size="small" pagination={false} scroll={{ x: 1000 }} style={{ marginBottom: 16 }}
+          onRow={(record) => {
+            const qty = Number(record.qty || 1);
+            const cut = Number(record.qty_cut || 0);
+            const isComplete = qty > 0 && cut >= qty;
+            const isInProgress = record.cut_started_at || cut > 0;
+            let bg = undefined;
+            if (isComplete) bg = '#f0fdf4';
+            else if (isInProgress) bg = '#fffbeb';
+            return { style: { backgroundColor: bg } };
+          }}
           rowSelection={{
             selectedRowKeys: selectedLineKeys,
             onChange: keys => setSelectedLineKeys(keys),

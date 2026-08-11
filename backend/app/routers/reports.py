@@ -27,7 +27,7 @@ from app.models.invoice import Invoice
 from app.models.payment import Payment
 from app.models.employee import Employee
 from app.models.customer import Customer
-from app.utils.helpers import apply_company_filter
+from app.utils.helpers import apply_company_filter, apply_scope_filter
 
 router = APIRouter(prefix="/api/v1/reports", tags=["Reports"])
 
@@ -94,7 +94,8 @@ def _calc_summary(
     f_date: date,
     t_date: date,
     cid: Optional[int],
-    db: Session
+    db: Session,
+    user=None,
 ) -> Dict[str, Any]:
     f_str = f_date.isoformat()
     t_str = t_date.isoformat()
@@ -102,21 +103,21 @@ def _calc_summary(
     end_dt = datetime.combine(t_date, time.max)
 
     # 1. CRM Leads created in period
-    leads_q = apply_company_filter(
-        db.query(CRMLead).filter(
-            CRMLead.is_active == True,
-            CRMLead.created_at >= start_dt,
-            CRMLead.created_at <= end_dt
+    leads_q = apply_scope_filter(
+        apply_company_filter(
+            db.query(CRMLead).filter(
+                CRMLead.is_active == True,
+                CRMLead.created_at >= start_dt,
+                CRMLead.created_at <= end_dt
+            ),
+            CRMLead, cid
         ),
-        CRMLead, cid
+        CRMLead, user, "crm_leads"
     )
     leads_created = leads_q.count()
     expected_rev_sum = float(leads_q.with_entities(func.sum(CRMLead.expected_revenue)).scalar() or 0.0)
 
     # 2. Quotations in period
-    # Business-date columns (quote_date, etc.) are String(20) holding YYYY-MM-DD.
-    # Coalescing with created_at formatted as YYYY-MM-DD and casting explicitly to String for SQL type safety
-    # enables correct lexical ISO date string comparison.
     q_date_expr = cast(
         func.coalesce(
             func.nullif(Quotation.quote_date, ''),
@@ -126,14 +127,13 @@ def _calc_summary(
     )
     q_sp_expr = func.coalesce(func.nullif(Quotation.salesperson, ''), func.nullif(CRMLead.salesperson, ''))
 
-    quotes_q = (
+    quotes_q = apply_scope_filter(
         apply_company_filter(
             db.query(Quotation).filter(Quotation.is_active == True, Quotation.status != 'cancelled'),
             Quotation, cid
-        )
-        .outerjoin(CRMLead, Quotation.crm_lead_id == CRMLead.id)
-        .filter(q_date_expr >= f_str, q_date_expr <= t_str)
-    )
+        ),
+        Quotation, user, "quotations"
+    ).outerjoin(CRMLead, Quotation.crm_lead_id == CRMLead.id).filter(q_date_expr >= f_str, q_date_expr <= t_str)
 
     quotes_created = quotes_q.count()
     quotes_value = round(float(quotes_q.with_entities(func.sum(Quotation.total_amount)).scalar() or 0.0), 2)
@@ -166,15 +166,13 @@ def _calc_summary(
         func.nullif(CRMLead.salesperson, '')
     )
 
-    sos_q = (
+    sos_q = apply_scope_filter(
         apply_company_filter(
             db.query(SalesOrder).filter(SalesOrder.is_active == True, SalesOrder.status != 'cancelled'),
             SalesOrder, cid
-        )
-        .outerjoin(Quotation, SalesOrder.quotation_id == Quotation.id)
-        .outerjoin(CRMLead, func.coalesce(SalesOrder.crm_lead_id, Quotation.crm_lead_id) == CRMLead.id)
-        .filter(so_date_expr >= f_str, so_date_expr <= t_str)
-    )
+        ),
+        SalesOrder, user, "sales_orders"
+    ).outerjoin(Quotation, SalesOrder.quotation_id == Quotation.id).outerjoin(CRMLead, func.coalesce(SalesOrder.crm_lead_id, Quotation.crm_lead_id) == CRMLead.id).filter(so_date_expr >= f_str, so_date_expr <= t_str)
 
     so_count = sos_q.count()
     so_value = round(float(sos_q.with_entities(func.sum(SalesOrder.total_amount)).scalar() or 0.0), 2)
@@ -187,13 +185,14 @@ def _calc_summary(
         ),
         String
     )
-    invs_q = (
+    invs_q = apply_scope_filter(
         apply_company_filter(
             db.query(Invoice).filter(Invoice.is_active == True, Invoice.status != 'cancelled'),
             Invoice, cid
-        )
-        .filter(inv_date_expr >= f_str, inv_date_expr <= t_str)
-    )
+        ),
+        Invoice, user, "invoices"
+    ).filter(inv_date_expr >= f_str, inv_date_expr <= t_str)
+
     invoiced_count = invs_q.count()
     invoiced_value = round(float(invs_q.with_entities(func.sum(Invoice.total_amount)).scalar() or 0.0), 2)
 
@@ -205,13 +204,13 @@ def _calc_summary(
         ),
         String
     )
-    pays_q = (
+    pays_q = apply_scope_filter(
         apply_company_filter(
             db.query(Payment).filter(Payment.is_active == True),
             Payment, cid
-        )
-        .filter(pay_date_expr >= f_str, pay_date_expr <= t_str)
-    )
+        ),
+        Payment, user, "payment_accounts"
+    ).filter(pay_date_expr >= f_str, pay_date_expr <= t_str)
     collected_count = pays_q.count()
     collected_value = round(float(pays_q.with_entities(func.sum(Payment.amount)).scalar() or 0.0), 2)
 
@@ -270,13 +269,13 @@ def sales_performance(
     end_dt = datetime.combine(t_date, time.max)
 
     # Summary for current period
-    summary = _calc_summary(f_date, t_date, cid, db)
+    summary = _calc_summary(f_date, t_date, cid, db, user)
 
     # Previous period calculation for deltas
     duration_days = (t_date - f_date).days + 1
     prev_to = f_date - timedelta(days=1)
     prev_from = prev_to - timedelta(days=duration_days - 1)
-    previous = _calc_summary(prev_from, prev_to, cid, db)
+    previous = _calc_summary(prev_from, prev_to, cid, db, user)
 
     # ── Per-Salesperson Aggregation ──────────────────────────────────────────
     # Dictionary structure keyed by normalized salesperson name
@@ -623,6 +622,11 @@ def sales_performance(
         "unmatched_names": sorted(list(unmatched_names_set))
     }
 
+    eff_scope = getattr(user, "data_scope", "company")
+    if isinstance(getattr(user, "module_scopes", None), dict):
+        eff_scope = user.module_scopes.get("reports", eff_scope)
+    is_scoped = (user.role not in ("superadmin", "admin")) and (eff_scope == "own")
+
     return {
         "period": {
             "from": f_str,
@@ -634,7 +638,8 @@ def sales_performance(
         "funnel": funnel,
         "salespeople": salespeople,
         "monthly": monthly,
-        "data_quality": data_quality
+        "data_quality": data_quality,
+        "is_scoped": is_scoped,
     }
 
 

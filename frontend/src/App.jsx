@@ -173,127 +173,127 @@ const App = () => {
         <BrowserRouter>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
-          <Route path="/super-dashboard" element={<ProtectedRoute><SuperAdminDashboard /></ProtectedRoute>} />
-          <Route path="/super/users" element={<ProtectedRoute><UserManagement /></ProtectedRoute>} />
+          <Route path="/super-dashboard" element={<ProtectedRoute requiredRole="superadmin"><SuperAdminDashboard /></ProtectedRoute>} />
+          <Route path="/super/users" element={<ProtectedRoute requiredRole="superadmin"><UserManagement /></ProtectedRoute>} />
           <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
             <Route index element={<Dashboard />} />
 
             {/* ── CRM ────────────────────────────────────────────────── */}
-            <Route path="crm/pipeline"       element={<Pipeline />} />
-            <Route path="crm/leads"          element={<LeadList />} />
-            <Route path="crm/leads/new"      element={<LeadForm />} />
-            <Route path="crm/leads/:id/edit" element={<LeadForm />} />
-            <Route path="crm/stages"         element={<StageList />} />
-            <Route path="crm/stages/new"     element={<StageForm />} />
-            <Route path="crm/stages/:id/edit" element={<StageForm />} />
+            <Route path="crm/pipeline"       element={<ProtectedRoute module="pipeline"><Pipeline /></ProtectedRoute>} />
+            <Route path="crm/leads"          element={<ProtectedRoute module="leads"><LeadList /></ProtectedRoute>} />
+            <Route path="crm/leads/new"      element={<ProtectedRoute module="leads"><LeadForm /></ProtectedRoute>} />
+            <Route path="crm/leads/:id/edit" element={<ProtectedRoute module="leads"><LeadForm /></ProtectedRoute>} />
+            <Route path="crm/stages"         element={<ProtectedRoute module="stages"><StageList /></ProtectedRoute>} />
+            <Route path="crm/stages/new"     element={<ProtectedRoute module="stages"><StageForm /></ProtectedRoute>} />
+            <Route path="crm/stages/:id/edit" element={<ProtectedRoute module="stages"><StageForm /></ProtectedRoute>} />
 
             {/* ── Quotations ─────────────────────────────────────────── */}
-            <Route path="quotations"           element={<QuotationList />} />
-            <Route path="quotations/new"       element={<QuotationForm />} />
-            <Route path="quotations/:id/edit"  element={<QuotationForm />} />
+            <Route path="quotations"           element={<ProtectedRoute module="quotations"><QuotationList /></ProtectedRoute>} />
+            <Route path="quotations/new"       element={<ProtectedRoute module="quotations"><QuotationForm /></ProtectedRoute>} />
+            <Route path="quotations/:id/edit"  element={<ProtectedRoute module="quotations"><QuotationForm /></ProtectedRoute>} />
 
             {/* ── Sales ──────────────────────────────────────────────── */}
-            <Route path="sales-orders"              element={<SalesOrderList />} />
-            <Route path="sales-orders/new"          element={<SalesOrderForm />} />
-            <Route path="sales-orders/:id/edit"     element={<SalesOrderForm />} />
+            <Route path="sales-orders"              element={<ProtectedRoute module="sales_orders"><SalesOrderList /></ProtectedRoute>} />
+            <Route path="sales-orders/new"          element={<ProtectedRoute module="sales_orders"><SalesOrderForm /></ProtectedRoute>} />
+            <Route path="sales-orders/:id/edit"     element={<ProtectedRoute module="sales_orders"><SalesOrderForm /></ProtectedRoute>} />
 
             {/* ── Purchase ───────────────────────────────────────────── */}
-            <Route path="purchase-orders"           element={<PurchaseOrderList />} />
-            <Route path="purchase-orders/new"       element={<PurchaseOrderForm />} />
-            <Route path="purchase-orders/:id/edit"  element={<PurchaseOrderForm />} />
+            <Route path="purchase-orders"           element={<ProtectedRoute module="purchase_orders"><PurchaseOrderList /></ProtectedRoute>} />
+            <Route path="purchase-orders/new"       element={<ProtectedRoute module="purchase_orders"><PurchaseOrderForm /></ProtectedRoute>} />
+            <Route path="purchase-orders/:id/edit"  element={<ProtectedRoute module="purchase_orders"><PurchaseOrderForm /></ProtectedRoute>} />
 
             {/* ── Inventory ──────────────────────────────────────────── */}
-            <Route path="inventory/stock"           element={<StockOverview />} />
-            <Route path="inventory/movements"       element={<StockMovements />} />
-            <Route path="delivery-challans"         element={<DeliveryChallanList />} />
-            <Route path="delivery-challans/new"     element={<DeliveryChallanForm />} />
-            <Route path="delivery-challans/:id/edit" element={<DeliveryChallanForm />} />
+            <Route path="inventory/stock"           element={<ProtectedRoute module="stock"><StockOverview /></ProtectedRoute>} />
+            <Route path="inventory/movements"       element={<ProtectedRoute module="stock_movements"><StockMovements /></ProtectedRoute>} />
+            <Route path="delivery-challans"         element={<ProtectedRoute module="delivery_challans"><DeliveryChallanList /></ProtectedRoute>} />
+            <Route path="delivery-challans/new"     element={<ProtectedRoute module="delivery_challans"><DeliveryChallanForm /></ProtectedRoute>} />
+            <Route path="delivery-challans/:id/edit" element={<ProtectedRoute module="delivery_challans"><DeliveryChallanForm /></ProtectedRoute>} />
 
             {/* ── Invoices ───────────────────────────────────────────── */}
-            <Route path="invoices"                        element={<InvoiceDashboard />} />
-            <Route path="invoices/new"                    element={<InvoiceForm />} />
-            <Route path="invoices/:id/edit"               element={<InvoiceForm />} />
-            <Route path="invoices/customer/:customerId"   element={<CustomerLedger />} />
+            <Route path="invoices"                        element={<ProtectedRoute module="invoices"><InvoiceDashboard /></ProtectedRoute>} />
+            <Route path="invoices/new"                    element={<ProtectedRoute module="invoices"><InvoiceForm /></ProtectedRoute>} />
+            <Route path="invoices/:id/edit"               element={<ProtectedRoute module="invoices"><InvoiceForm /></ProtectedRoute>} />
+            <Route path="invoices/customer/:customerId"   element={<ProtectedRoute module="invoices"><CustomerLedger /></ProtectedRoute>} />
 
             {/* ── Masters: Customers ──────────────────────────────────── */}
-            <Route path="masters/customers"          element={<CustomerList />} />
-            <Route path="masters/customers/new"      element={<CustomerForm />} />
-            <Route path="masters/customers/:id/edit" element={<CustomerForm />} />
+            <Route path="masters/customers"          element={<ProtectedRoute module="customers"><CustomerList /></ProtectedRoute>} />
+            <Route path="masters/customers/new"      element={<ProtectedRoute module="customers"><CustomerForm /></ProtectedRoute>} />
+            <Route path="masters/customers/:id/edit" element={<ProtectedRoute module="customers"><CustomerForm /></ProtectedRoute>} />
 
             {/* ── Masters: Vendors ────────────────────────────────────── */}
-            <Route path="masters/vendors"          element={<VendorList />} />
-            <Route path="masters/vendors/new"      element={<VendorForm />} />
-            <Route path="masters/vendors/:id/edit" element={<VendorForm />} />
+            <Route path="masters/vendors"          element={<ProtectedRoute module="vendors"><VendorList /></ProtectedRoute>} />
+            <Route path="masters/vendors/new"      element={<ProtectedRoute module="vendors"><VendorForm /></ProtectedRoute>} />
+            <Route path="masters/vendors/:id/edit" element={<ProtectedRoute module="vendors"><VendorForm /></ProtectedRoute>} />
 
             {/* ── Masters: Products ───────────────────────────────────── */}
-            <Route path="masters/products"          element={<ProductList />} />
-            <Route path="masters/products/new"      element={<ProductForm />} />
-            <Route path="masters/products/:id/edit" element={<ProductForm />} />
+            <Route path="masters/products"          element={<ProtectedRoute module="products"><ProductList /></ProtectedRoute>} />
+            <Route path="masters/products/new"      element={<ProtectedRoute module="products"><ProductForm /></ProtectedRoute>} />
+            <Route path="masters/products/:id/edit" element={<ProtectedRoute module="products"><ProductForm /></ProtectedRoute>} />
 
             {/* ── Masters: Employees ──────────────────────────────────── */}
-            <Route path="masters/employees"          element={<EmployeeList />} />
-            <Route path="masters/employees/new"      element={<EmployeeForm />} />
-            <Route path="masters/employees/:id/edit" element={<EmployeeForm />} />
+            <Route path="masters/employees"          element={<ProtectedRoute module="employees"><EmployeeList /></ProtectedRoute>} />
+            <Route path="masters/employees/new"      element={<ProtectedRoute module="employees"><EmployeeForm /></ProtectedRoute>} />
+            <Route path="masters/employees/:id/edit" element={<ProtectedRoute module="employees"><EmployeeForm /></ProtectedRoute>} />
 
             {/* ── Masters: UoMs ───────────────────────────────────────── */}
-            <Route path="masters/uoms"           element={<UomList />} />
-            <Route path="masters/uoms/new"       element={<UomForm />} />
-            <Route path="masters/uoms/:id/edit"  element={<UomForm />} />
+            <Route path="masters/uoms"           element={<ProtectedRoute module="uoms"><UomList /></ProtectedRoute>} />
+            <Route path="masters/uoms/new"       element={<ProtectedRoute module="uoms"><UomForm /></ProtectedRoute>} />
+            <Route path="masters/uoms/:id/edit"  element={<ProtectedRoute module="uoms"><UomForm /></ProtectedRoute>} />
 
             {/* ── Masters: Taxes ──────────────────────────────────────── */}
-            <Route path="masters/taxes"           element={<TaxList />} />
-            <Route path="masters/taxes/new"       element={<TaxForm />} />
-            <Route path="masters/taxes/:id/edit"  element={<TaxForm />} />
+            <Route path="masters/taxes"           element={<ProtectedRoute module="taxes"><TaxList /></ProtectedRoute>} />
+            <Route path="masters/taxes/new"       element={<ProtectedRoute module="taxes"><TaxForm /></ProtectedRoute>} />
+            <Route path="masters/taxes/:id/edit"  element={<ProtectedRoute module="taxes"><TaxForm /></ProtectedRoute>} />
 
             {/* ── Masters: HSN / SAC Codes ────────────────────────────── */}
-            <Route path="masters/hsn-codes"           element={<HsnList />} />
-            <Route path="masters/hsn-codes/new"       element={<HsnForm />} />
-            <Route path="masters/hsn-codes/:id/edit"  element={<HsnForm />} />
+            <Route path="masters/hsn-codes"           element={<ProtectedRoute module="hsn_codes"><HsnList /></ProtectedRoute>} />
+            <Route path="masters/hsn-codes/new"       element={<ProtectedRoute module="hsn_codes"><HsnForm /></ProtectedRoute>} />
+            <Route path="masters/hsn-codes/:id/edit"  element={<ProtectedRoute module="hsn_codes"><HsnForm /></ProtectedRoute>} />
 
             {/* ── Settings: Company ───────────────────────────────────── */}
-            <Route path="settings/company" element={<CompanyInfo />} />
-            <Route path="settings/ai" element={<AISettings />} />
-            <Route path="settings/glass-calc" element={<GlassCalcSettings />} />
-            <Route path="settings/glass-rate-matrix" element={<GlassRateMatrix />} />
-            <Route path="settings/glass-dropdowns" element={<GlassDropdownSettings />} />
-            <Route path="settings/uom-rates" element={<UomRateMaster />} />
+            <Route path="settings/company" element={<ProtectedRoute module="company"><CompanyInfo /></ProtectedRoute>} />
+            <Route path="settings/ai" element={<ProtectedRoute module="ai"><AISettings /></ProtectedRoute>} />
+            <Route path="settings/glass-calc" element={<ProtectedRoute module="glass_calc"><GlassCalcSettings /></ProtectedRoute>} />
+            <Route path="settings/glass-rate-matrix" element={<ProtectedRoute module="glass_rate_matrix"><GlassRateMatrix /></ProtectedRoute>} />
+            <Route path="settings/glass-dropdowns" element={<ProtectedRoute module="glass_dropdowns"><GlassDropdownSettings /></ProtectedRoute>} />
+            <Route path="settings/uom-rates" element={<ProtectedRoute module="uom_rates"><UomRateMaster /></ProtectedRoute>} />
 
             {/* ── Settings: Branches ──────────────────────────────────── */}
-            <Route path="settings/branches"           element={<BranchList />} />
-            <Route path="settings/branches/new"       element={<BranchForm />} />
-            <Route path="settings/branches/:id/edit"  element={<BranchForm />} />
+            <Route path="settings/branches"           element={<ProtectedRoute module="branches"><BranchList /></ProtectedRoute>} />
+            <Route path="settings/branches/new"       element={<ProtectedRoute module="branches"><BranchForm /></ProtectedRoute>} />
+            <Route path="settings/branches/:id/edit"  element={<ProtectedRoute module="branches"><BranchForm /></ProtectedRoute>} />
 
             {/* ── Settings: Currencies ────────────────────────────────── */}
-            <Route path="settings/currencies"           element={<CurrencyList />} />
-            <Route path="settings/currencies/new"       element={<CurrencyForm />} />
-            <Route path="settings/currencies/:id/edit"  element={<CurrencyForm />} />
+            <Route path="settings/currencies"           element={<ProtectedRoute module="currencies"><CurrencyList /></ProtectedRoute>} />
+            <Route path="settings/currencies/new"       element={<ProtectedRoute module="currencies"><CurrencyForm /></ProtectedRoute>} />
+            <Route path="settings/currencies/:id/edit"  element={<ProtectedRoute module="currencies"><CurrencyForm /></ProtectedRoute>} />
 
             {/* ── Settings: Tax Groups ────────────────────────────────── */}
-            <Route path="settings/tax-groups"           element={<TaxGroupList />} />
-            <Route path="settings/tax-groups/new"       element={<TaxGroupForm />} />
-            <Route path="settings/tax-groups/:id/edit"  element={<TaxGroupForm />} />
+            <Route path="settings/tax-groups"           element={<ProtectedRoute module="tax_groups"><TaxGroupList /></ProtectedRoute>} />
+            <Route path="settings/tax-groups/new"       element={<ProtectedRoute module="tax_groups"><TaxGroupForm /></ProtectedRoute>} />
+            <Route path="settings/tax-groups/:id/edit"  element={<ProtectedRoute module="tax_groups"><TaxGroupForm /></ProtectedRoute>} />
 
             {/* ── Settings: UoM Categories ────────────────────────────── */}
-            <Route path="settings/uom-categories"           element={<UomCategoryList />} />
-            <Route path="settings/uom-categories/new"       element={<UomCategoryForm />} />
-            <Route path="settings/uom-categories/:id/edit"  element={<UomCategoryForm />} />
+            <Route path="settings/uom-categories"           element={<ProtectedRoute module="uom_categories"><UomCategoryList /></ProtectedRoute>} />
+            <Route path="settings/uom-categories/new"       element={<ProtectedRoute module="uom_categories"><UomCategoryForm /></ProtectedRoute>} />
+            <Route path="settings/uom-categories/:id/edit"  element={<ProtectedRoute module="uom_categories"><UomCategoryForm /></ProtectedRoute>} />
 
             {/* ── Workshop ──────────────────────────────────────────── */}
-            <Route path="workshop/orders"              element={<WorkshopOrderList />} />
-            <Route path="workshop/orders/new"          element={<WorkshopOrderForm />} />
-            <Route path="workshop/orders/:id/edit"     element={<WorkshopOrderForm />} />
-            <Route path="workshop/toughening"          element={<TougheningList />} />
-            <Route path="workshop/toughening/new"      element={<TougheningForm />} />
-            <Route path="workshop/toughening/:id/edit" element={<TougheningForm />} />
+            <Route path="workshop/orders"              element={<ProtectedRoute module="workshop_orders"><WorkshopOrderList /></ProtectedRoute>} />
+            <Route path="workshop/orders/new"          element={<ProtectedRoute module="workshop_orders"><WorkshopOrderForm /></ProtectedRoute>} />
+            <Route path="workshop/orders/:id/edit"     element={<ProtectedRoute module="workshop_orders"><WorkshopOrderForm /></ProtectedRoute>} />
+            <Route path="workshop/toughening"          element={<ProtectedRoute module="toughening"><TougheningList /></ProtectedRoute>} />
+            <Route path="workshop/toughening/new"      element={<ProtectedRoute module="toughening"><TougheningForm /></ProtectedRoute>} />
+            <Route path="workshop/toughening/:id/edit" element={<ProtectedRoute module="toughening"><TougheningForm /></ProtectedRoute>} />
 
             {/* ── Settings: Process Masters ─────────────────────────── */}
-            <Route path="settings/process-masters"           element={<ProcessMasterList />} />
-            <Route path="settings/payment-accounts"          element={<PaymentAccounts />} />
-            <Route path="settings/process-masters/new"       element={<ProcessMasterForm />} />
-            <Route path="settings/process-masters/:id/edit"  element={<ProcessMasterForm />} />
+            <Route path="settings/process-masters"           element={<ProtectedRoute module="process_masters"><ProcessMasterList /></ProtectedRoute>} />
+            <Route path="settings/payment-accounts"          element={<ProtectedRoute module="payment_accounts"><PaymentAccounts /></ProtectedRoute>} />
+            <Route path="settings/process-masters/new"       element={<ProtectedRoute module="process_masters"><ProcessMasterForm /></ProtectedRoute>} />
+            <Route path="settings/process-masters/:id/edit"  element={<ProtectedRoute module="process_masters"><ProcessMasterForm /></ProtectedRoute>} />
 
             {/* ── Reports ─────────────────────────────────────────────── */}
-            <Route path="reports/sales-performance" element={<SalesPerformance />} />
+            <Route path="reports/sales-performance" element={<ProtectedRoute module="sales_performance"><SalesPerformance /></ProtectedRoute>} />
 
             {/* Catch-all */}
             <Route path="*" element={<Navigate to="/" replace />} />

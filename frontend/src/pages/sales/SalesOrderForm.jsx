@@ -14,7 +14,6 @@ import {
   getAutoChargedDim,
 } from '../../utils/quotationCalc'
 import CompanySelector from '../../components/common/CompanySelector'
-import InterCompanyBanner from '../../components/common/InterCompanyBanner'
 
 // Shared quotation components
 import ActionToolbar from '../quotations/components/ActionToolbar'
@@ -26,6 +25,7 @@ import WastageCard from '../quotations/components/WastageCard'
 import NotesCard from '../quotations/components/NotesCard'
 import StickySummary from '../quotations/components/StickySummary'
 import CostAnalysisCard from '../quotations/components/CostAnalysisCard'
+import SOInvoiceStatusPanel from './components/SOInvoiceStatusPanel'
 import FractionInput, { toFraction } from '../quotations/components/FractionInput'
 import ProcessRateCardSection from '../quotations/components/ProcessRateCardSection'
 
@@ -1702,7 +1702,6 @@ const SalesOrderForm = () => {
       breadcrumbs={[{ label: 'Sales' }, { label: 'Sales Orders', path: '/sales-orders' }, { label: isEdit ? record?.so_number || 'Edit' : 'New' }]}
       onSave={() => handleSave(false)} onSaveNew={() => handleSave(true)} onDiscard={() => guardedNavigate('/sales-orders')} onBack={() => guardedNavigate('/sales-orders')}>
 
-      <InterCompanyBanner docType="so" linkedRef={record?.linked_ref} />
 
       {isEdit && (
         <div style={{ marginBottom: 16, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -2167,6 +2166,14 @@ const SalesOrderForm = () => {
               totals={totals}
               gstMode={gstMode}
               setGstMode={setGstMode}
+              invoiceStatusContent={
+                <SOInvoiceStatusPanel
+                  invoices={invItems}
+                  soTotal={totals.grandTotal}
+                  isEdit={isEdit}
+                  onNavigate={guardedNavigate}
+                />
+              }
             />
           </Col>
         </Row>

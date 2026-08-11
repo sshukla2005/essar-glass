@@ -26,6 +26,7 @@ class Invoice(Base, TimestampMixin, SoftDeleteMixin):
     igst             = Column(Float,       default=0)
     tax_amount       = Column(Float,       default=0)
     total_amount     = Column(Float,       default=0)
+    # LEGACY / DISPLAY-ONLY: Historic advances migrated to Payment + PaymentAllocation records in Phase 2A (C4 Option 1).
     advance_received = Column(Float,       default=0)
     # Fields the frontend saves/reads — were being silently stripped
     gst_mode         = Column(String(20),  default="cgst_sgst")
@@ -36,4 +37,8 @@ class Invoice(Base, TimestampMixin, SoftDeleteMixin):
     customer_notes   = Column(Text,        nullable=True)
     notes            = Column(Text,        nullable=True)
     company_id       = Column(Integer, ForeignKey("companies.id"),
+                              nullable=True, index=True)
+    created_by       = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"),
+                              nullable=True, index=True)
+    assigned_to_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"),
                               nullable=True, index=True)

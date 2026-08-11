@@ -37,22 +37,6 @@ const CustomerLedger = () => {
   const totalBilled = data?.total_billed || 0
   const totalPaid = data?.total_paid || 0
 
-  // Build outstanding SOs list for payment modal
-  const outstandingSos = transactions
-    .filter(t => t.type === 'invoice')
-    .map(t => {
-      const soPayments = transactions
-        .filter(p => p.type === 'payment' && p.so_id === t.so_id)
-        .reduce((s, p) => s + p.credit, 0)
-      const outstanding = t.debit - soPayments
-      return {
-        so_id: t.so_id,
-        so_number: t.reference,
-        outstanding_amount: Math.max(0, outstanding),
-      }
-    })
-    .filter(s => s.outstanding_amount > 0)
-
   const columns = [
     {
       title: 'Date',
@@ -77,8 +61,8 @@ const CustomerLedger = () => {
               cursor: row.type === 'invoice' ? 'pointer' : 'default',
             }}
             onClick={() => {
-              if (row.type === 'invoice' && row.so_id) {
-                navigate(`/sales-orders/${row.so_id}/edit`)
+              if (row.type === 'invoice' && row.invoice_id) {
+                navigate(`/invoices/${row.invoice_id}/edit`)
               }
             }}
           >
@@ -269,7 +253,6 @@ const CustomerLedger = () => {
         onClose={() => setPaymentModal(false)}
         customerId={parseInt(customerId)}
         customerName={customer.name}
-        outstandingSos={outstandingSos}
         onSuccess={() => refetch()}
       />
     </div>

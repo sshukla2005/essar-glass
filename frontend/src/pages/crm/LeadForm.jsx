@@ -5,7 +5,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import dayjs from 'dayjs'
 import MasterForm from '../../components/common/MasterForm'
-import { crmLeadApi, crmStageApi, customerApi, quotationApi, employeeApi } from '../../api'
+import { crmLeadApi, crmStageApi, customerApi, quotationApi, employeeApi, userApi } from '../../api'
 import CompanySelector from '../../components/common/CompanySelector'
 
 const { TextArea } = Input
@@ -37,6 +37,12 @@ const LeadForm = () => {
     queryFn: () => employeeApi.dropdown().then(r => r.data),
   })
   const employees = Array.isArray(employeesData) ? employeesData : (employeesData?.items || [])
+
+  const { data: usersData } = useQuery({
+    queryKey: ['users-dd'],
+    queryFn: () => userApi.dropdown().then(r => r.data),
+  })
+  const users = Array.isArray(usersData) ? usersData : (usersData?.items || [])
 
   const { data: quotationsData } = useQuery({
     queryKey: ['quotations-for-lead', id],
@@ -231,6 +237,7 @@ const LeadForm = () => {
         </Row>
         <Row gutter={16}>
           <Col span={8}>
+            <Form.Item name="assigned_to_user_id" hidden><Input /></Form.Item>
             <Form.Item name="salesperson" label="Salesperson">
               <Select
                 showSearch
@@ -241,6 +248,15 @@ const LeadForm = () => {
                   value: e.name,
                   label: e.name,
                 }))}
+                onChange={(val) => {
+                  form.setFieldValue('salesperson', val)
+                  if (!val) {
+                    form.setFieldValue('assigned_to_user_id', null)
+                    return
+                  }
+                  const matched = (users || []).find(u => (u.name || '').trim().toLowerCase() === val.trim().toLowerCase())
+                  form.setFieldValue('assigned_to_user_id', matched ? matched.id : null)
+                }}
               />
             </Form.Item>
           </Col>

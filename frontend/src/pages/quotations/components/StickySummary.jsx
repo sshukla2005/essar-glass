@@ -7,7 +7,8 @@ const { Text } = Typography
 const StickySummary = ({
   totals = {},
   gstMode = 'cgst_sgst',
-  setGstMode
+  setGstMode,
+  invoiceStatusContent = null
 }) => {
   const fmt = (val) => {
     return `₹${Number(val || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
@@ -188,33 +189,37 @@ const StickySummary = ({
             <Text style={{ color: '#fff', fontWeight: 800, fontSize: 22 }}>{fmt(totals.grandTotal)}</Text>
           </div>
 
-          {/* Advance and Balance Due */}
-          <div style={{ marginTop: 16 }}>
-            <Form.Item 
-              name="advance_received" 
-              label={<span style={{ fontSize: 10, color: '#64748B', fontWeight: 600, textTransform: 'uppercase' }}>Advance Received</span>} 
-              style={{ marginBottom: 10 }}
-            >
-              <InputNumber style={{ width: '100%', borderRadius: 8 }} size="large" prefix="₹" min={0} />
-            </Form.Item>
+          {/* Advance and Balance Due or Invoice Status Panel */}
+          {invoiceStatusContent ? (
+            invoiceStatusContent
+          ) : (
+            <div style={{ marginTop: 16 }}>
+              <Form.Item 
+                name="advance_received" 
+                label={<span style={{ fontSize: 10, color: '#64748B', fontWeight: 600, textTransform: 'uppercase' }}>Advance Received</span>} 
+                style={{ marginBottom: 10 }}
+              >
+                <InputNumber style={{ width: '100%', borderRadius: 8 }} size="large" prefix="₹" min={0} />
+              </Form.Item>
 
-            <div style={{ 
-              display: 'flex', 
-              justifyContent: 'space-between', 
-              alignItems: 'center',
-              padding: '12px 16px', 
-              background: totals.balance > 0 ? '#fef2f2' : '#f0fdf4', 
-              borderRadius: 10, 
-              border: `1px solid ${totals.balance > 0 ? '#fca5a5' : '#bbf7d0'}` 
-            }}>
-              <span style={{ fontWeight: 600, fontSize: 13, color: totals.balance > 0 ? '#ef4444' : '#16a34a' }}>
-                Balance Due
-              </span>
-              <span style={{ fontWeight: 700, fontSize: 16, color: totals.balance > 0 ? '#ef4444' : '#16a34a' }}>
-                {fmt(totals.balance)}
-              </span>
+              <div style={{ 
+                display: 'flex', 
+                justifyContent: 'space-between', 
+                alignItems: 'center',
+                padding: '12px 16px', 
+                background: totals.balance > 0 ? '#fef2f2' : '#f0fdf4', 
+                borderRadius: 10, 
+                border: `1px solid ${totals.balance > 0 ? '#fca5a5' : '#bbf7d0'}` 
+              }}>
+                <span style={{ fontWeight: 600, fontSize: 13, color: totals.balance > 0 ? '#ef4444' : '#16a34a' }}>
+                  Balance Due
+                </span>
+                <span style={{ fontWeight: 700, fontSize: 16, color: totals.balance > 0 ? '#ef4444' : '#16a34a' }}>
+                  {fmt(totals.balance)}
+                </span>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Profit Margin Analyzer */}
           {totals.grandTotal > 0 && (

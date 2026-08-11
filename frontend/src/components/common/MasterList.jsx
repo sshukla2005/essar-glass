@@ -1,5 +1,5 @@
-import React, { useState } from 'react'
-import { Table, Button, Input, Space, Tag, Tooltip, Popconfirm, Select, Card, Typography, Row, Col, Badge, Dropdown, App } from 'antd'
+import React, { useState, useEffect } from 'react'
+import { Table, Button, Input, Space, Tag, Tooltip, Popconfirm, Select, Card, Typography, Row, Col, Badge, Dropdown, App, Tabs } from 'antd'
 import {
   PlusOutlined, SearchOutlined, EditOutlined, CopyOutlined,
   StopOutlined, CheckCircleOutlined, MoreOutlined, ReloadOutlined,
@@ -23,6 +23,10 @@ const { Title, Text } = Typography
  *   editPath      — (record) => route string
  *   searchPlaceholder
  *   extraFilters  — Optional JSX for additional filter controls
+ *   tabs          — Array of { key, label, count } objects
+ *   activeTab     — Currently active tab key
+ *   onTabChange   — Function called on tab change
+ *   onDataLoad    — Function called when data is fetched
  */
 const MasterList = ({
   title,
@@ -37,6 +41,10 @@ const MasterList = ({
   extraActions,
   extraHeaderActions,
   apiFilters,
+  tabs,
+  activeTab,
+  onTabChange,
+  onDataLoad,
 }) => {
   const { message } = App.useApp()
   const navigate     = useNavigate()
@@ -69,6 +77,12 @@ const MasterList = ({
     }).then(r => r.data),
     keepPreviousData: true,
   })
+
+  React.useEffect(() => {
+    if (data && onDataLoad) {
+      onDataLoad(data)
+    }
+  }, [data, onDataLoad])
 
   // ── Archive ───────────────────────────────────────────────────────────────
   const archiveMutation = useMutation({
@@ -188,6 +202,39 @@ const MasterList = ({
           </Col>
         </Row>
       </div>
+
+      {/* ── Status Tabs ──────────────────────────────────────────────── */}
+      {tabs && tabs.length > 0 && (
+        <Card size="small" style={{ marginBottom: 16, paddingBottom: 0 }}>
+          <Tabs
+            activeKey={activeTab}
+            onChange={(key) => {
+              setPage(1)
+              if (onTabChange) onTabChange(key)
+            }}
+            style={{ marginBottom: -12 }}
+            items={tabs.map(t => ({
+              key: t.key,
+              label: (
+                <span style={{ fontWeight: 500, padding: '0 4px' }}>
+                  {t.label}
+                  {t.count !== undefined && t.count !== null && (
+                    <Badge
+                      count={t.count}
+                      overflowCount={999}
+                      showZero
+                      style={{
+                        marginLeft: 8,
+                        backgroundColor: activeTab === t.key ? '#3b82f6' : '#94a3b8',
+                      }}
+                    />
+                  )}
+                </span>
+              )
+            }))}
+          />
+        </Card>
+      )}
 
       {/* ── Filters ──────────────────────────────────────────────────── */}
       <Card size="small" style={{ marginBottom: 16 }}>

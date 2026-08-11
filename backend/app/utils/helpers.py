@@ -62,6 +62,62 @@ def apply_company_filter(query, model, active_company_id: Optional[int]):
     return query
 
 
+def apply_scope_filter(query, model, user, module: Optional[str] = None):
+    """Scope a query based on user's data_scope and per-module overrides.
+
+    - superadmin and admin roles bypass scoping completely.
+    - Master data models (no created_by / assigned_to_user_id) are never scoped.
+    - When effective scope is 'own', filters to records created by OR assigned to user,
+      or legacy records where created_by IS NULL (Option A decision).
+    """
+    # 1. Admin / superadmin bypass
+    if not user:
+        return query
+    if getattr(user, "role", None) in ("superadmin", "admin"):
+        return query
+
+    # 2. Master data bypass
+    if not (hasattr(model, "created_by") or hasattr(model, "assigned_to_user_id")):
+        return query
+
+    # 3. Resolve effective scope for module
+    eff_scope = None
+    module_scopes = getattr(user, "module_scopes", None)
+    if isinstance(module_scopes, dict) and module:
+        if module in module_scopes:
+            eff_scope = module_scopes[module]
+        elif module in ("crm_leads", "leads") and "crm" in module_scopes:
+            eff_scope = module_scopes["crm"]
+        elif module in ("sales_orders", "quotations", "invoices") and "sales" in module_scopes:
+            eff_scope = module_scopes["sales"]
+        elif module in ("purchase_orders",) and "purchase" in module_scopes:
+            eff_scope = module_scopes["purchase"]
+        elif module in ("stock_movements", "delivery_challans", "stock") and "inventory" in module_scopes:
+            eff_scope = module_scopes["inventory"]
+        elif module in ("workshop_orders", "toughening") and "workshop" in module_scopes:
+            eff_scope = module_scopes["workshop"]
+        elif module in ("sales_performance", "reports") and "reports" in module_scopes:
+            eff_scope = module_scopes["reports"]
+
+    if not eff_scope:
+        eff_scope = getattr(user, "data_scope", "company") or "company"
+
+    # 4. Apply filter if own
+    if eff_scope == "own":
+        from sqlalchemy import or_
+        filters = []
+        if hasattr(model, "created_by"):
+            filters.append(model.created_by == user.id)
+            filters.append(model.created_by == None)  # Option A: legacy NULL visible to all
+        if hasattr(model, "assigned_to_user_id"):
+            filters.append(model.assigned_to_user_id == user.id)
+
+        if filters:
+            query = query.filter(or_(*filters))
+
+    return query
+
+
 def serialize_row(obj):
     """ORM row → plain dict with extra_data (JSON) merged flat into the top
     level. Real columns always win over extra_data keys on collision, so a
@@ -73,6 +129,22 @@ def serialize_row(obj):
     if isinstance(extra, dict) and extra:
         return {**extra, **cols}
     return cols
+
+
+def serialize_item(obj):
+    """Serialize either a model instance or a SQLAlchemy result Row (joined query tuple)."""
+    if hasattr(obj, '__table__'):
+        return serialize_row(obj)
+    if hasattr(obj, '_mapping'):
+        main_obj = obj[0]
+        data = serialize_row(main_obj)
+        for k, v in obj._mapping.items():
+            if k != main_obj.__class__.__name__:
+                # Only set if key does not exist or if v is not None
+                if k not in data or v is not None:
+                    data[k] = v
+        return data
+    return serialize_row(obj)
 
 
 def stash_extra_fields(model, payload):
@@ -90,15 +162,19 @@ def stash_extra_fields(model, payload):
     return known
 
 
-def paginate(query, page: int = 1, page_size: int = 20):
+def paginate(query, page: int = 1, page_size: int = 20, counts: Optional[dict] = None):
     """Apply pagination to any query."""
     total = query.count()
-    items = [serialize_row(o) for o in
+    items = [serialize_item(o) for o in
              query.offset((page-1)*page_size).limit(page_size).all()]
-    return {
+    res = {
         "items":     items,
         "total":     total,
         "page":      page,
         "page_size": page_size,
         "pages":     max(1, -(-total // page_size)),
     }
+    if counts is not None:
+        res["counts"] = counts
+    return res
+

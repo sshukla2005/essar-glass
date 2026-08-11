@@ -72,7 +72,13 @@ export const purchaseOrderApi = createApi('purchase-orders', 'po_number')
 export const deliveryChallanApi = createApi('delivery', 'dc_number')
 export const invoiceApi = createApi('invoices', 'invoice_number')
 export const stockMovementApi = createApi('inventory', 'move_number')
-export const workshopOrderApi = createApi('workshop', 'wo_number')
+export const workshopOrderApi = {
+  ...createApi('workshop', 'wo_number'),
+  cuttingRegister: async (params) => {
+    const res = await api.get('/api/v1/workshop/cutting-register', { params })
+    return { data: res.data }
+  },
+}
 export const tougheningBatchApi = createApi('toughening', 'tb_number')
 export const userApi = createApi('users')
 
@@ -97,9 +103,17 @@ export const taxGroupApi = createLocalApi('tax_groups')
 export const taxApi = createLocalApi('taxes')
 export const hsnApi = createLocalApi('hsn_codes')
 export const currencyApi = createLocalApi('currencies')
-export const paymentApi = createApi('payments')
-
-// ── Glass rate matrix (localStorage — config only) ─
+export const paymentApi = {
+  ...createApi('payments'),
+  invoicePayments: async (invoiceId) => {
+    const res = await api.get(`/api/v1/payments/invoice/${invoiceId}`)
+    return { data: res.data }
+  },
+  customerOutstanding: async (customerId) => {
+    const res = await api.get(`/api/v1/payments/customer/${customerId}/outstanding`)
+    return { data: res.data }
+  },
+}
 export { settingsApi } from './settingsApi'
 
 export const glassRateApi = {

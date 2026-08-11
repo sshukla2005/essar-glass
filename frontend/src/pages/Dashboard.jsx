@@ -2,9 +2,10 @@ import React, { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   quotationApi, salesOrderApi, invoiceApi,
-  customerApi, deliveryChallanApi, workshopOrderApi
+  customerApi, deliveryChallanApi, workshopOrderApi,
+  companyApi
 } from '../api'
-import { Row, Col, Card, Typography, Space, Radio, Table, Tag, Button } from 'antd'
+import { Row, Col, Card, Typography, Space, Radio, Table, Tag, Button, DatePicker, Progress } from 'antd'
 import {
   ArrowUpOutlined, ArrowDownOutlined,
   RiseOutlined, FallOutlined, FireFilled,
@@ -15,25 +16,10 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts'
 import { useNavigate } from 'react-router-dom'
+import dayjs from 'dayjs'
+import { useAuth } from '../hooks/useAuth'
 
 const { Title, Text } = Typography
-
-const parseThicknessFromDesc = (desc) => {
-  if (!desc) return null
-  // Match patterns: "3.5Golden", "12clr", "5mirror", "8grey", "6 clr Lamina"
-  const match = String(desc).match(/^(\d+(?:\.\d+)?)/)
-  if (match) return parseFloat(match[1])
-  return null
-}
-
-const classifyGlass = (thickness) => {
-  if (!thickness) return null
-  if (thickness >= 3 && thickness <= 6) return 'thin'
-  if (thickness >= 8) return 'thick'
-  return null
-}
-
-
 
 const StatCard = ({ title, value, percentage, isUp, textUp, textDown, onClick }) => {
   const handleKeyDown = (e) => {
@@ -80,9 +66,73 @@ const StatCard = ({ title, value, percentage, isUp, textUp, textDown, onClick })
   )
 }
 
+const ProductionTile = ({ title, data, color, bgColor }) => {
+  return (
+    <Card
+      style={{
+        borderRadius: 16,
+        border: `1px solid ${color}30`,
+        backgroundColor: bgColor,
+        padding: '12px 16px',
+        height: '100%',
+        boxShadow: '0 4px 12px rgba(0,0,0,0.02)',
+      }}
+      bodyStyle={{ padding: 0 }}
+    >
+      <div style={{ fontWeight: 600, color: '#334155', fontSize: 13, marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span>{title}</span>
+        <Tag color={color} style={{ margin: 0, fontSize: 11, borderRadius: 4, fontWeight: 700 }}>
+          {Number(data?.total_sqft || 0).toFixed(1)} Sq Ft
+        </Tag>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
+          <span style={{ color: '#64748b' }}>Thin (&lt;8mm):</span>
+          <span style={{ fontWeight: 600, color: '#1e293b' }}>{Number(data?.thin_sqft || 0).toFixed(1)} sqft</span>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
+          <span style={{ color: '#64748b' }}>Thick (&ge;8mm):</span>
+          <span style={{ fontWeight: 600, color: '#1e293b' }}>{Number(data?.thick_sqft || 0).toFixed(1)} sqft</span>
+        </div>
+        {data?.unclassified_sqft > 0 && (
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
+            <span style={{ color: '#64748b' }}>Unclassified:</span>
+            <span style={{ fontWeight: 600, color: '#f97316' }}>{Number(data?.unclassified_sqft || 0).toFixed(1)} sqft</span>
+          </div>
+        )}
+      </div>
+    </Card>
+  )
+}
+
 const Dashboard = () => {
   const [timeRange, setTimeRange] = useState('yearly')
+  const [cuttingPreset, setCuttingPreset] = useState('today')
+  const [cuttingDate, setCuttingDate] = useState(dayjs())
+  const [viewMode, setViewMode] = useState('active')
+  const { activeCompanyId } = useAuth()
   const navigate = useNavigate()
+
+  const { data: companyListRes } = useQuery({
+    queryKey: ['header-companies'],
+    queryFn: () => companyApi.dropdown().then(r => r.data),
+    staleTime: 5 * 60 * 1000,
+  })
+
+  const companies = useMemo(() => {
+    const list = Array.isArray(companyListRes) ? companyListRes : (companyListRes?.items || [])
+    if (list.length === 0) {
+      try {
+        return JSON.parse(localStorage.getItem('companies_master') || '[]')
+      } catch { return [] }
+    }
+    return list
+  }, [companyListRes])
+
+  const activeCompanyName = useMemo(() => {
+    const active = companies.find(c => c.id === activeCompanyId)
+    return active ? active.name : 'All Companies'
+  }, [companies, activeCompanyId])
 
   // ── Fetch real data from backend ──────────────────────────────
   const { data: quotationsData } = useQuery({
@@ -110,9 +160,12 @@ const Dashboard = () => {
     queryFn: () => deliveryChallanApi.list({ page: 1, page_size: 500 }).then(r => r.data),
     staleTime: 30000,
   })
-  const { data: workshopData } = useQuery({
-    queryKey: ['dashboard-workshop'],
-    queryFn: () => workshopOrderApi.list({ page: 1, page_size: 200 }).then(r => r.data),
+  const { data: cuttingRegisterData } = useQuery({
+    queryKey: ['dashboard-cutting-register', cuttingPreset, cuttingDate?.format('YYYY-MM-DD')],
+    queryFn: () => workshopOrderApi.cuttingRegister({
+      preset: cuttingPreset,
+      date: cuttingDate ? cuttingDate.format('YYYY-MM-DD') : undefined
+    }).then(r => r.data),
     staleTime: 30000,
   })
 
@@ -183,46 +236,16 @@ const Dashboard = () => {
         }
       })
 
-    // ── Cutting Register ──────────────────────────────────
-    const workshopOrders = workshopData?.items || []
-
-    const cuttingRows = workshopOrders.map(wo => {
-      let thinSqft = 0
-      let thickSqft = 0
-
-      ;(wo.lines || []).forEach(line => {
-        const thickness = parseThicknessFromDesc(line.description)
-        const sqft = (line.act_w_in || 0) * (line.act_h_in || 0) * (line.qty || 1) / 144
-        const type = classifyGlass(thickness)
-        if (type === 'thin') thinSqft += sqft
-        else if (type === 'thick') thickSqft += sqft
-      })
-
-      const statusMap = {
-        'draft':       'UNDR CTNG',
-        'in_progress': 'UNDR CTNG',
-        'completed':   'RDY',
-        'cancelled':   'CANCELLED',
-      }
-
-      return {
-        key: wo.id,
-        id: wo.id,
-        date: wo.order_date || wo.created_at?.split('T')[0] || '—',
-        wo_number: wo.wo_number || `WO-${wo.id}`,
-        customer_name: wo.customer_name || '—',
-        description: (wo.lines || []).map(l => l.description).filter(Boolean).join(', ') || '—',
-        thin_sqft: thinSqft > 0 ? parseFloat(thinSqft.toFixed(2)) : null,
-        thick_sqft: thickSqft > 0 ? parseFloat(thickSqft.toFixed(2)) : null,
-        total_sqft: parseFloat((thinSqft + thickSqft).toFixed(2)),
-        status: wo.status || 'draft',
-        status_label: statusMap[wo.status] || 'UNDR CTNG',
-      }
-    }).filter(r => r.total_sqft > 0)
-
-    const totalThinSqft  = cuttingRows.reduce((s, r) => s + (r.thin_sqft  || 0), 0)
-    const totalThickSqft = cuttingRows.reduce((s, r) => s + (r.thick_sqft || 0), 0)
-    const totalAllSqft   = totalThinSqft + totalThickSqft
+    // ── Server-aggregated Cutting Register ────────────────
+    const cuttingRows = cuttingRegisterData?.items || []
+    const totalThinSqft = cuttingRegisterData?.total_thin_sqft || 0
+    const totalThickSqft = cuttingRegisterData?.total_thick_sqft || 0
+    const totalUnclassifiedSqft = cuttingRegisterData?.total_unclassified_sqft || 0
+    const totalAllSqft = cuttingRegisterData?.total_all_sqft || 0
+    const cut_today = cuttingRegisterData?.cut_today
+    const in_progress = cuttingRegisterData?.in_progress
+    const pending = cuttingRegisterData?.pending
+    const completed = cuttingRegisterData?.completed
 
     return {
       totalQuotes, pendingQuotes,
@@ -234,9 +257,10 @@ const Dashboard = () => {
       recentInvoices,
       totalCustomers: customersData?.total || customers.length,
       lowStockCount: 0,
-      cuttingRows, totalThinSqft, totalThickSqft, totalAllSqft,
+      cuttingRows, totalThinSqft, totalThickSqft, totalUnclassifiedSqft, totalAllSqft,
+      cut_today, in_progress, pending, completed,
     }
-  }, [quotationsData, salesOrdersData, invoicesData, customersData, deliveriesData, workshopData])
+  }, [quotationsData, salesOrdersData, invoicesData, customersData, deliveriesData, cuttingRegisterData])
 
   const getChartData = () => {
     if (timeRange === '7days')  return stats.chartData.slice(-3)
@@ -262,6 +286,17 @@ const Dashboard = () => {
     { title: 'Salesperson', dataIndex: 'assigned', key: 'assigned', render: (text) => <Space><UserOutlined style={{color: '#8c8c8c'}}/><Text>{text}</Text></Space> },
   ]
 
+  const filteredCuttingRows = useMemo(() => {
+    const rows = stats.cuttingRows || []
+    if (viewMode === 'active') {
+      return rows.filter(r => r.status !== 'completed' && (r.progress_pct || 0) < 100)
+    }
+    if (viewMode === 'completed') {
+      return rows.filter(r => r.status === 'completed' || (r.progress_pct || 0) === 100)
+    }
+    return rows
+  }, [stats.cuttingRows, viewMode])
+
   return (
     <div style={{ padding: '24px 32px', backgroundColor: '#ffffff', minHeight: '100vh', fontFamily: "'Inter', sans-serif", width: '100%' }}>
 
@@ -271,7 +306,7 @@ const Dashboard = () => {
             Admin Dashboard
           </Title>
           <Text type="secondary" style={{ fontSize: 14 }}>
-            Welcome back! Here's what's happening with Essar Glass today.
+            Welcome back! Here's what's happening with {activeCompanyName} today.
           </Text>
         </div>
         {/* Quick Action Buttons */}
@@ -452,6 +487,8 @@ const Dashboard = () => {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: 12,
           background: '#fff',
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -466,42 +503,93 @@ const Dashboard = () => {
               <Text type="secondary" style={{ fontSize: 13 }}>Workshop orders — glass cutting status</Text>
             </div>
           </div>
-          <Button size="small" onClick={() => navigate('/workshop/orders')}>View All WOs</Button>
+          <Space wrap>
+            <Radio.Group
+              value={cuttingPreset}
+              onChange={(e) => {
+                const val = e.target.value;
+                setCuttingPreset(val);
+                if (val === 'today') setCuttingDate(dayjs());
+                if (val === 'yesterday') setCuttingDate(dayjs().subtract(1, 'day'));
+              }}
+              size="small"
+            >
+              <Radio.Button value="today">Today</Radio.Button>
+              <Radio.Button value="yesterday">Yesterday</Radio.Button>
+              <Radio.Button value="this_week">This Week</Radio.Button>
+            </Radio.Group>
+            <DatePicker
+              size="small"
+              value={cuttingDate}
+              onChange={(val) => {
+                if (val) {
+                  setCuttingDate(val);
+                  setCuttingPreset('custom');
+                }
+              }}
+              style={{ width: 120 }}
+            />
+            <Button size="small" onClick={() => navigate('/workshop/orders')}>View All WOs</Button>
+          </Space>
         </div>
 
-        {/* Totals Bar */}
-        <div style={{
-          display: 'flex',
-          background: '#1a1a2e',
-          padding: '12px 24px',
-          gap: 0,
-        }}>
-          <div style={{ flex: 1, textAlign: 'center', borderRight: '1px solid #2d2d4e', paddingRight: 24 }}>
-            <Text style={{ fontSize: 11, color: '#94a3b8', display: 'block', marginBottom: 2 }}>THN CTNG Sq Ft</Text>
-            <Text style={{ fontSize: 20, fontWeight: 800, color: '#4ade80' }}>
-              {parseFloat(stats.totalThinSqft || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
-            </Text>
-          </div>
-          <div style={{ flex: 1, textAlign: 'center', borderRight: '1px solid #2d2d4e', padding: '0 24px' }}>
-            <Text style={{ fontSize: 11, color: '#94a3b8', display: 'block', marginBottom: 2 }}>THCK CTNG Sq Ft</Text>
-            <Text style={{ fontSize: 20, fontWeight: 800, color: '#60a5fa' }}>
-              {parseFloat(stats.totalThickSqft || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
-            </Text>
-          </div>
-          <div style={{ flex: 1, textAlign: 'center', paddingLeft: 24 }}>
-            <Text style={{ fontSize: 11, color: '#94a3b8', display: 'block', marginBottom: 2 }}>TOTAL Sq Ft</Text>
-            <Text style={{ fontSize: 20, fontWeight: 800, color: '#fbbf24' }}>
-              {parseFloat(stats.totalAllSqft || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
-            </Text>
-          </div>
+        {/* 4 Productivity Tiles */}
+        <div style={{ padding: '16px 24px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+          <Row gutter={[16, 16]}>
+            <Col xs={24} sm={12} lg={6}>
+              <ProductionTile
+                title={cuttingPreset === 'this_week' ? "Cut This Week" : "Cut Selected Day"}
+                data={stats.cut_today}
+                color="green"
+                bgColor="#f0fdf4"
+              />
+            </Col>
+            <Col xs={24} sm={12} lg={6}>
+              <ProductionTile
+                title="In Progress"
+                data={stats.in_progress}
+                color="orange"
+                bgColor="#fffbeb"
+              />
+            </Col>
+            <Col xs={24} sm={12} lg={6}>
+              <ProductionTile
+                title="Pending"
+                data={stats.pending}
+                color="blue"
+                bgColor="#eff6ff"
+              />
+            </Col>
+            <Col xs={24} sm={12} lg={6}>
+              <ProductionTile
+                title="Completed (Cumulative)"
+                data={stats.completed}
+                color="purple"
+                bgColor="#faf5ff"
+              />
+            </Col>
+          </Row>
+        </div>
+
+        {/* View Mode Switcher */}
+        <div style={{ padding: '12px 24px', borderBottom: '1px solid #f0f0f0', display: 'flex', justifyContent: 'flex-start', background: '#fff' }}>
+          <Radio.Group
+            value={viewMode}
+            onChange={(e) => setViewMode(e.target.value)}
+            size="small"
+          >
+            <Radio.Button value="active">Active Production</Radio.Button>
+            <Radio.Button value="completed">Completed Orders</Radio.Button>
+            <Radio.Button value="all">All Orders</Radio.Button>
+          </Radio.Group>
         </div>
 
         {/* Table */}
         <Table
-          dataSource={stats.cuttingRows || []}
+          dataSource={filteredCuttingRows}
           pagination={{ pageSize: 15, size: 'small' }}
           size="small"
-          locale={{ emptyText: 'No workshop orders yet' }}
+          locale={{ emptyText: 'No workshop orders in this view' }}
           onRow={(record) => ({
             style: { cursor: 'pointer' },
             onClick: () => navigate(`/workshop/orders/${record.id}/edit`)
@@ -550,16 +638,49 @@ const Dashboard = () => {
               ) : null
             },
             {
-              title: 'STATUS', dataIndex: 'status_label', width: 120,
+              title: 'UNCLASS', dataIndex: 'unclassified_sqft', width: 80, align: 'right',
+              render: v => v ? (
+                <Text strong style={{ color: '#ea580c' }}>
+                  {Number(v).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                </Text>
+              ) : null
+            },
+            {
+              title: 'Cut / Total', key: 'cut_total', width: 90, align: 'center',
+              render: (_, record) => (
+                <Text style={{ fontSize: 13, fontWeight: 600, color: '#334155' }}>
+                  {record.cut_pieces} / {record.total_pieces}
+                </Text>
+              )
+            },
+            {
+              title: 'Progress', dataIndex: 'progress_pct', width: 120,
+              render: (pct) => (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Progress
+                    percent={pct}
+                    size="small"
+                    strokeColor={{
+                      '0%': '#10b981',
+                      '100%': '#059669',
+                    }}
+                    style={{ flex: 1, margin: 0 }}
+                  />
+                </div>
+              )
+            },
+            {
+              title: 'STATUS', dataIndex: 'status_label', width: 110,
               render: (v) => {
                 const colorMap = {
+                  'PENDING': { bg: '#fef3c7', color: '#b45309', border: '#fde047' },
                   'UNDR CTNG': { bg: '#fecaca', color: '#dc2626', border: '#fca5a5' },
                   'UNDR TOUGH': { bg: '#fecaca', color: '#dc2626', border: '#fca5a5' },
                   'RDY': { bg: '#bbf7d0', color: '#15803d', border: '#86efac' },
                   'RDY RPDA': { bg: '#bbf7d0', color: '#15803d', border: '#86efac' },
                   'CANCELLED': { bg: '#e2e8f0', color: '#64748b', border: '#cbd5e1' },
                 }
-                const style = colorMap[v] || colorMap['UNDR CTNG']
+                const style = colorMap[v] || colorMap['PENDING']
                 return (
                   <span style={{
                     background: style.bg,

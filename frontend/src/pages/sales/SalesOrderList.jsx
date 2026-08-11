@@ -35,7 +35,7 @@ const SalesOrderList = () => {
   
   const columns = [
     { title: 'SO Number', dataIndex: 'so_number', width: 120 },
-    { title: 'Customer', dataIndex: 'customer_id', render: v => customerList.find(c => c.value === v || c.id === v)?.label || customerList.find(c => c.id === v)?.name || v },
+    { title: 'Customer', dataIndex: 'customer_name', render: (v, r) => v || r.customer_id || '—' },
     { title: 'Quotation Ref', dataIndex: 'quotation_id', render: v => v ? `QT${String(v).padStart(4,'0')}` : '—' },
     { title: 'Order Date', dataIndex: 'order_date' },
     { title: 'Delivery Date', dataIndex: 'delivery_date' },

@@ -16,7 +16,7 @@ const DeliveryChallanList = () => {
   
   const columns = [
     { title: 'DC Number', dataIndex: 'dc_number', width: 120 },
-    { title: 'Customer', dataIndex: 'customer_id', render: v => customers.find(c => c.value === v)?.label || v },
+    { title: 'Customer', dataIndex: 'customer_name', render: (v, r) => v || r.customer_id || '—' },
     { title: 'SO Ref', dataIndex: 'so_id', render: v => v ? `SO${String(v).padStart(4,'0')}` : '—' },
     { title: 'Date', dataIndex: 'dc_date' },
     { title: 'Status', dataIndex: 'status', render: v => <Tag color={STATUS_COLORS[v] || 'default'}>{String(v).toUpperCase()}</Tag> },

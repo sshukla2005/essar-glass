@@ -81,6 +81,7 @@ const useAuth = () => {
   const hasPermission = (module) => {
     if (!user) return false
     if (user.role === 'superadmin' || user.role === 'admin') return true
+    if (user.permissions?.includes('all')) return true
     return user.permissions?.includes(module) || false
   }
 

@@ -20,7 +20,7 @@ const PurchaseOrderList = () => {
   
   const columns = [
     { title: 'PO Number', dataIndex: 'po_number', width: 120 },
-    { title: 'Vendor', dataIndex: 'vendor_id', render: v => vendors.find(c => c.value === v)?.label || v },
+    { title: 'Vendor', dataIndex: 'vendor_name', render: (v, r) => v || r.vendor_id || '—' },
     { title: 'SO Reference', dataIndex: 'vendor_reference' },
     { title: 'Order Date', dataIndex: 'po_date' },
     { title: 'Expected Delivery', dataIndex: 'expected_delivery' },

@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     # ── Company isolation flags ──────────────────────────────────────────
     # ASSUMPTION 1: Read-only-on-switch applies to ALL roles including
     # Super Admin.  Set to True to allow superadmin to edit cross-company.
-    ALLOW_SUPERADMIN_CROSS_EDIT: bool = False
+    ALLOW_SUPERADMIN_CROSS_EDIT: bool = True
 
     @property
     def origins_list(self) -> List[str]:

@@ -24,3 +24,7 @@ class PurchaseOrder(Base, TimestampMixin, SoftDeleteMixin):
     linked_ref        = Column(JSON,        nullable=True)
     company_id        = Column(Integer, ForeignKey("companies.id"),
                                nullable=True, index=True)
+    created_by        = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"),
+                               nullable=True, index=True)
+    assigned_to_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"),
+                               nullable=True, index=True)

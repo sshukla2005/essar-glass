@@ -33,6 +33,7 @@ class Quotation(Base, TimestampMixin, SoftDeleteMixin):
     sgst             = Column(Float,       default=0)
     igst             = Column(Float,       default=0)
     total_amount     = Column(Float,       default=0)
+    # LEGACY / DISPLAY-ONLY: Live financial status & receivables belong exclusively to Invoices in Phase 2A.
     advance_received = Column(Float,       default=0)
     balance_due      = Column(Float,       default=0)
     # Notes
@@ -46,4 +47,8 @@ class Quotation(Base, TimestampMixin, SoftDeleteMixin):
     gst_mode         = Column(String(20), default='cgst_sgst')
     process_rate_card = Column(JSON, nullable=True, default=list)
     company_id       = Column(Integer, ForeignKey("companies.id"),
+                              nullable=True, index=True)
+    created_by       = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"),
+                              nullable=True, index=True)
+    assigned_to_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"),
                               nullable=True, index=True)

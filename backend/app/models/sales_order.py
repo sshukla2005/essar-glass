@@ -35,6 +35,8 @@ class SalesOrder(Base, TimestampMixin, SoftDeleteMixin):
     process_rate_card = Column(JSON, nullable=True, default=list)
     dc_charges       = Column(Float, default=0)
     discount_amount  = Column(Float, default=0)
+    # LEGACY / DISPLAY-ONLY: Advances are recorded as Payment records in Phase 2A.
+    # Live financial status & receivables are tracked on Invoices and PaymentAllocations.
     advance_received = Column(Float, default=0)
     customer_name    = Column(String(200), nullable=True)
     warehouse_id     = Column(Integer, ForeignKey("warehouses.id"), nullable=True)
@@ -42,4 +44,8 @@ class SalesOrder(Base, TimestampMixin, SoftDeleteMixin):
     customer_note    = Column(Text, nullable=True)
     linked_ref       = Column(JSON, nullable=True)
     company_id       = Column(Integer, ForeignKey("companies.id"),
+                              nullable=True, index=True)
+    created_by       = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"),
+                              nullable=True, index=True)
+    assigned_to_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"),
                               nullable=True, index=True)

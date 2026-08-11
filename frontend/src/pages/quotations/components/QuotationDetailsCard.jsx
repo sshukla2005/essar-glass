@@ -1,6 +1,8 @@
 import React, { useState, useImperativeHandle, forwardRef } from 'react'
 import { Form, Select, DatePicker, Row, Col, Space, Radio, Typography, Button, Modal, Input } from 'antd'
 import { PlusOutlined } from '@ant-design/icons'
+import { useQuery } from '@tanstack/react-query'
+import { userApi } from '../../../api'
 
 const { Text } = Typography
 
@@ -46,6 +48,12 @@ const QuotationDetailsCard = forwardRef(({
   const [empModal, setEmpModal]   = useState(false)
   const [empName, setEmpName]     = useState('')
   const [empAdding, setEmpAdding] = useState(false)
+
+  const { data: usersData } = useQuery({
+    queryKey: ['users-dd'],
+    queryFn: () => userApi.dropdown().then(r => r.data),
+  })
+  const usersList = Array.isArray(usersData) ? usersData : (usersData?.items || [])
 
   // Expose openAddCustomer to parent (QuotationForm) via ref
   // so Excel import can trigger the same dedup modal
@@ -317,6 +325,7 @@ const QuotationDetailsCard = forwardRef(({
           )}
 
           <Col xs={12} md={4}>
+            <Form.Item name="assigned_to_user_id" hidden><Input /></Form.Item>
             <Form.Item name="salesperson" label={lbl('Salesperson')} style={{ marginBottom: 0 }}>
               <Select 
                 showSearch 
@@ -326,6 +335,15 @@ const QuotationDetailsCard = forwardRef(({
                 options={employees.map(e => ({ value: e.name, label: e.name }))} 
                 size="large"
                 style={{ borderRadius: 8 }}
+                onChange={(val) => {
+                  form.setFieldValue('salesperson', val)
+                  if (!val) {
+                    form.setFieldValue('assigned_to_user_id', null)
+                    return
+                  }
+                  const matched = (usersList || []).find(u => (u.name || '').trim().toLowerCase() === val.trim().toLowerCase())
+                  form.setFieldValue('assigned_to_user_id', matched ? matched.id : null)
+                }}
                 dropdownRender={menu => (
                   <>
                     {menu}

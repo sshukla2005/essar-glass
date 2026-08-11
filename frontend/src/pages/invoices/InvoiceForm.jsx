@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import {
   Form, Input, InputNumber, Select, Row, Col, Divider,
   DatePicker, Button, Table, Steps, Space, Tag, Switch,
-  App, Typography, Modal, Radio, Tabs
+  App, Typography, Modal, Radio, Tabs, Tooltip
 } from 'antd'
 import {
   PlusOutlined, DeleteOutlined, SendOutlined,
@@ -18,6 +18,7 @@ import {
 } from '../../api'
 import CompanySelector from '../../components/common/CompanySelector'
 import { settingsApi } from '../../api/settingsApi'
+import RecordPaymentModal from './RecordPaymentModal'
 
 const { TextArea } = Input
 const { Text } = Typography
@@ -112,8 +113,8 @@ const InvoiceForm = () => {
 
   const { data: paymentsRaw, refetch: refetchPayments } = useQuery({
     queryKey: ['payments-inv', id],
-    queryFn:  () => paymentApi.list({ customer_id: record?.customer_id, page: 1, page_size: 200 }).then(r => r.data),
-    enabled:  isEdit && Boolean(record?.customer_id),
+    queryFn:  () => paymentApi.invoicePayments(id).then(r => r.data),
+    enabled:  isEdit && Boolean(id),
   })
   const payments = paymentsRaw?.items || []
 
@@ -327,10 +328,8 @@ const InvoiceForm = () => {
     }
 
     const grandTotal   = parseFloat((afterDc + cgst + sgst + igst).toFixed(2))
-    const amountPaid   = payments
-      .filter(p => p.is_active !== false)
-      .reduce((s, p) => s + (p.amount || 0), 0)
-    const balanceDue   = parseFloat((grandTotal - amountPaid).toFixed(2))
+    const amountPaid   = isEdit ? parseFloat(record?.amount_paid || 0) : 0
+    const balanceDue   = isEdit ? parseFloat(record?.balance_due ?? grandTotal) : grandTotal
 
     return {
       taxable: parseFloat(taxable.toFixed(2)),
@@ -341,9 +340,9 @@ const InvoiceForm = () => {
       cgst, sgst, igst,
       grandTotal,
       amountPaid: parseFloat(amountPaid.toFixed(2)),
-      balanceDue,
+      balanceDue: parseFloat(balanceDue.toFixed(2)),
     }
-  }, [lines, gstMode, discountAmt, dcCharges, payments])
+  }, [lines, gstMode, discountAmt, dcCharges, isEdit, record])
 
   // ── Update line ────────────────────────────────────────────
   const updateLine = (key, field, value) => {
@@ -447,8 +446,6 @@ const InvoiceForm = () => {
       values.igst            = totals.igst
       values.tax_amount      = totals.cgst + totals.sgst + totals.igst
       values.total_amount    = totals.grandTotal
-      values.amount_paid     = totals.amountPaid
-      values.balance_due     = totals.balanceDue
 
       await saveMutation.mutateAsync(values)
       if (andNew) {
@@ -674,15 +671,7 @@ const InvoiceForm = () => {
                 type="primary"
                 icon={<DollarOutlined />}
                 style={{ background: '#10b981', borderColor: '#10b981' }}
-                onClick={() => {
-                  payForm.setFieldsValue({
-                    amount:       totals.balanceDue > 0 ? totals.balanceDue : 0,
-                    payment_date: dayjs(),
-                    payment_mode: 'cash',
-                  })
-                  setPayMode('cash')
-                  setPayModal(true)
-                }}
+                onClick={() => setPayModal(true)}
               >
                 Record Payment
               </Button>
@@ -898,6 +887,26 @@ const InvoiceForm = () => {
                 </Col>
               </Row>
 
+              {/* Advance Received (Legacy Read-Only) */}
+              <Row justify="space-between" align="middle" style={{ marginBottom: 8 }}>
+                <Col>
+                  <Tooltip title="Advances are now recorded as payments. Use Record Payment to add one.">
+                    <Text type="secondary" style={{ cursor: 'help' }}>
+                      Advance Received ℹ️
+                    </Text>
+                  </Tooltip>
+                </Col>
+                <Col>
+                  <InputNumber
+                    size="small"
+                    value={advanceReceived}
+                    disabled
+                    prefix="₹"
+                    style={{ width: 130 }}
+                  />
+                </Col>
+              </Row>
+
               <Divider style={{ margin: '10px 0' }} />
 
               {/* GST */}
@@ -988,15 +997,7 @@ const InvoiceForm = () => {
                     borderColor: '#10b981',
                     fontWeight: 600,
                   }}
-                  onClick={() => {
-                    payForm.setFieldsValue({
-                      amount:       totals.balanceDue,
-                      payment_date: dayjs(),
-                      payment_mode: 'cash',
-                    })
-                    setPayMode('cash')
-                    setPayModal(true)
-                  }}
+                  onClick={() => setPayModal(true)}
                 >
                   + Record Payment (₹{Number(totals.balanceDue).toLocaleString('en-IN')})
                 </Button>
@@ -1022,139 +1023,23 @@ const InvoiceForm = () => {
       </Form>
 
       {/* ── Record Payment Modal ─────────────────────────────── */}
-      <Modal
-        title={
-          <Space>
-            <DollarOutlined style={{ color: '#10b981' }} />
-            <span>Record Payment</span>
-            {record?.customer_id && (
-              <Tag color="blue">
-                {customers.find(c => c.id === record.customer_id)?.name || ''}
-              </Tag>
-            )}
-          </Space>
-        }
-        open={payModal}
-        onCancel={() => { setPayModal(false); payForm.resetFields(); setPayMode('cash') }}
-        onOk={() => payForm.submit()}
-        okText="Save Payment"
-        okButtonProps={{
-          loading: paymentMutation.isPending,
-          style:   { background: '#10b981', borderColor: '#10b981' },
-        }}
-        width={520}
-      >
-        <Form
-          form={payForm}
-          layout="vertical"
-          onFinish={paymentMutation.mutate}
-        >
-          {/* Amount */}
-          <Form.Item
-            name="amount"
-            label="Amount Received (₹)"
-            rules={[{ required: true, message: 'Enter amount' }]}
-          >
-            <InputNumber
-              style={{ width: '100%' }}
-              min={0}
-              prefix="₹"
-              size="large"
-              placeholder="0.00"
-            />
-          </Form.Item>
-
-          {/* Payment Mode */}
-          <Form.Item
-            name="payment_mode"
-            label="Payment Mode"
-            initialValue="cash"
-            rules={[{ required: true }]}
-          >
-            <Radio.Group
-              onChange={e => {
-                setPayMode(e.target.value)
-                payForm.setFieldValue('upi_account', undefined)
-                payForm.setFieldValue('neft_account', undefined)
-              }}
-            >
-              <Space wrap>
-                {PAYMENT_MODES.map(m => (
-                  <Radio.Button
-                    key={m.value}
-                    value={m.value}
-                    style={{ borderRadius: 8 }}
-                  >
-                    {m.label}
-                  </Radio.Button>
-                ))}
-              </Space>
-            </Radio.Group>
-          </Form.Item>
-
-          {/* UPI account selector */}
-          {payMode === 'upi' && (
-            <Form.Item
-              name="upi_account"
-              label="UPI Account"
-              rules={[{ required: true, message: 'Select UPI account' }]}
-            >
-              <Select
-                placeholder="Select UPI account"
-                options={
-                  upiAccs.length > 0
-                    ? upiAccs.map(a => ({
-                        value: `${a.name} — ${a.detail}`,
-                        label: `📱 ${a.name} — ${a.detail}`,
-                      }))
-                    : [{ value: 'default', label: '⚠️ No UPI accounts — add in Settings' }]
-                }
-              />
-            </Form.Item>
-          )}
-
-          {/* NEFT account selector */}
-          {payMode === 'neft' && (
-            <Form.Item
-              name="neft_account"
-              label="Bank Account (NEFT/RTGS)"
-              rules={[{ required: true, message: 'Select bank account' }]}
-            >
-              <Select
-                placeholder="Select bank account"
-                options={
-                  neftAccs.length > 0
-                    ? neftAccs.map(a => ({
-                        value: `${a.name} — ${a.detail}`,
-                        label: `🏦 ${a.name} — ${a.detail}`,
-                      }))
-                    : [{ value: 'default', label: '⚠️ No bank accounts — add in Settings' }]
-                }
-              />
-            </Form.Item>
-          )}
-
-          {/* Reference */}
-          {['upi', 'neft', 'cheque'].includes(payMode) && (
-            <Form.Item name="reference" label="Reference No. (UTR / Cheque No.)">
-              <Input placeholder="Enter UTR or cheque number" />
-            </Form.Item>
-          )}
-
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item name="payment_date" label="Payment Date">
-                <DatePicker style={{ width: '100%' }} format="DD/MM/YYYY" />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item name="notes" label="Notes">
-                <Input placeholder="Optional remarks" />
-              </Form.Item>
-            </Col>
-          </Row>
-        </Form>
-      </Modal>
+      {isEdit && record?.customer_id && (
+        <RecordPaymentModal
+          open={payModal}
+          onClose={() => setPayModal(false)}
+          customerId={record.customer_id}
+          customerName={customers.find(c => c.id === record.customer_id)?.name}
+          invoiceId={record.id}
+          onSuccess={() => {
+            refetch()
+            qc.invalidateQueries({ queryKey: ['invoice', id] })
+            qc.invalidateQueries({ queryKey: ['payments-inv', id] })
+            qc.invalidateQueries({ queryKey: ['receivables-summary'] })
+            qc.invalidateQueries({ queryKey: ['receivables-customers'] })
+            refetchPayments()
+          }}
+        />
+      )}
 
     </MasterForm>
   )

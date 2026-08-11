@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react'
 import AIAssistant from '../AIAssistant'
-import { Layout, Menu, Typography, Space, Avatar, App, Button, Select, Tag } from 'antd'
+import { Layout, Menu, Typography, Space, Avatar, App, Button, Select, Tag, Dropdown, Tooltip } from 'antd'
 import {
   DashboardOutlined, AimOutlined, FunnelPlotOutlined, UnorderedListOutlined, NodeIndexOutlined,
   FileTextOutlined, ShoppingCartOutlined, DollarOutlined, AppstoreOutlined, ShoppingOutlined,
@@ -9,7 +9,7 @@ import {
   MenuFoldOutlined, MenuUnfoldOutlined, BuildOutlined, CarOutlined, RetweetOutlined,
   SwapOutlined, DownOutlined, LogoutOutlined, LayoutOutlined, DatabaseOutlined,
   UsergroupAddOutlined, ReconciliationOutlined, HistoryOutlined, CalculatorOutlined,
-  ToolOutlined, FireOutlined, RobotOutlined, BarChartOutlined
+  ToolOutlined, FireOutlined, RobotOutlined, BarChartOutlined, SafetyCertificateOutlined
 } from '@ant-design/icons'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
@@ -17,6 +17,9 @@ import { useAuth } from '../../hooks/useAuth'
 import { companyApi } from '../../api'
 
 import ErrorBoundary from '../common/ErrorBoundary'
+import InterCompanyBanner from '../common/InterCompanyBanner'
+
+import { MODULES } from '../../utils/modules'
 
 const { Sider, Header, Content } = Layout
 const { Text } = Typography
@@ -78,8 +81,69 @@ const AppLayout = () => {
   const [collapsed, setCollapsed] = useState(false)
   const navigate = useNavigate()
   const location = useLocation()
-  const { user, isSuperAdmin, activeCompanyId, setActiveCompany, logout } = useAuth()
+  const { user, isSuperAdmin, activeCompanyId, setActiveCompany, logout, hasPermission } = useAuth()
   const companyId = activeCompanyId || user?.active_company_id || user?.company_id
+
+  const effectiveMenuItems = useMemo(() => {
+    const rawItems = [...menuItems]
+    if (user?.role === 'superadmin') {
+      rawItems.push({
+        key: 'grp_admin',
+        icon: <SafetyCertificateOutlined />,
+        label: 'Administration',
+        children: [
+          { key: '/super/users', label: 'User Management' },
+        ],
+      })
+    }
+
+    const routeToModuleMap = {}
+    MODULES.forEach(m => {
+      routeToModuleMap[m.route] = m.key
+    })
+
+    return rawItems
+      .map(item => {
+        if (!item.children) {
+          if (item.key === '/') return item
+          const modKey = routeToModuleMap[item.key]
+          if (!modKey || hasPermission(modKey)) return item
+          return null
+        }
+        if (item.key === 'grp_admin' && user?.role === 'superadmin') return item
+
+        const validChildren = item.children.filter(child => {
+          const modKey = routeToModuleMap[child.key]
+          if (!modKey) return true
+          return hasPermission(modKey)
+        })
+
+        if (validChildren.length === 0) return null
+        return { ...item, children: validChildren }
+      })
+      .filter(Boolean)
+  }, [user?.role, hasPermission])
+
+  const userMenuItems = useMemo(() => {
+    const items = []
+    if (user?.role === 'superadmin') {
+      items.push({
+        key: '/super/users',
+        icon: <UserOutlined />,
+        label: 'User Management',
+        onClick: () => navigate('/super/users'),
+      })
+      items.push({ type: 'divider' })
+    }
+    items.push({
+      key: 'logout',
+      icon: <LogoutOutlined />,
+      label: 'Logout',
+      danger: true,
+      onClick: logout,
+    })
+    return items
+  }, [user?.role, navigate, logout])
 
   const { data: activeCompany } = useQuery({
     queryKey: ['company-info', companyId],
@@ -93,6 +157,21 @@ const AppLayout = () => {
       return JSON.parse(localStorage.getItem('companies_master') || '[]')
     } catch { return [] }
   }, [])
+
+  const homeCompanyId = user?.home_company_id || user?.company_id
+  const isCrossCompany = activeCompanyId && homeCompanyId && activeCompanyId !== homeCompanyId
+
+  const homeCompanyObj = useMemo(() => {
+    return companies.find(c => c.id === homeCompanyId)
+  }, [companies, homeCompanyId])
+
+  const activeCompanyObj = useMemo(() => {
+    return companies.find(c => c.id === activeCompanyId)
+  }, [companies, activeCompanyId])
+
+  const activeCompanyName = activeCompany?.name || activeCompanyObj?.name || 'Active Company'
+  const homeCompanyName = user?.company?.name || homeCompanyObj?.name || 'Home Company'
+  const brandColor = activeCompany?.color || activeCompanyObj?.color || '#3b82f6'
 
   // ── Dynamic company logo ────────────────────────────────────────────────
   const [companyLogo, setCompanyLogo] = useState(() => {
@@ -231,7 +310,7 @@ const AppLayout = () => {
             theme="dark"
             mode="inline"
             selectedKeys={[selectedKey]}
-            items={menuItems}
+            items={effectiveMenuItems}
             onClick={handleMenuClick}
             style={{ border: 'none' }}
           />
@@ -326,20 +405,38 @@ const AppLayout = () => {
                     }))
                   ]}
                 />
+                {isCrossCompany && (
+                  <Tooltip title={`You are editing ${activeCompanyName}, not your home company (${homeCompanyName}). Changes save to ${activeCompanyName}.`}>
+                    <Tag color={brandColor} style={{ display: 'inline-flex', alignItems: 'center', fontWeight: 600 }}>
+                      <span style={{
+                        display: 'inline-block',
+                        width: 8,
+                        height: 8,
+                        borderRadius: '50%',
+                        background: '#ffffff',
+                        marginRight: 6
+                      }} />
+                      Editing {activeCompanyName}
+                    </Tag>
+                  </Tooltip>
+                )}
                 <Button size="small" type="link" onClick={() => window.location.href = '/super-dashboard'}>Group Dashboard</Button>
               </Space>
             )}
-            <Space style={{ cursor: 'pointer' }}>
-              <Avatar style={{ background: '#6366f1' }}>
-                {user?.name?.charAt(0) || 'A'}
-              </Avatar>
-              <Text strong style={{ color: '#334155' }}>{user?.name || 'Admin'}</Text>
-              <Button type="text" size="small" onClick={logout} danger>Logout</Button>
-            </Space>
+            <Dropdown menu={{ items: userMenuItems }} trigger={['click']}>
+              <Space style={{ cursor: 'pointer' }}>
+                <Avatar style={{ background: '#6366f1' }}>
+                  {user?.name?.charAt(0) || 'A'}
+                </Avatar>
+                <Text strong style={{ color: '#334155' }}>{user?.name || 'Admin'}</Text>
+                <DownOutlined style={{ fontSize: 10, color: '#64748b' }} />
+              </Space>
+            </Dropdown>
           </Space>
         </Header>
 
         <Content style={{ background: '#f8fafc', minHeight: 'calc(100vh - 64px)' }}>
+          <InterCompanyBanner />
           <ErrorBoundary>
             <Outlet />
           </ErrorBoundary>

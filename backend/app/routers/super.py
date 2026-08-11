@@ -14,6 +14,8 @@ from app.models.invoice import Invoice
 from app.models.customer import Customer
 from app.models.employee import Employee
 from app.models.crm import CRMLead
+from app.models.payment import Payment
+from app.models.payment_allocation import PaymentAllocation
 
 router = APIRouter(prefix="/super", tags=["SuperAdmin"])
 
@@ -37,22 +39,43 @@ def get_group_overview(
     # Fetch active companies
     companies = db.query(Company).filter(Company.is_active == True).all()
 
-    # 1. Invoices aggregations (revenue, outstanding)
+    # 1. Invoices aggregations (billed revenue, balance_due outstanding)
     inv_rows = db.query(
         Invoice.company_id,
-        func.sum(case((Invoice.status.in_(['paid', 'sent', 'confirmed']), Invoice.total_amount), else_=0)).label("revenue"),
-        func.sum(case((Invoice.status == 'sent', Invoice.total_amount), else_=0)).label("outstanding"),
+        func.sum(case((Invoice.status != 'cancelled', Invoice.total_amount), else_=0)).label("revenue"),
+        func.sum(case(((Invoice.status != 'cancelled') & (Invoice.balance_due > 0), Invoice.balance_due), else_=0)).label("outstanding"),
     ).filter(Invoice.is_active == True).group_by(Invoice.company_id).all()
-    inv_map = {r.company_id: (float(r.revenue or 0), float(r.outstanding or 0)) for r in inv_rows}
+    inv_map = {r.company_id: (round(float(r.revenue or 0), 2), round(float(r.outstanding or 0), 2)) for r in inv_rows}
 
-    # 2. Purchase Orders aggregations (purchase_cost)
+    # 2. Collected per company = sum(PaymentAllocation.amount) for active allocations on active payments
+    alloc_rows = db.query(
+        PaymentAllocation.company_id,
+        func.sum(PaymentAllocation.amount).label("collected"),
+    ).join(
+        Payment, PaymentAllocation.payment_id == Payment.id
+    ).filter(
+        PaymentAllocation.is_active == True,
+        Payment.is_active == True,
+    ).group_by(PaymentAllocation.company_id).all()
+    alloc_map = {r.company_id: round(float(r.collected or 0), 2) for r in alloc_rows}
+
+    # 3. Total payments per company (for on_account calc)
+    pay_rows = db.query(
+        Payment.company_id,
+        func.sum(Payment.amount).label("total_payments"),
+    ).filter(
+        Payment.is_active == True,
+    ).group_by(Payment.company_id).all()
+    pay_map = {r.company_id: round(float(r.total_payments or 0), 2) for r in pay_rows}
+
+    # 4. Purchase Orders aggregations (purchase_cost)
     po_rows = db.query(
         PurchaseOrder.company_id,
         func.sum(case((PurchaseOrder.status == 'received', PurchaseOrder.total_amount), else_=0)).label("purchase_cost"),
     ).filter(PurchaseOrder.is_active == True).group_by(PurchaseOrder.company_id).all()
     po_map = {r.company_id: float(r.purchase_cost or 0) for r in po_rows}
 
-    # 3. Sales Orders aggregations (total_sos, active_sos)
+    # 5. Sales Orders aggregations (total_sos, active_sos)
     so_rows = db.query(
         SalesOrder.company_id,
         func.count(SalesOrder.id).label("total_sos"),
@@ -60,28 +83,28 @@ def get_group_overview(
     ).filter(SalesOrder.is_active == True).group_by(SalesOrder.company_id).all()
     so_map = {r.company_id: (int(r.total_sos or 0), int(r.active_sos or 0)) for r in so_rows}
 
-    # 4. Quotations aggregations (total_quotes)
+    # 6. Quotations aggregations (total_quotes)
     quote_rows = db.query(
         Quotation.company_id,
         func.count(Quotation.id).label("total_quotes"),
     ).filter(Quotation.is_active == True).group_by(Quotation.company_id).all()
     quote_map = {r.company_id: int(r.total_quotes or 0) for r in quote_rows}
 
-    # 5. Customers aggregations (total_customers)
+    # 7. Customers aggregations (total_customers)
     cust_rows = db.query(
         Customer.company_id,
         func.count(Customer.id).label("total_customers"),
     ).filter(Customer.is_active == True).group_by(Customer.company_id).all()
     cust_map = {r.company_id: int(r.total_customers or 0) for r in cust_rows}
 
-    # 6. Employees aggregations (total_employees)
+    # 8. Employees aggregations (total_employees)
     emp_rows = db.query(
         Employee.company_id,
         func.count(Employee.id).label("total_employees"),
     ).filter(Employee.is_active == True).group_by(Employee.company_id).all()
     emp_map = {r.company_id: int(r.total_employees or 0) for r in emp_rows}
 
-    # 7. CRM Leads aggregations (total_leads, won_leads)
+    # 9. CRM Leads aggregations (total_leads, won_leads)
     lead_rows = db.query(
         CRMLead.company_id,
         func.count(CRMLead.id).label("total_leads"),
@@ -89,7 +112,7 @@ def get_group_overview(
     ).filter(CRMLead.is_active == True).group_by(CRMLead.company_id).all()
     lead_map = {r.company_id: (int(r.total_leads or 0), int(r.won_leads or 0)) for r in lead_rows}
 
-    # 8. Last 6 months monthly revenue per company
+    # 10. Last 6 months monthly revenue per company
     now = datetime.now()
     month_names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
     months_list = []
@@ -108,7 +131,7 @@ def get_group_overview(
         func.sum(Invoice.total_amount).label("m_rev"),
     ).filter(
         Invoice.is_active == True,
-        Invoice.status.in_(['paid', 'sent']),
+        Invoice.status != 'cancelled',
     ).group_by(
         Invoice.company_id,
         func.extract('year', Invoice.created_at),
@@ -127,6 +150,9 @@ def get_group_overview(
     for c in companies:
         cid = c.id
         revenue, outstanding = inv_map.get(cid, (0.0, 0.0))
+        collected = alloc_map.get(cid, 0.0)
+        tot_pay = pay_map.get(cid, 0.0)
+        on_account = round(max(0.0, tot_pay - collected), 2)
         purchase_cost = po_map.get(cid, 0.0)
         gross_margin = round(((revenue - purchase_cost) / revenue * 100), 1) if revenue > 0 else 0.0
         total_sos, active_sos = so_map.get(cid, (0, 0))
@@ -147,6 +173,9 @@ def get_group_overview(
             'color': c.color or '#6366f1',
             'accent': getattr(c, 'accent', None) or c.color or '#6366f1',
             'revenue': revenue,
+            'collected': collected,
+            'onAccount': on_account,
+            'on_account': on_account,
             'purchaseCost': purchase_cost,
             'purchase_cost': purchase_cost,
             'grossMargin': gross_margin,
@@ -170,6 +199,8 @@ def get_group_overview(
         })
 
     group_revenue = sum(c['revenue'] for c in company_metrics)
+    total_group_collected = sum(c['collected'] for c in company_metrics)
+    total_group_on_account = sum(c['on_account'] for c in company_metrics)
     total_group_customers = sum(c['totalCustomers'] for c in company_metrics)
     total_group_active_sos = sum(c['activeSOs'] for c in company_metrics)
     total_group_outstanding = sum(c['outstanding'] for c in company_metrics)
@@ -186,9 +217,11 @@ def get_group_overview(
         'companies': company_metrics,
         'totals': {
             'group_revenue': group_revenue,
+            'total_collected': total_group_collected,
             'total_customers': total_group_customers,
             'active_orders': total_group_active_sos,
             'outstanding': total_group_outstanding,
+            'on_account': total_group_on_account,
         },
         'group_revenue_data': group_revenue_data,
     }

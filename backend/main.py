@@ -1,5 +1,6 @@
-from fastapi import FastAPI, Depends, Request, Response
+from fastapi import FastAPI, Depends, Request, Response, Query
 from fastapi.responses import JSONResponse
+from typing import Optional, List
 from sqlalchemy.orm import Session
 # pyrefly: ignore [missing-import]
 from fastapi.middleware.cors import CORSMiddleware
@@ -161,12 +162,14 @@ from app.models.process_master import ProcessMaster
 from app.models.warehouse      import Warehouse
 from app.models.company_settings import CompanySetting
 from app.models.payment import Payment
+from app.models.payment_allocation import PaymentAllocation
 
 from app.routers.auth import router as auth_router
 from app.routers.settings import router as settings_router
 from app.routers.super import router as super_router
 from app.routers.reports import router as reports_router
 from app.routers.inter_company import router as inter_company_router
+from app.routers.payments import router as payments_router
 
 PREFIX = "/api/v1"
 
@@ -185,29 +188,32 @@ app.include_router(reports_router)
 # Inter-Company
 app.include_router(inter_company_router, prefix=f"{PREFIX}")
 
+# Payments (dedicated router with allocation support — replaces generic CRUD)
+app.include_router(payments_router)
+
 
 # Auto CRUD routers
 ROUTER_CONFIGS = [
-    {"prefix": "/companies",       "tag": "Companies",       "model": Company,         "code_prefix": "COMP", "code_field": None, "company_scoped": True, "read_roles": None, "write_roles": {"superadmin"}},
-    {"prefix": "/customers",       "tag": "Customers",       "model": Customer,        "code_prefix": "CUST", "code_field": "customer_code"},
-    {"prefix": "/vendors",         "tag": "Vendors",         "model": Vendor,          "code_prefix": "VEND", "code_field": "vendor_code"},
-    {"prefix": "/products",        "tag": "Products",        "model": Product,         "code_prefix": "PROD", "code_field": "internal_ref"},
-    {"prefix": "/employees",       "tag": "Employees",       "model": Employee,        "code_prefix": "EMP",  "code_field": "employee_code"},
-    {"prefix": "/crm/stages",      "tag": "CRM Stages",      "model": CRMStage,        "code_prefix": None,   "code_field": None},
-    {"prefix": "/crm/leads",       "tag": "CRM Leads",       "model": CRMLead,         "code_prefix": "OPP",  "code_field": "lead_number"},
-    {"prefix": "/quotations",      "tag": "Quotations",      "model": Quotation,       "code_prefix": "QT",   "code_field": "quote_number"},
-    {"prefix": "/sales-orders",    "tag": "Sales Orders",    "model": SalesOrder,      "code_prefix": "SO",   "code_field": "so_number"},
-    {"prefix": "/purchase-orders", "tag": "PO",              "model": PurchaseOrder,   "code_prefix": "PO",   "code_field": "po_number"},
-    {"prefix": "/delivery",        "tag": "Delivery",        "model": DeliveryChallan, "code_prefix": "DC",   "code_field": "dc_number"},
-    {"prefix": "/invoices",        "tag": "Invoices",        "model": Invoice,         "code_prefix": "INV",  "code_field": "invoice_number"},
-    {"prefix": "/inventory",       "tag": "Inventory",       "model": StockMovement,   "code_prefix": "SM",   "code_field": "move_number"},
-    {"prefix": "/workshop",        "tag": "Workshop",        "model": WorkshopOrder,   "code_prefix": "WO",   "code_field": "wo_number"},
-    {"prefix": "/toughening",      "tag": "Toughening",      "model": TougheningBatch, "code_prefix": "TB",   "code_field": "tb_number"},
+    {"prefix": "/companies",       "tag": "Companies",       "model": Company,         "code_prefix": "COMP", "code_field": None, "company_scoped": True, "read_roles": None, "write_roles": {"superadmin"}, "module": "company"},
+    {"prefix": "/customers",       "tag": "Customers",       "model": Customer,        "code_prefix": "CUST", "code_field": "customer_code", "module": "customers"},
+    {"prefix": "/vendors",         "tag": "Vendors",         "model": Vendor,          "code_prefix": "VEND", "code_field": "vendor_code", "module": "vendors"},
+    {"prefix": "/products",        "tag": "Products",        "model": Product,         "code_prefix": "PROD", "code_field": "internal_ref", "module": "products"},
+    {"prefix": "/employees",       "tag": "Employees",       "model": Employee,        "code_prefix": "EMP",  "code_field": "employee_code", "module": "employees"},
+    {"prefix": "/crm/stages",      "tag": "CRM Stages",      "model": CRMStage,        "code_prefix": None,   "code_field": None, "module": "stages"},
+    {"prefix": "/crm/leads",       "tag": "CRM Leads",       "model": CRMLead,         "code_prefix": "OPP",  "code_field": "lead_number", "module": "leads"},
+    {"prefix": "/quotations",      "tag": "Quotations",      "model": Quotation,       "code_prefix": "QT",   "code_field": "quote_number", "module": "quotations"},
+    {"prefix": "/sales-orders",    "tag": "Sales Orders",    "model": SalesOrder,      "code_prefix": "SO",   "code_field": "so_number", "module": "sales_orders"},
+    {"prefix": "/purchase-orders", "tag": "PO",              "model": PurchaseOrder,   "code_prefix": "PO",   "code_field": "po_number", "module": "purchase_orders"},
+    {"prefix": "/delivery",        "tag": "Delivery",        "model": DeliveryChallan, "code_prefix": "DC",   "code_field": "dc_number", "module": "delivery_challans"},
+    {"prefix": "/invoices",        "tag": "Invoices",        "model": Invoice,         "code_prefix": "INV",  "code_field": "invoice_number", "module": "invoices"},
+    {"prefix": "/inventory",       "tag": "Inventory",       "model": StockMovement,   "code_prefix": "SM",   "code_field": "move_number", "module": "stock_movements"},
+    {"prefix": "/workshop",        "tag": "Workshop",        "model": WorkshopOrder,   "code_prefix": "WO",   "code_field": "wo_number", "module": "workshop_orders"},
+    {"prefix": "/toughening",      "tag": "Toughening",      "model": TougheningBatch, "code_prefix": "TB",   "code_field": "tb_number", "module": "toughening"},
     # NOTE: Process Masters are intentionally a shared global catalogue across all companies
-    {"prefix": "/process-masters", "tag": "Process Masters", "model": ProcessMaster,  "code_prefix": None,   "code_field": None, "company_scoped": False},
-    {"prefix": "/warehouses",      "tag": "Warehouses",      "model": Warehouse,      "code_prefix": None,   "code_field": None},
+    {"prefix": "/process-masters", "tag": "Process Masters", "model": ProcessMaster,  "code_prefix": None,   "code_field": None, "company_scoped": False, "module": "process_masters"},
+    {"prefix": "/warehouses",      "tag": "Warehouses",      "model": Warehouse,      "code_prefix": None,   "code_field": None, "module": "stock"},
     {"prefix": "/users",           "tag": "Users",           "model": User,            "code_prefix": None,   "code_field": None, "read_roles": {"admin", "superadmin"}, "write_roles": {"superadmin"}},
-    {"prefix": "/payments",        "tag": "Payments",        "model": Payment,         "code_prefix": "PMT",  "code_field": "payment_number"},
+    # Payments removed — handled by dedicated router with allocation support
 ]
 
 from pydantic import BaseModel
@@ -215,214 +221,262 @@ class DynCreate(BaseModel):
     model_config = {"extra": "allow"}
 class DynUpdate(BaseModel):
     model_config = {"extra": "allow"}
-
-for cfg in ROUTER_CONFIGS:
-    r = make_crud_router(
-        prefix=f"{PREFIX}{cfg['prefix']}",
-        tag=cfg["tag"],
-        model=cfg["model"],
-        create_schema=DynCreate,
-        update_schema=DynUpdate,
-        response_schema=DynCreate,
-        code_prefix=cfg.get("code_prefix"),
-        code_field=cfg.get("code_field"),
-        company_scoped=cfg.get("company_scoped", True),
-        read_roles=cfg.get("read_roles"),
-        write_roles=cfg.get("write_roles"),
-    )
-    app.include_router(r)
-
-
-# ── Receivables Summary (dashboard numbers) ───────────────────────────────────
-@app.get("/api/v1/receivables/summary")
-def receivables_summary(
+# ── Specific Workshop endpoints (MUST be defined before generic CRUD /{item_id} router) ──
+@app.get("/api/v1/workshop/cutting-register")
+def get_cutting_register(
+    target_date: Optional[str] = Query(None, alias="date"),
+    preset: Optional[str] = Query("today"),
     db: Session = Depends(get_db),
     user = Depends(get_current_user),
 ):
-    from app.models.sales_order import SalesOrder
-    from app.models.payment import Payment
-    from sqlalchemy import func
-    from app.utils.helpers import apply_company_filter
+    """Pre-aggregated Daily Cutting Register for Dashboard."""
+    import re
+    from datetime import datetime, date, timedelta
+    from app.models.workshop import WorkshopOrder
+    from app.models.product import Product
+    from app.utils.helpers import apply_company_filter, apply_scope_filter
 
-    so_q = db.query(SalesOrder)
-    pay_q = db.query(Payment)
+    today_d = date.today()
+    if target_date:
+        try:
+            parsed_d = datetime.strptime(target_date, "%Y-%m-%d").date()
+        except ValueError:
+            parsed_d = today_d
+    else:
+        parsed_d = today_d
 
-    # Always scope to active company (no superadmin bypass)
-    so_q = apply_company_filter(so_q, SalesOrder, user.active_company_id)
-    pay_q = apply_company_filter(pay_q, Payment, user.active_company_id)
+    if preset == "yesterday":
+        start_d = today_d - timedelta(days=1)
+        end_d = today_d - timedelta(days=1)
+    elif preset == "this_week":
+        start_d = today_d - timedelta(days=today_d.weekday())
+        end_d = today_d
+    else:
+        start_d = parsed_d
+        end_d = parsed_d
 
-    so_q = so_q.filter(SalesOrder.is_active == True)
-    pay_q = pay_q.filter(Payment.is_active == True)
+    query = db.query(WorkshopOrder).filter(WorkshopOrder.is_active == True)
+    query = apply_company_filter(query, WorkshopOrder, user.active_company_id)
+    query = apply_scope_filter(query, WorkshopOrder, user, "workshop_orders")
+    wos = query.order_by(WorkshopOrder.id.desc()).all()
 
-    total_billed = so_q.with_entities(func.sum(SalesOrder.total_amount)).scalar() or 0
-    total_collected = pay_q.with_entities(func.sum(Payment.amount)).scalar() or 0
-    outstanding = max(0, total_billed - total_collected)
-    advance = max(0, total_collected - total_billed)
+    # Pre-cache product thickness map
+    product_thick_map = {}
+    products = db.query(Product).filter(Product.is_active == True).all()
+    for p in products:
+        if getattr(p, "thickness", None) is not None:
+            try:
+                product_thick_map[p.id] = float(p.thickness)
+            except (ValueError, TypeError):
+                pass
 
-    return {
-        "total_billed": round(total_billed, 2),
-        "total_collected": round(total_collected, 2),
-        "outstanding": round(outstanding, 2),
-        "advance": round(advance, 2),
+    def parse_thickness(line):
+        thick = line.get("thickness") if line.get("thickness") is not None else line.get("glass_thickness")
+        if isinstance(thick, (int, float)):
+            return float(thick)
+        if isinstance(thick, str):
+            try:
+                return float(thick)
+            except ValueError:
+                pass
+        prod_thick = line.get("product_thickness")
+        if isinstance(prod_thick, (int, float)):
+            return float(prod_thick)
+        if isinstance(prod_thick, str):
+            try:
+                return float(prod_thick)
+            except ValueError:
+                pass
+
+        pid = line.get("product_id")
+        if pid and pid in product_thick_map:
+            return product_thick_map[pid]
+
+        desc = str(line.get("description") or "")
+        match = re.search(r'(\d+(?:\.\d+)?)\s*mm', desc, re.IGNORECASE)
+        if match:
+            try:
+                return float(match.group(1))
+            except ValueError:
+                pass
+        return None
+
+    def classify_glass(thickness):
+        if thickness is None:
+            return "unclassified"
+        if thickness < 8:
+            return "thin"
+        return "thick"
+
+    def calc_line_sqft(line):
+        chg_w = line.get("chg_w_in") or line.get("charged_w") or line.get("charged_w_in") or line.get("charged_w_inch") or line.get("ceiling_w_inches")
+        chg_h = line.get("chg_h_in") or line.get("charged_h") or line.get("charged_h_in") or line.get("charged_h_inch") or line.get("ceiling_h_inches")
+
+        if chg_w is None and line.get("charged_w_mm"):
+            chg_w = line.get("charged_w_mm") / 25.4
+        if chg_h is None and line.get("charged_h_mm"):
+            chg_h = line.get("charged_h_mm") / 25.4
+
+        is_charged = True
+        if chg_w is None or chg_h is None:
+            is_charged = False
+            act_w = line.get("act_w_in") or line.get("width_inch") or line.get("width_in")
+            act_h = line.get("act_h_in") or line.get("height_inch") or line.get("height_in")
+            if act_w is None and line.get("width_mm"):
+                act_w = line.get("width_mm") / 25.4
+            if act_h is None and line.get("height_mm"):
+                act_h = line.get("height_mm") / 25.4
+            w, h = act_w or 0, act_h or 0
+        else:
+            w, h = chg_w, chg_h
+
+        qty = line.get("qty") or line.get("quantity") or 1
+        try:
+            w, h, qty = float(w), float(h), float(qty)
+        except (ValueError, TypeError):
+            w, h, qty = 0, 0, 1
+
+        sqft = (w * h * qty) / 144.0
+        return sqft, is_charged
+
+    status_map = {
+        "draft": "PENDING",
+        "in_progress": "UNDR CTNG",
+        "completed": "RDY",
+        "cancelled": "CANCELLED",
     }
 
-
-# ── Customer Ledger ────────────────────────────────────────────────────────────
-@app.get("/api/v1/receivables/customer/{customer_id}")
-def customer_ledger(
-    customer_id: int,
-    db: Session = Depends(get_db),
-    user = Depends(get_current_user),
-):
-    from app.models.sales_order import SalesOrder
-    from app.models.payment import Payment
-    from app.models.customer import Customer
-    from fastapi import HTTPException
-
-    customer = db.query(Customer).filter(Customer.id == customer_id).first()
-    if not customer:
-        raise HTTPException(status_code=404, detail="Customer not found")
-
-    # Verify customer belongs to active company
-    if (
-        user.active_company_id is not None
-        and customer.company_id is not None
-        and customer.company_id != user.active_company_id
-    ):
-        raise HTTPException(status_code=404, detail="Customer not found")
-
-    sales_orders = db.query(SalesOrder).filter(
-        SalesOrder.customer_id == customer_id,
-        SalesOrder.is_active == True,
-    ).order_by(SalesOrder.id.asc()).all()
-
-    payments = db.query(Payment).filter(
-        Payment.customer_id == customer_id,
-        Payment.is_active == True,
-    ).order_by(Payment.id.asc()).all()
-
-    transactions = []
-
-    for so in sales_orders:
-        transactions.append({
-            "id": f"so_{so.id}",
-            "date": so.order_date or str(so.created_at)[:10],
-            "reference": so.so_number,
-            "type": "invoice",
-            "description": f"Sales Order {so.so_number}",
-            "debit": round(so.total_amount or 0, 2),
-            "credit": 0,
-            "so_id": so.id,
-            "payment_id": None,
-        })
-
-    for pay in payments:
-        transactions.append({
-            "id": f"pay_{pay.id}",
-            "date": pay.payment_date or str(pay.created_at)[:10],
-            "reference": pay.payment_number,
-            "type": "payment",
-            "description": f"Payment via {pay.payment_mode}" + (f" ({pay.payment_account})" if pay.payment_account else ""),
-            "debit": 0,
-            "credit": round(pay.amount or 0, 2),
-            "so_id": pay.so_id,
-            "payment_id": pay.id,
-            "payment_mode": pay.payment_mode,
-            "payment_account": pay.payment_account,
-            "payment_reference": pay.payment_reference,
-        })
-
-    transactions.sort(key=lambda x: x["date"])
-
-    running_balance = 0
-    for t in transactions:
-        running_balance += t["debit"] - t["credit"]
-        t["balance"] = round(running_balance, 2)
-
-    total_billed = sum(t["debit"] for t in transactions)
-    total_paid = sum(t["credit"] for t in transactions)
-    balance = round(total_billed - total_paid, 2)
-
-    return {
-        "customer": {
-            "id": customer.id,
-            "name": customer.name,
-            "phone": customer.phone,
-            "gstin": customer.gstin,
-        },
-        "transactions": transactions,
-        "total_billed": round(total_billed, 2),
-        "total_paid": round(total_paid, 2),
-        "balance": balance,
+    tile_data = {
+        "cut_today": {"thin": 0.0, "thick": 0.0, "unclassified": 0.0},
+        "in_progress": {"thin": 0.0, "thick": 0.0, "unclassified": 0.0},
+        "pending": {"thin": 0.0, "thick": 0.0, "unclassified": 0.0},
+        "completed": {"thin": 0.0, "thick": 0.0, "unclassified": 0.0},
     }
 
+    rows = []
+    fallback_line_count = 0
 
-# ── Receivables per customer (for dashboard table) ─────────────────────────────
-@app.get("/api/v1/receivables/customers")
-def receivables_by_customer(
-    db: Session = Depends(get_db),
-    user = Depends(get_current_user),
-):
-    from app.models.sales_order import SalesOrder
-    from app.models.payment import Payment
-    from app.models.customer import Customer
-    from app.utils.helpers import apply_company_filter
-    from sqlalchemy import func
+    for wo in wos:
+        thin_sqft = 0.0
+        thick_sqft = 0.0
+        unclassified_sqft = 0.0
 
-    so_q = db.query(
-        SalesOrder.customer_id,
-        func.sum(SalesOrder.total_amount).label("total_billed"),
-        func.count(SalesOrder.id).label("so_count"),
-    )
-    so_q = apply_company_filter(so_q, SalesOrder, user.active_company_id)
-    so_q = so_q.filter(SalesOrder.is_active == True)
-    so_by_customer = so_q.group_by(SalesOrder.customer_id).all()
+        wo_cut_pieces = 0
+        wo_total_pieces = 0
+        lines = wo.lines or []
+        wo_completed = (wo.status == "completed")
 
-    pay_q = db.query(
-        Payment.customer_id,
-        func.sum(Payment.amount).label("total_paid"),
-    )
-    pay_q = apply_company_filter(pay_q, Payment, user.active_company_id)
-    pay_q = pay_q.filter(Payment.is_active == True)
-    pay_by_customer = pay_q.group_by(Payment.customer_id).all()
+        for line in lines:
+            if not isinstance(line, dict):
+                continue
 
-    pay_map = {p.customer_id: float(p.total_paid or 0) for p in pay_by_customer}
+            # J5 Hydration on missing qty_cut
+            if line.get("qty_cut") is None:
+                if wo_completed:
+                    line["qty_cut"] = line.get("qty") or line.get("quantity") or 1
+                    comp_dt = wo.updated_at or wo.created_at or datetime.utcnow()
+                    line["cut_completed_at"] = comp_dt.isoformat() if hasattr(comp_dt, "isoformat") else str(comp_dt)
+                else:
+                    line["qty_cut"] = 0
 
-    result = []
-    for row in so_by_customer:
-        cust = db.query(Customer).filter(Customer.id == row.customer_id).first()
-        if not cust:
-            continue
-        total_billed = float(row.total_billed or 0)
-        total_paid = pay_map.get(row.customer_id, 0)
-        balance = round(total_billed - total_paid, 2)
-        result.append({
-            "customer_id": row.customer_id,
-            "customer_name": cust.name,
-            "customer_phone": cust.phone or "",
-            "total_billed": round(total_billed, 2),
-            "total_paid": round(total_paid, 2),
-            "balance": balance,
-            "so_count": row.so_count,
-            "status": "advance" if balance < 0 else ("settled" if balance == 0 else "pending"),
-        })
+            thick_val = parse_thickness(line)
+            sqft, is_charged = calc_line_sqft(line)
+            if not is_charged:
+                fallback_line_count += 1
 
-    result.sort(key=lambda x: abs(x["balance"]), reverse=True)
-    return {"items": result, "total": len(result)}
+            cat = classify_glass(thick_val)
+            if cat == "thin":
+                thin_sqft += sqft
+            elif cat == "thick":
+                thick_sqft += sqft
+            else:
+                unclassified_sqft += sqft
 
+            qty = float(line.get("qty") or line.get("quantity") or 1)
+            qty_cut = float(line.get("qty_cut") or 0)
+            unit_sqft = (sqft / qty) if qty > 0 else 0.0
+            qty_pending = max(0.0, qty - qty_cut)
 
-@app.get("/")
-def root():
-    return {
-        "app":     settings.APP_NAME,
-        "version": settings.APP_VERSION,
-        "docs":    "/api/docs",
-        "status":  "running",
+            wo_cut_pieces += int(qty_cut)
+            wo_total_pieces += int(qty)
+
+            # Tiles categorization
+            # 1. Completed cumulative
+            if qty > 0 and qty_cut >= qty:
+                tile_data["completed"][cat] += unit_sqft * qty_cut
+            # 2. Cut Today (if completion timestamp matches date range)
+            comp_at = line.get("cut_completed_at")
+            if comp_at:
+                try:
+                    c_date = datetime.fromisoformat(str(comp_at)).date()
+                    if start_d <= c_date <= end_d:
+                        tile_data["cut_today"][cat] += unit_sqft * qty_cut
+                except Exception:
+                    pass
+
+            # 3. In Progress
+            cut_started = line.get("cut_started_at")
+            if (cut_started or qty_cut > 0) and qty_cut < qty:
+                tile_data["in_progress"][cat] += unit_sqft * qty_pending
+            # 4. Pending
+            if not cut_started and qty_cut == 0:
+                tile_data["pending"][cat] += unit_sqft * qty
+
+        row_total = thin_sqft + thick_sqft + unclassified_sqft
+        if lines:
+            descs = [l.get("description") for l in lines if isinstance(l, dict) and l.get("description")]
+            date_str = wo.order_date
+            if not date_str and wo.created_at:
+                date_str = wo.created_at.strftime("%Y-%m-%d")
+
+            pct = round((wo_cut_pieces / wo_total_pieces * 100), 1) if wo_total_pieces > 0 else 0.0
+
+            rows.append({
+                "key": wo.id,
+                "id": wo.id,
+                "date": date_str or "—",
+                "wo_number": wo.wo_number or f"WO-{wo.id}",
+                "customer_name": wo.customer_name or "—",
+                "description": ", ".join(descs) if descs else "—",
+                "thin_sqft": round(thin_sqft, 2) if thin_sqft > 0 else None,
+                "thick_sqft": round(thick_sqft, 2) if thick_sqft > 0 else None,
+                "unclassified_sqft": round(unclassified_sqft, 2) if unclassified_sqft > 0 else None,
+                "total_sqft": round(row_total, 2),
+                "cut_pieces": wo_cut_pieces,
+                "total_pieces": wo_total_pieces,
+                "progress_pct": pct,
+                "status": wo.status or "draft",
+                "status_label": status_map.get(wo.status, "PENDING"),
+            })
+
+    fmt_tile = lambda t: {
+        "thin_sqft": round(t["thin"], 2),
+        "thick_sqft": round(t["thick"], 2),
+        "unclassified_sqft": round(t["unclassified"], 2),
+        "total_sqft": round(t["thin"] + t["thick"] + t["unclassified"], 2),
     }
 
-@app.get("/api/v1/health")
-def health():
-    return {"status": "healthy", "database": "connected"}
+    cut_today_res = fmt_tile(tile_data["cut_today"])
+    in_prog_res = fmt_tile(tile_data["in_progress"])
+    pending_res = fmt_tile(tile_data["pending"])
+    completed_res = fmt_tile(tile_data["completed"])
+
+    return {
+        "items": rows,
+        "cut_today": cut_today_res,
+        "in_progress": in_prog_res,
+        "pending": pending_res,
+        "completed": completed_res,
+        # Backward compatibility aliases
+        "total_thin_sqft": cut_today_res["thin_sqft"],
+        "total_thick_sqft": cut_today_res["thick_sqft"],
+        "total_unclassified_sqft": cut_today_res["unclassified_sqft"],
+        "total_all_sqft": cut_today_res["total_sqft"],
+        "fallback_line_count": fallback_line_count,
+        "selected_date": start_d.strftime("%Y-%m-%d"),
+        "preset": preset,
+    }
+
 
 @app.get("/api/v1/workshop/by-so/{so_id}")
 def get_wo_by_so(
@@ -432,8 +486,8 @@ def get_wo_by_so(
 ):
     """Get all Workshop Orders linked to a Sales Order (scoped to active company)."""
     from app.models.sales_order import SalesOrder
+    from app.models.workshop import WorkshopOrder
 
-    # Verify the SO belongs to the active company
     so = db.query(SalesOrder).filter(SalesOrder.id == so_id).first()
     if not so:
         from fastapi import HTTPException
@@ -463,3 +517,337 @@ def get_wo_by_so(
         ],
         "total": len(wos),
     }
+
+
+for cfg in ROUTER_CONFIGS:
+    r = make_crud_router(
+        prefix=f"{PREFIX}{cfg['prefix']}",
+        tag=cfg["tag"],
+        model=cfg["model"],
+        create_schema=DynCreate,
+        update_schema=DynUpdate,
+        response_schema=DynCreate,
+        code_prefix=cfg.get("code_prefix"),
+        code_field=cfg.get("code_field"),
+        company_scoped=cfg.get("company_scoped", True),
+        read_roles=cfg.get("read_roles"),
+        write_roles=cfg.get("write_roles"),
+        module=cfg.get("module"),
+    )
+    app.include_router(r)
+
+
+# ── Receivables Summary (dashboard numbers) ───────────────────────────────────
+# Phase 2A: Rewritten to use Invoice-based accounting with allocations.
+# Sales Orders leave AR entirely.
+@app.get("/api/v1/receivables/summary")
+def receivables_summary(
+    db: Session = Depends(get_db),
+    user = Depends(get_current_user),
+):
+    from app.models.invoice import Invoice
+    from app.models.payment import Payment
+    from app.models.payment_allocation import PaymentAllocation
+    from sqlalchemy import func
+    from app.utils.helpers import apply_company_filter, apply_scope_filter
+
+    # Billed = Invoice.total_amount where status != 'cancelled' and is_active
+    inv_q = db.query(Invoice)
+    inv_q = apply_company_filter(inv_q, Invoice, user.active_company_id)
+    inv_q = apply_scope_filter(inv_q, Invoice, user, "invoices")
+    inv_q = inv_q.filter(Invoice.is_active == True, Invoice.status != "cancelled")
+
+    total_billed = inv_q.with_entities(func.sum(Invoice.total_amount)).scalar() or 0
+
+    # Received = sum(payment_allocations.amount) for active allocations on active payments
+    alloc_q = (
+        db.query(func.sum(PaymentAllocation.amount))
+        .join(Payment, PaymentAllocation.payment_id == Payment.id)
+        .filter(
+            PaymentAllocation.is_active == True,
+            Payment.is_active == True,
+        )
+    )
+    alloc_q = apply_company_filter(alloc_q, PaymentAllocation, user.active_company_id)
+    total_received = alloc_q.scalar() or 0
+
+    outstanding = round(max(0, total_billed - total_received), 2)
+
+    # On-account = total payments - total allocations
+    pay_q = db.query(func.sum(Payment.amount)).filter(Payment.is_active == True)
+    pay_q = apply_company_filter(pay_q, Payment, user.active_company_id)
+    total_payments = pay_q.scalar() or 0
+
+    on_account = round(max(0, total_payments - total_received), 2)
+
+    eff_scope = getattr(user, "data_scope", "company")
+    if isinstance(getattr(user, "module_scopes", None), dict):
+        eff_scope = user.module_scopes.get("invoices", eff_scope)
+    is_scoped = (user.role not in ("superadmin", "admin")) and (eff_scope == "own")
+
+    return {
+        "total_billed": round(total_billed, 2),
+        "total_collected": round(total_received, 2),
+        "outstanding": outstanding,
+        "advance": on_account,  # renamed conceptually but key kept for compat
+        "on_account": on_account,
+        "is_scoped": is_scoped,
+    }
+
+
+# ── Customer Ledger ────────────────────────────────────────────────────────────
+# Phase 2A: Transactions are now Invoices (not Sales Orders).
+@app.get("/api/v1/receivables/customer/{customer_id}")
+def customer_ledger(
+    customer_id: int,
+    db: Session = Depends(get_db),
+    user = Depends(get_current_user),
+):
+    from app.models.invoice import Invoice
+    from app.models.payment import Payment
+    from app.models.payment_allocation import PaymentAllocation
+    from app.models.customer import Customer
+    from app.utils.helpers import apply_company_filter, apply_scope_filter
+    from fastapi import HTTPException
+    from sqlalchemy import func
+
+    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+
+    # Verify customer belongs to active company
+    if (
+        user.active_company_id is not None
+        and customer.company_id is not None
+        and customer.company_id != user.active_company_id
+    ):
+        raise HTTPException(status_code=404, detail="Customer not found")
+
+    # Invoices as debit entries
+    inv_q = db.query(Invoice).filter(
+        Invoice.customer_id == customer_id,
+        Invoice.is_active == True,
+        Invoice.status != "cancelled",
+    )
+    inv_q = apply_company_filter(inv_q, Invoice, user.active_company_id)
+    inv_q = apply_scope_filter(inv_q, Invoice, user, "invoices")
+    invoices = inv_q.order_by(Invoice.id.asc()).all()
+
+    # Payments as credit entries
+    pay_q = db.query(Payment).filter(
+        Payment.customer_id == customer_id,
+        Payment.is_active == True,
+    )
+    pay_q = apply_company_filter(pay_q, Payment, user.active_company_id)
+    payments = pay_q.order_by(Payment.id.asc()).all()
+
+    transactions = []
+
+    for inv in invoices:
+        transactions.append({
+            "id": f"inv_{inv.id}",
+            "date": inv.invoice_date or str(inv.created_at)[:10],
+            "reference": inv.invoice_number,
+            "type": "invoice",
+            "description": f"Invoice {inv.invoice_number}",
+            "debit": round(inv.total_amount or 0, 2),
+            "credit": 0,
+            "invoice_id": inv.id,
+            "payment_id": None,
+        })
+
+    for pay in payments:
+        # Get allocations for this payment to show which invoices it covers
+        allocs = (
+            db.query(PaymentAllocation)
+            .filter(
+                PaymentAllocation.payment_id == pay.id,
+                PaymentAllocation.is_active == True,
+            )
+            .all()
+        )
+        alloc_details = [
+            {"invoice_id": a.invoice_id, "amount": a.amount}
+            for a in allocs
+        ]
+
+        transactions.append({
+            "id": f"pay_{pay.id}",
+            "date": pay.payment_date or str(pay.created_at)[:10],
+            "reference": pay.payment_number,
+            "type": "payment",
+            "description": f"Payment via {pay.payment_mode}" + (f" ({pay.payment_account})" if pay.payment_account else ""),
+            "debit": 0,
+            "credit": round(pay.amount or 0, 2),
+            "invoice_id": None,
+            "payment_id": pay.id,
+            "payment_mode": pay.payment_mode,
+            "payment_account": pay.payment_account,
+            "payment_reference": pay.payment_reference,
+            "allocations": alloc_details,
+        })
+
+    transactions.sort(key=lambda x: x["date"])
+
+    running_balance = 0
+    for t in transactions:
+        running_balance += t["debit"] - t["credit"]
+        t["balance"] = round(running_balance, 2)
+
+    total_billed = sum(t["debit"] for t in transactions)
+    total_paid = sum(t["credit"] for t in transactions)
+    balance = round(total_billed - total_paid, 2)
+
+    # On-account credit
+    total_allocated = (
+        db.query(func.sum(PaymentAllocation.amount))
+        .join(Payment, PaymentAllocation.payment_id == Payment.id)
+        .filter(
+            Payment.customer_id == customer_id,
+            Payment.is_active == True,
+            PaymentAllocation.is_active == True,
+        )
+        .scalar()
+    ) or 0
+    on_account = round(max(0, total_paid - total_allocated), 2)
+
+    return {
+        "customer": {
+            "id": customer.id,
+            "name": customer.name,
+            "phone": customer.phone,
+            "gstin": customer.gstin,
+        },
+        "transactions": transactions,
+        "total_billed": round(total_billed, 2),
+        "total_paid": round(total_paid, 2),
+        "balance": balance,
+        "on_account": on_account,
+    }
+
+
+# ── Receivables per customer (for dashboard table) ─────────────────────────────
+# Phase 2A: Invoice-based, N+1 fixed with join.
+@app.get("/api/v1/receivables/customers")
+def receivables_by_customer(
+    db: Session = Depends(get_db),
+    user = Depends(get_current_user),
+):
+    from app.models.invoice import Invoice
+    from app.models.payment import Payment
+    from app.models.payment_allocation import PaymentAllocation
+    from app.models.customer import Customer
+    from app.utils.helpers import apply_company_filter, apply_scope_filter
+    from sqlalchemy import func
+
+    # Billed per customer from Invoices (not SOs)
+    inv_q = db.query(
+        Invoice.customer_id,
+        func.sum(Invoice.total_amount).label("total_billed"),
+        func.count(Invoice.id).label("invoice_count"),
+    )
+    inv_q = apply_company_filter(inv_q, Invoice, user.active_company_id)
+    inv_q = apply_scope_filter(inv_q, Invoice, user, "invoices")
+    inv_q = inv_q.filter(Invoice.is_active == True, Invoice.status != "cancelled")
+    inv_by_customer = inv_q.group_by(Invoice.customer_id).all()
+
+    # Allocations (received) per customer
+    alloc_q = db.query(
+        Payment.customer_id,
+        func.sum(PaymentAllocation.amount).label("total_allocated"),
+    ).join(
+        PaymentAllocation, PaymentAllocation.payment_id == Payment.id
+    ).filter(
+        Payment.is_active == True,
+        PaymentAllocation.is_active == True,
+    )
+    alloc_q = apply_company_filter(alloc_q, Payment, user.active_company_id)
+    alloc_by_customer = alloc_q.group_by(Payment.customer_id).all()
+    alloc_map = {row.customer_id: float(row.total_allocated or 0) for row in alloc_by_customer}
+
+    # Total payments per customer (for on-account calc)
+    pay_q = db.query(
+        Payment.customer_id,
+        func.sum(Payment.amount).label("total_paid"),
+    ).filter(Payment.is_active == True)
+    pay_q = apply_company_filter(pay_q, Payment, user.active_company_id)
+    pay_by_customer = pay_q.group_by(Payment.customer_id).all()
+    pay_map = {row.customer_id: float(row.total_paid or 0) for row in pay_by_customer}
+
+    # Batch-load customer names (fix N+1)
+    customer_ids = [row.customer_id for row in inv_by_customer if row.customer_id is not None]
+    for cid in pay_map:
+        if cid not in customer_ids:
+            customer_ids.append(cid)
+
+    customers_map = {}
+    if customer_ids:
+        custs = db.query(Customer).filter(Customer.id.in_(customer_ids)).all()
+        customers_map = {c.id: c for c in custs}
+
+    # Build result from invoice-side customers
+    result_map = {}
+    for row in inv_by_customer:
+        cust = customers_map.get(row.customer_id)
+        if not cust:
+            continue
+        total_billed = float(row.total_billed or 0)
+        total_allocated = alloc_map.get(row.customer_id, 0)
+        total_paid = pay_map.get(row.customer_id, 0)
+        balance = round(total_billed - total_allocated, 2)
+        on_account = round(max(0, total_paid - total_allocated), 2)
+
+        result_map[row.customer_id] = {
+            "customer_id": row.customer_id,
+            "customer_name": cust.name,
+            "customer_phone": cust.phone or "",
+            "total_billed": round(total_billed, 2),
+            "total_paid": round(total_paid, 2),
+            "balance": balance,
+            "on_account": on_account,
+            "invoice_count": row.invoice_count,
+            "status": "advance" if balance < 0 else ("settled" if balance == 0 else "pending"),
+        }
+
+    # Add customers who have payments but no invoices
+    for cid, total_paid in pay_map.items():
+        if cid in result_map:
+            continue
+        cust = customers_map.get(cid)
+        if not cust:
+            continue
+        total_allocated = alloc_map.get(cid, 0)
+        on_account = round(max(0, total_paid - total_allocated), 2)
+        result_map[cid] = {
+            "customer_id": cid,
+            "customer_name": cust.name,
+            "customer_phone": cust.phone or "",
+            "total_billed": 0,
+            "total_paid": round(total_paid, 2),
+            "balance": round(-total_paid, 2),
+            "on_account": on_account,
+            "invoice_count": 0,
+            "status": "advance",
+        }
+
+    result = list(result_map.values())
+    result.sort(key=lambda x: abs(x["balance"]), reverse=True)
+    return {"items": result, "total": len(result)}
+
+
+
+
+
+
+@app.get("/")
+def root():
+    return {
+        "app":     settings.APP_NAME,
+        "version": settings.APP_VERSION,
+        "docs":    "/api/docs",
+        "status":  "running",
+    }
+
+@app.get("/api/v1/health")
+def health():
+    return {"status": "healthy", "database": "connected"}

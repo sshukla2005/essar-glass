@@ -1,0 +1,5 @@
+id,invoice_number,customer_id,total_amount,amount_paid,balance_due,advance_received,status
+6,INV0001,,0.0,0.0,0.0,0.0,draft
+7,INV0002,,0.0,0.0,0.0,0.0,draft
+8,INV0001,,0.0,0.0,0.0,0.0,draft
+9,INV0002,,0.0,0.0,0.0,0.0,draft

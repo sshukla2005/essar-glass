@@ -16,6 +16,7 @@ from app.models.process_master import ProcessMaster
 from app.models.warehouse import Warehouse
 from app.models.company_settings import CompanySetting
 from app.models.payment import Payment
+from app.models.payment_allocation import PaymentAllocation
 
 __all__ = [
     "Company", "User", "Customer", "Vendor", "Product",
@@ -23,5 +24,5 @@ __all__ = [
     "SalesOrder", "PurchaseOrder", "DeliveryChallan",
     "Invoice", "StockMovement", "WorkshopOrder",
     "TougheningBatch", "ProcessMaster", "Warehouse",
-    "CompanySetting", "Payment",
+    "CompanySetting", "Payment", "PaymentAllocation",
 ]

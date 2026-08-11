@@ -1,5 +1,5 @@
-import React from 'react'
-import { Tag, Button, Tooltip, Typography } from 'antd'
+import React, { useState } from 'react'
+import { Tag, Button, Tooltip, Typography, Space } from 'antd'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { ArrowLeftOutlined, DownloadOutlined } from '@ant-design/icons'
 import MasterList from '../../components/common/MasterList'
@@ -14,6 +14,15 @@ const QuotationList = () => {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const leadId = searchParams.get('lead_id')
+
+  const [statusTab, setStatusTab] = useState('active')
+  const [counts, setCounts] = useState(null)
+
+  const tabs = [
+    { key: 'active', label: 'Active', count: counts?.active },
+    { key: 'converted', label: 'Converted', count: counts?.converted },
+    { key: 'all', label: 'All', count: counts?.all },
+  ]
 
   return (
     <>
@@ -43,10 +52,17 @@ const QuotationList = () => {
         queryKey="quotations"
         api={quotationApi}
         nameField="quote_number"
-        apiFilters={leadId ? { crm_lead_id: leadId } : undefined}
+        tabs={tabs}
+        activeTab={statusTab}
+        onTabChange={setStatusTab}
+        onDataLoad={(data) => setCounts(data?.counts)}
+        apiFilters={{
+          ...(leadId ? { crm_lead_id: leadId } : {}),
+          status: statusTab,
+        }}
         columns={[
           { title: 'Quote No.',  dataIndex: 'quote_number', key: 'quote_number', width: 130 },
-          { title: 'Customer',   dataIndex: 'customer',     key: 'customer',     width: 200, render: v => v?.name || '—' },
+          { title: 'Customer',   dataIndex: 'customer_name', key: 'customer_name', width: 200, render: (v, r) => v || r.customer?.name || '—' },
           { title: 'Date',       dataIndex: 'quote_date',   key: 'quote_date',   width: 120 },
           { title: 'Valid Until', dataIndex: 'valid_until',  key: 'valid_until',  width: 120 },
           { title: 'Salesperson', dataIndex: 'salesperson',  key: 'salesperson',  width: 140 },
@@ -56,8 +72,24 @@ const QuotationList = () => {
             render: v => v != null ? `₹ ${Number(v).toLocaleString('en-IN')}` : '—' },
           { title: 'Total',      dataIndex: 'total_amount', key: 'total_amount', width: 130,
             render: v => v != null ? <b>₹ {Number(v).toLocaleString('en-IN')}</b> : '—' },
-          { title: 'Status',     dataIndex: 'status',       key: 'status',       width: 120,
-            render: v => v === 'converted' ? <Tag color="purple">🔄 Converted</Tag> : <Tag color={STATUS_COLORS[v] || 'default'}>{v?.toUpperCase()}</Tag> },
+          { title: 'Status',     dataIndex: 'status',       key: 'status',       width: 200,
+            render: (v, r) => v === 'converted' ? (
+              <Space size={4} wrap>
+                <Tag color="purple">🔄 Converted</Tag>
+                {r.so_id && (
+                  <Tag
+                    color="blue"
+                    style={{ cursor: 'pointer' }}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      navigate(`/sales-orders/${r.so_id}/edit`)
+                    }}
+                  >
+                    {r.so_number || `SO#${r.so_id}`} ↗
+                  </Tag>
+                )}
+              </Space>
+            ) : <Tag color={STATUS_COLORS[v] || 'default'}>{v?.toUpperCase()}</Tag> },
         ]}
         createPath={leadId ? `/quotations/new?lead_id=${leadId}` : '/quotations/new'}
         editPath={(r) => `/quotations/${r.id}/edit`}
@@ -73,3 +105,4 @@ const QuotationList = () => {
 }
 
 export default QuotationList
+

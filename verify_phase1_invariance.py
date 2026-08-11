@@ -2,11 +2,17 @@ import json
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
+import os
+
 def run_verification():
     conn = psycopg2.connect('postgresql://essar:essar_local@localhost:5433/essar_glass')
     cur = conn.cursor(cursor_factory=RealDictCursor)
 
-    with open('PHASE1-baseline.json') as f:
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    baseline_path = os.path.join(base_dir, 'PHASE1-baseline.json')
+    after_path = os.path.join(base_dir, 'PHASE1-after.json')
+
+    with open(baseline_path) as f:
         baseline = json.load(f)
 
     after = {"quotations": [], "sales_orders": []}
@@ -72,7 +78,7 @@ def run_verification():
                 "lines_count": len(lines_data)
             })
 
-    with open('PHASE1-after.json', 'w') as f:
+    with open(after_path, 'w') as f:
         json.dump(after, f, indent=2)
 
     diffs = []

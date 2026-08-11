@@ -1,22 +1,78 @@
 import React, { useState } from 'react'
 import { Button, Space, Typography, message } from 'antd'
 import { LinkOutlined, ExportOutlined } from '@ant-design/icons'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import useAuth from '../../hooks/useAuth'
+import { companyApi } from '../../api'
 
 const { Text } = Typography
 
 /**
  * InterCompanyBanner Component
- * Renders a subtle single-line banner when a PO, SO, or WO has a valid linked_ref object.
+ * Renders a persistent warning banner when activeCompanyId != homeCompanyId,
+ * or a subtle single-line banner when a PO, SO, or WO has a valid linked_ref object.
  *
  * @param {string} docType - 'po' | 'so' | 'wo'
  * @param {object} linkedRef - object stored in record.linked_ref
  */
 const InterCompanyBanner = ({ docType, linkedRef }) => {
   const navigate = useNavigate()
-  const { activeCompanyId, setActiveCompany, isSuperAdmin } = useAuth()
+  const location = useLocation()
+  const { user, activeCompanyId, setActiveCompany, isSuperAdmin } = useAuth()
   const [navigating, setNavigating] = useState(false)
+
+  const homeCompanyId = user?.home_company_id || user?.company_id
+  const isCrossCompany = activeCompanyId && homeCompanyId && activeCompanyId !== homeCompanyId
+
+  // Fetch the company info for brand color and name
+  const { data: activeCompany } = useQuery({
+    queryKey: ['company-info', activeCompanyId],
+    queryFn: () => activeCompanyId ? companyApi.get(activeCompanyId).then(r => r.data) : null,
+    enabled: !!activeCompanyId,
+    staleTime: 5 * 60 * 1000,
+  })
+
+  const isFormPage = () => {
+    const path = location.pathname
+    const isDoc = path.includes('/quotations') ||
+                  path.includes('/sales-orders') ||
+                  path.includes('/purchase-orders') ||
+                  path.includes('/invoices') ||
+                  path.includes('/workshop/orders') ||
+                  path.includes('/workshop/toughening')
+    const isForm = path.endsWith('/new') || path.endsWith('/edit')
+    return isDoc && isForm
+  }
+
+  // 1. Cross-company warning banner (when rendered in AppLayout globally on form pages)
+  if (!linkedRef && isCrossCompany && activeCompany && isFormPage()) {
+    const brandColor = activeCompany.color || '#3b82f6'
+    const textColor = activeCompany.accent || '#ffffff'
+    return (
+      <div
+        id="cross-company-warning-banner"
+        style={{
+          position: 'sticky',
+          top: 64, // below the sticky AppLayout Header which is 64px high
+          zIndex: 98,
+          background: brandColor,
+          color: textColor,
+          padding: '4px 12px',
+          fontWeight: 500,
+          fontSize: '12px',
+          textAlign: 'center',
+          boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          borderBottom: '1px solid rgba(0, 0, 0, 0.05)',
+        }}
+      >
+        <span>You are editing {activeCompany.name} — not your home company.</span>
+      </div>
+    )
+  }
 
   if (!linkedRef || typeof linkedRef !== 'object') return null
 

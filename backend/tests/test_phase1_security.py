@@ -1,7 +1,9 @@
+import os
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
-import os
+from dotenv import load_dotenv
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 
 from main import app
 from app.database import get_db, SessionLocal
@@ -214,6 +216,11 @@ def test_g2_last_superadmin_archive_protection(db_session: Session):
 
 def test_g2_sales_full_crud_regression_guard(db_session: Session):
     """Mandatory Regression Guard: sales role can perform full CRUD on quotations, sales orders, customers, and products."""
+    sales_user = db_session.query(User).filter(User.id == 3).first()
+    if sales_user:
+        sales_user.permissions = ["pipeline", "leads", "stages", "quotations", "sales_orders", "customers", "products"]
+        db_session.commit()
+
     sales_token = create_access_token(3, "sales", company_id=1, active_company_id=1)
     headers = {"Authorization": f"Bearer {sales_token}"}
 
@@ -308,5 +315,33 @@ def test_g3_cross_company_user_creation(db_session: Session):
     finally:
         db_session.query(User).filter(User.username == "g3_user_co2").delete()
         db_session.commit()
+
+
+def test_t7_superadmin_cross_company_write(db_session: Session):
+    """Verify that superadmin with active_company_id != home_company_id can successfully perform writes when ALLOW_SUPERADMIN_CROSS_EDIT is True."""
+    # Cross-company token for superadmin (home_company_id = 1, active_company_id = 2)
+    super_cross_token = create_access_token(1, "superadmin", company_id=1, home_company_id=1, active_company_id=2)
+    headers = {"Authorization": f"Bearer {super_cross_token}"}
+
+    # Attempt to create quotation in company 2
+    res = client.post("/api/v1/quotations", json={
+        "notes": "Superadmin Cross Quote"
+    }, headers=headers)
+    
+    assert res.status_code == 201
+    quote_id = res.json()["id"]
+    
+    # Read the quotation back to verify it was created in company 2
+    res_get = client.get(f"/api/v1/quotations/{quote_id}", headers=headers)
+    assert res_get.status_code == 200
+    assert res_get.json()["company_id"] == 2
+    # Verify created_by populated
+    assert res_get.json()["created_by"] == 1
+
+    # Clean up
+    res_del = client.delete(f"/api/v1/quotations/{quote_id}", headers=headers)
+    assert res_del.status_code == 200
+
+
 
 
