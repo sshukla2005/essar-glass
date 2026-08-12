@@ -277,6 +277,12 @@ def make_crud_router(
             obj_data.pop("amount_paid", None)
         if hasattr(model, "balance_due"):
             obj_data.pop("balance_due", None)
+        if hasattr(model, "total_cost"):
+            obj_data.pop("total_cost", None)
+        if hasattr(model, "profit_amount"):
+            obj_data.pop("profit_amount", None)
+        if hasattr(model, "profit_percent"):
+            obj_data.pop("profit_percent", None)
 
         obj_data = stash_extra_fields(model, obj_data)
 
@@ -331,6 +337,13 @@ def make_crud_router(
 
         item = model(**obj_data)
 
+        if getattr(model, "__tablename__", None) in ("sales_orders", "quotations"):
+            from app.utils.helpers import compute_profit_fields
+            tot_c, prof_a, prof_p = compute_profit_fields(item)
+            item.total_cost = tot_c
+            item.profit_amount = prof_a
+            item.profit_percent = prof_p
+
         # Server-computed invoice financials from allocations
         if getattr(model, "__tablename__", None) == "invoices":
             item.amount_paid = 0.0
@@ -363,6 +376,9 @@ def make_crud_router(
         update_data.pop("created_by", None)
         update_data.pop("amount_paid", None)
         update_data.pop("balance_due", None)
+        update_data.pop("total_cost", None)
+        update_data.pop("profit_amount", None)
+        update_data.pop("profit_percent", None)
 
         # Parse JSON string fields → proper objects
         for json_field in ['groups', 'lines', 'processes', 'permissions']:
@@ -474,6 +490,13 @@ def make_crud_router(
             ) or 0.0
             item.amount_paid = round(float(alloc_sum), 2)
             item.balance_due = round(float(item.total_amount or 0) - float(alloc_sum), 2)
+
+        if getattr(model, "__tablename__", None) in ("sales_orders", "quotations"):
+            from app.utils.helpers import compute_profit_fields
+            tot_c, prof_a, prof_p = compute_profit_fields(item)
+            item.total_cost = tot_c
+            item.profit_amount = prof_a
+            item.profit_percent = prof_p
 
         db.commit()
         db.refresh(item)

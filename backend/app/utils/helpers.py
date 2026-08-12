@@ -178,3 +178,161 @@ def paginate(query, page: int = 1, page_size: int = 20, counts: Optional[dict] =
         res["counts"] = counts
     return res
 
+
+def compute_profit_fields(obj):
+    """
+    Computes total_cost, profit_amount, and profit_percent for a SalesOrder or Quotation.
+    Returns (total_cost, profit_amount, profit_percent).
+
+    Formula:
+      - total_cost = glass_proc_cost + hw_cost + lb_cost + wst_cost + dc_cost
+      - assessable_value = total_amount - tax_amount (for SO) or total_amount - (cgst + sgst + igst) (for Quotation)
+      - profit_amount = assessable_value - total_cost
+      - profit_percent = (profit_amount / assessable_value) * 100
+
+    If cost rate/cost amount was not set / missing in JSON, or if total_cost evaluates to 0 while there are lines/groups or empty groups,
+    returns (None, None, None) to avoid false 100% margin calculations.
+    """
+    import json
+
+    groups = getattr(obj, "groups", None) or []
+    if isinstance(groups, str):
+        try:
+            groups = json.loads(groups)
+        except Exception:
+            groups = []
+
+    hardware_items = getattr(obj, "hardware_items", None) or []
+    if isinstance(hardware_items, str):
+        try:
+            hardware_items = json.loads(hardware_items)
+        except Exception:
+            hardware_items = []
+
+    labor_items = getattr(obj, "labor_items", None) or []
+    if isinstance(labor_items, str):
+        try:
+            labor_items = json.loads(labor_items)
+        except Exception:
+            labor_items = []
+
+    wastage_items = getattr(obj, "wastage_items", None) or []
+    if isinstance(wastage_items, str):
+        try:
+            wastage_items = json.loads(wastage_items)
+        except Exception:
+            wastage_items = []
+
+    dc_cost = float(getattr(obj, "dc_cost", 0) or 0)
+
+    glass_proc_cost = 0.0
+    has_any_cost_filled = False
+
+    if isinstance(groups, list):
+        for g in groups:
+            if not isinstance(g, dict):
+                continue
+            sizes = g.get("sizes", [])
+            if not isinstance(sizes, list):
+                continue
+            for s in sizes:
+                if not isinstance(s, dict):
+                    continue
+                cost_amt = s.get("cost_amount")
+                if cost_amt is not None and float(cost_amt) > 0:
+                    glass_proc_cost += float(cost_amt)
+                    has_any_cost_filled = True
+                else:
+                    glass_c = float(s.get("glass_cost") or 0)
+                    cep_c = float(s.get("cep_cost") or 0)
+                    proc_c = float(s.get("proc_cost") or 0)
+                    sum_c = glass_c + cep_c + proc_c
+                    if sum_c > 0:
+                        glass_proc_cost += sum_c
+                        has_any_cost_filled = True
+                    else:
+                        sp_cost = 0.0
+                        s_procs = s.get("size_processes", [])
+                        if isinstance(s_procs, list):
+                            for sp in s_procs:
+                                if isinstance(sp, dict):
+                                    sp_cost_rate = sp.get("cost_rate")
+                                    if sp_cost_rate is None:
+                                        sp_cost_rate = float(sp.get("rate") or 0) * 0.70
+                                    else:
+                                        sp_cost_rate = float(sp_cost_rate)
+                                    sp_cost += float(sp.get("qty_area") or 0) * sp_cost_rate
+                        if sp_cost > 0:
+                            glass_proc_cost += sp_cost
+                            has_any_cost_filled = True
+
+    hw_cost = 0.0
+    if isinstance(hardware_items, list):
+        for h in hardware_items:
+            if isinstance(h, dict):
+                h_c = h.get("cost_amount")
+                if h_c is not None and float(h_c) > 0:
+                    hw_cost += float(h_c)
+                    has_any_cost_filled = True
+                else:
+                    qty = float(h.get("qty") or h.get("quantity") or 0)
+                    crate = float(h.get("cost_rate") or 0)
+                    if qty * crate > 0:
+                        hw_cost += qty * crate
+                        has_any_cost_filled = True
+
+    lb_cost = 0.0
+    if isinstance(labor_items, list):
+        for l in labor_items:
+            if isinstance(l, dict):
+                l_c = l.get("cost_amount")
+                if l_c is not None and float(l_c) > 0:
+                    lb_cost += float(l_c)
+                    has_any_cost_filled = True
+                else:
+                    qty = float(l.get("qty") or l.get("quantity") or 0)
+                    crate = float(l.get("cost_rate") or 0)
+                    if qty * crate > 0:
+                        lb_cost += qty * crate
+                        has_any_cost_filled = True
+
+    wst_cost = 0.0
+    if isinstance(wastage_items, list):
+        for w in wastage_items:
+            if isinstance(w, dict):
+                w_c = w.get("cost_amount")
+                if w_c is not None and float(w_c) > 0:
+                    wst_cost += float(w_c)
+                    has_any_cost_filled = True
+                else:
+                    qty = float(w.get("qty") or w.get("quantity") or 0)
+                    crate = float(w.get("cost_rate") or 0)
+                    if qty * crate > 0:
+                        wst_cost += qty * crate
+                        has_any_cost_filled = True
+
+    if dc_cost > 0:
+        has_any_cost_filled = True
+
+    computed_total_cost = glass_proc_cost + hw_cost + lb_cost + wst_cost + dc_cost
+
+    if not has_any_cost_filled or computed_total_cost <= 0:
+        return None, None, None
+
+    total_cost = round(computed_total_cost, 2)
+
+    total_amount = float(getattr(obj, "total_amount", 0) or 0)
+    if hasattr(obj, "tax_amount") and getattr(obj, "tax_amount", None) is not None:
+        tax_amount = float(getattr(obj, "tax_amount", 0) or 0)
+    else:
+        cgst = float(getattr(obj, "cgst", 0) or 0)
+        sgst = float(getattr(obj, "sgst", 0) or 0)
+        igst = float(getattr(obj, "igst", 0) or 0)
+        tax_amount = cgst + sgst + igst
+
+    assessable_value = total_amount - tax_amount
+    profit_amount = round(assessable_value - total_cost, 2)
+    profit_percent = round((profit_amount / assessable_value) * 100, 2) if assessable_value > 0 else 0.0
+
+    return total_cost, profit_amount, profit_percent
+

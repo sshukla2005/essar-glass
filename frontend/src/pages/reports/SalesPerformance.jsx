@@ -302,6 +302,10 @@ const SalesPerformance = () => {
         { Metric: '', Value: '' },
         { Metric: 'Sales Orders Count', Value: fullData.summary?.so_count ?? 0 },
         { Metric: 'Sales Orders Value (₹)', Value: fullData.summary?.so_value ?? 0 },
+        { Metric: 'Total Profit (₹)', Value: fullData.summary?.profit_amount ?? 'N/A' },
+        { Metric: 'Overall Margin (%)', Value: fullData.summary?.profit_percent != null ? `${fullData.summary.profit_percent}%` : 'N/A' },
+        { Metric: 'Orders with Cost Count', Value: fullData.summary?.so_with_cost_count ?? 0 },
+        { Metric: 'Orders without Cost Count', Value: fullData.summary?.so_without_cost_count ?? 0 },
         { Metric: 'Quotes Created Count', Value: fullData.summary?.quotes_created ?? 0 },
         { Metric: 'Quotes Value (₹)', Value: fullData.summary?.quotes_value ?? 0 },
         { Metric: 'Quotes Won Count', Value: fullData.summary?.quotes_won ?? 0 },
@@ -332,6 +336,10 @@ const SalesPerformance = () => {
         'Win Rate Value %': sp.win_rate_value != null ? `${sp.win_rate_value}%` : '—',
         'SO Count': sp.so_count,
         'SO Value (₹)': sp.so_value,
+        'Profit (₹)': sp.profit_amount ?? '—',
+        'Margin (%)': sp.profit_percent != null ? `${sp.profit_percent}%` : '—',
+        'Orders With Cost': sp.so_with_cost_count ?? 0,
+        'Orders Without Cost': sp.so_without_cost_count ?? 0,
         'Invoiced Value (₹)': sp.invoiced_value,
         'Collected Value (₹)': sp.collected_value,
         'Avg Deal Size (₹)': sp.avg_deal_size ?? '—',
@@ -341,7 +349,8 @@ const SalesPerformance = () => {
       wsSp['!cols'] = [
         { wch: 20 }, { wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 16 },
         { wch: 12 }, { wch: 18 }, { wch: 16 }, { wch: 16 }, { wch: 10 },
-        { wch: 15 }, { wch: 16 }, { wch: 16 }, { wch: 15 }, { wch: 18 }
+        { wch: 15 }, { wch: 15 }, { wch: 12 }, { wch: 16 }, { wch: 18 },
+        { wch: 16 }, { wch: 16 }, { wch: 15 }, { wch: 18 }
       ]
       XLSX.utils.book_append_sheet(wb, wsSp, 'By Salesperson')
 
@@ -374,13 +383,17 @@ const SalesPerformance = () => {
         'Salesperson': h.salesperson,
         'Status': h.status,
         'Amount (₹)': h.amount,
+        'Total Cost (₹)': h.total_cost ?? '—',
+        'Profit (₹)': h.profit_amount ?? '—',
+        'Margin (%)': h.profit_percent != null ? `${h.profit_percent}%` : '—',
         'Linked Lead No': h.linked_lead_number || '—',
         'Linked Ref No': h.linked_so_number || '—'
       }))
       const wsDocs = XLSX.utils.json_to_sheet(docRows)
       wsDocs['!cols'] = [
         { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 28 }, { wch: 18 },
-        { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 16 }
+        { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 12 },
+        { wch: 16 }, { wch: 16 }
       ]
       XLSX.utils.book_append_sheet(wb, wsDocs, 'Documents')
 
@@ -488,6 +501,63 @@ const SalesPerformance = () => {
       ),
     },
     {
+      title: 'Profit ₹',
+      dataIndex: 'profit_amount',
+      key: 'profit_amount',
+      align: 'right',
+      width: 140,
+      sorter: (a, b) => (a.profit_amount ?? -Infinity) - (b.profit_amount ?? -Infinity),
+      render: (v, r) => {
+        if (v == null) {
+          return (
+            <Tooltip title={r.so_without_cost_count > 0 ? `Cost rate not set for ${r.so_without_cost_count} sales order(s) — excluded from profit` : 'No sales orders with cost rate'}>
+              <Text type="secondary">—</Text>
+            </Tooltip>
+          )
+        }
+        return (
+          <div>
+            <Text strong style={{ color: v >= 0 ? '#059669' : '#dc2626' }}>
+              {fmtINR(v)}
+            </Text>
+            {r.so_without_cost_count > 0 && (
+              <Tooltip title={`${r.so_without_cost_count} sales order(s) excluded (missing cost rate)`}>
+                <div style={{ fontSize: 10, color: '#d97706' }}>
+                  <WarningOutlined style={{ marginRight: 3 }} />
+                  {r.so_without_cost_count} uncosted
+                </div>
+              </Tooltip>
+            )}
+          </div>
+        )
+      },
+    },
+    {
+      title: 'Margin %',
+      dataIndex: 'profit_percent',
+      key: 'profit_percent',
+      align: 'center',
+      width: 110,
+      sorter: (a, b) => (a.profit_percent ?? -Infinity) - (b.profit_percent ?? -Infinity),
+      render: (v, r) => {
+        if (v == null) {
+          return (
+            <Tooltip title={r.so_without_cost_count > 0 ? `Cost rate not set for ${r.so_without_cost_count} sales order(s) — excluded from margin` : 'No sales orders with cost rate'}>
+              <Text type="secondary">—</Text>
+            </Tooltip>
+          )
+        }
+        const color = v >= 25 ? 'green' : v >= 10 ? 'blue' : v >= 0 ? 'gold' : 'volcano'
+        return (
+          <Tooltip title={`Weighted Average Margin: ${v}% across ${r.so_with_cost_count} order(s)`}>
+            <Tag color={color} style={{ fontWeight: 700 }}>
+              {v}%
+            </Tag>
+          </Tooltip>
+        )
+      },
+    },
+    {
       title: 'Performance',
       key: 'progress',
       width: 130,
@@ -566,6 +636,33 @@ const SalesPerformance = () => {
       width: 120,
       align: 'right',
       render: v => <Text strong>{fmtINR(v)}</Text>
+    },
+    {
+      title: 'Profit',
+      key: 'profit',
+      width: 130,
+      align: 'right',
+      render: (_, r) => {
+        if (r.profit_amount == null) {
+          return (
+            <Tooltip title="Cost rate not set for this document">
+              <Text type="secondary">—</Text>
+            </Tooltip>
+          )
+        }
+        return (
+          <div>
+            <Text strong style={{ color: r.profit_amount >= 0 ? '#059669' : '#dc2626' }}>
+              {fmtINR(r.profit_amount)}
+            </Text>
+            {r.profit_percent != null && (
+              <div style={{ fontSize: 10, color: '#64748b' }}>
+                {r.profit_percent}% margin
+              </div>
+            )}
+          </div>
+        )
+      }
     },
     {
       title: 'Linked Lead',
@@ -671,7 +768,7 @@ const SalesPerformance = () => {
           type="warning"
           showIcon
           closable
-          style={{ marginBottom: 24, borderRadius: 12, border: '1px solid #fde68a' }}
+          style={{ marginBottom: 16, borderRadius: 12, border: '1px solid #fde68a' }}
           message={
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
               <div>
@@ -693,9 +790,27 @@ const SalesPerformance = () => {
         />
       )}
 
+      {/* ── Cost Rate Missing Alert ── */}
+      {summary.so_without_cost_count > 0 && (
+        <Alert
+          type="warning"
+          showIcon
+          closable
+          style={{ marginBottom: 24, borderRadius: 12, border: '1px solid #fed7aa' }}
+          message={
+            <div>
+              <Text strong style={{ color: '#9a3412' }}>Cost Rate Missing Alert: </Text>
+              <Text style={{ color: '#c2410c' }}>
+                <b>{summary.so_without_cost_count}</b> sales order(s) in this period do not have cost rates filled — they are excluded from profit and margin calculations to prevent inaccurate 100% metrics.
+              </Text>
+            </div>
+          }
+        />
+      )}
+
       {/* ── KPI Cards Row ── */}
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-        <Col xs={24} sm={12} md={8} lg={24/5 * 1}>
+        <Col xs={24} sm={12} md={8} lg={4}>
           <KpiCard
             title="Sales Orders Value"
             value={summary.so_value}
@@ -707,7 +822,32 @@ const SalesPerformance = () => {
             tooltipText="Total total_amount sum of all non-cancelled Sales Orders in the period."
           />
         </Col>
-        <Col xs={24} sm={12} md={8} lg={24/5 * 1}>
+        <Col xs={24} sm={12} md={8} lg={4}>
+          <KpiCard
+            title="Total Profit"
+            value={summary.profit_amount}
+            previousValue={previous.profit_amount}
+            prefix="₹"
+            color="#10b981"
+            icon={<DollarOutlined />}
+            loading={isLoading}
+            tooltipText="Sum of profit amount across all sales orders with cost rates filled."
+          />
+        </Col>
+        <Col xs={24} sm={12} md={8} lg={4}>
+          <KpiCard
+            title="Overall Margin"
+            value={summary.profit_percent}
+            previousValue={previous.profit_percent}
+            suffix="%"
+            color="#059669"
+            icon={<RiseOutlined />}
+            loading={isLoading}
+            isPercent={true}
+            tooltipText="Weighted average margin % (Total Profit / Total Assessable Value with cost rates)."
+          />
+        </Col>
+        <Col xs={24} sm={12} md={8} lg={4}>
           <KpiCard
             title="Quotes Value"
             value={summary.quotes_value}
@@ -719,41 +859,29 @@ const SalesPerformance = () => {
             tooltipText="Total total_amount sum of all non-cancelled Quotations created in the period."
           />
         </Col>
-        <Col xs={24} sm={12} md={8} lg={24/5 * 1}>
+        <Col xs={24} sm={12} md={8} lg={4}>
           <KpiCard
-            title="Quote Win Rate (Val)"
+            title="Quote Win Rate"
             value={summary.win_rate_value}
             previousValue={previous.win_rate_value}
             suffix="%"
-            color="#10b981"
+            color="#8b5cf6"
             icon={<CheckCircleOutlined />}
             loading={isLoading}
             isPercent={true}
             tooltipText="Percentage of quotation value won (converted) vs total quote value created."
           />
         </Col>
-        <Col xs={24} sm={12} md={8} lg={24/5 * 1}>
+        <Col xs={24} sm={12} md={8} lg={4}>
           <KpiCard
             title="Collected"
             value={summary.collected_value}
             previousValue={previous.collected_value}
             prefix="₹"
-            color="#059669"
+            color="#14b8a6"
             icon={<DollarOutlined />}
             loading={isLoading}
             tooltipText="Total payment amounts collected in the period."
-          />
-        </Col>
-        <Col xs={24} sm={12} md={8} lg={24/5 * 1}>
-          <KpiCard
-            title="Avg Deal Size"
-            value={summary.avg_deal_size}
-            previousValue={previous.avg_deal_size}
-            prefix="₹"
-            color="#8b5cf6"
-            icon={<RiseOutlined />}
-            loading={isLoading}
-            tooltipText="Mean Sales Order value in the period (so_value / so_count)."
           />
         </Col>
       </Row>

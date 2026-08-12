@@ -177,6 +177,34 @@ def _calc_summary(
     so_count = sos_q.count()
     so_value = round(float(sos_q.with_entities(func.sum(SalesOrder.total_amount)).scalar() or 0.0), 2)
 
+    # Profit calculation for SOs in period
+    so_cost_rows = sos_q.with_entities(
+        SalesOrder.total_cost,
+        SalesOrder.total_amount,
+        SalesOrder.tax_amount,
+        SalesOrder.profit_amount
+    ).all()
+
+    so_with_cost_count = 0
+    so_without_cost_count = 0
+    total_profit_sum = 0.0
+    total_assessable_value_with_cost = 0.0
+
+    for r in so_cost_rows:
+        tc = r.total_cost
+        if tc is not None and float(tc) > 0:
+            so_with_cost_count += 1
+            pa = r.profit_amount if r.profit_amount is not None else 0.0
+            tot_amt = float(r.total_amount or 0.0)
+            tax_amt = float(r.tax_amount or 0.0)
+            total_profit_sum += float(pa)
+            total_assessable_value_with_cost += max(0.0, tot_amt - tax_amt)
+        else:
+            so_without_cost_count += 1
+
+    overall_profit_amount = round(total_profit_sum, 2) if so_with_cost_count > 0 else None
+    overall_profit_percent = round((total_profit_sum / total_assessable_value_with_cost) * 100.0, 2) if (total_assessable_value_with_cost > 0 and so_with_cost_count > 0) else None
+
     # 4. Invoices in period
     inv_date_expr = cast(
         func.coalesce(
@@ -244,6 +272,10 @@ def _calc_summary(
         "lead_conversion_rate": lead_conversion_rate,
         "so_count": so_count,
         "so_value": so_value,
+        "profit_amount": overall_profit_amount,
+        "profit_percent": overall_profit_percent,
+        "so_with_cost_count": so_with_cost_count,
+        "so_without_cost_count": so_without_cost_count,
         "invoiced_count": invoiced_count,
         "invoiced_value": invoiced_value,
         "collected_count": collected_count,
@@ -301,6 +333,10 @@ def sales_performance(
                 "quotes_won_value": 0.0,
                 "so_count": 0,
                 "so_value": 0.0,
+                "so_with_cost_count": 0,
+                "so_without_cost_count": 0,
+                "profit_amount": 0.0,
+                "assessable_val_with_cost": 0.0,
                 "invoiced_value": 0.0,
                 "collected_value": 0.0,
                 "avg_days_to_convert": None
@@ -411,16 +447,27 @@ def sales_performance(
         sos_q
         .with_entities(
             so_sp_expr.label("sp"),
-            func.count(SalesOrder.id).label("cnt"),
-            func.sum(SalesOrder.total_amount).label("amt")
+            SalesOrder.total_cost,
+            SalesOrder.total_amount,
+            SalesOrder.tax_amount,
+            SalesOrder.profit_amount
         )
-        .group_by(so_sp_expr)
         .all()
     )
     for row in so_rows:
         n = _init_sp(row.sp)
-        sp_map[n]["so_count"] += row.cnt
-        sp_map[n]["so_value"] += float(row.amt or 0.0)
+        sp_map[n]["so_count"] += 1
+        tot_amt = float(row.total_amount or 0.0)
+        sp_map[n]["so_value"] += tot_amt
+        tc = row.total_cost
+        if tc is not None and float(tc) > 0:
+            sp_map[n]["so_with_cost_count"] += 1
+            tax_amt = float(row.tax_amount or 0.0)
+            pa = float(row.profit_amount or 0.0)
+            sp_map[n]["profit_amount"] += pa
+            sp_map[n]["assessable_val_with_cost"] += max(0.0, tot_amt - tax_amt)
+        else:
+            sp_map[n]["so_without_cost_count"] += 1
 
     # 4. Invoices per salesperson
     inv_date_expr = cast(
@@ -515,6 +562,11 @@ def sales_performance(
         sov = round(data_rec["so_value"], 2)
         inv_v = round(data_rec["invoiced_value"], 2)
         col_v = round(data_rec["collected_value"], 2)
+        so_with_cost_cnt = data_rec["so_with_cost_count"]
+        so_wout_cost_cnt = data_rec["so_without_cost_count"]
+        sp_prof_amt = round(data_rec["profit_amount"], 2) if so_with_cost_cnt > 0 else None
+        sp_assess_val = data_rec["assessable_val_with_cost"]
+        sp_prof_pct = round((data_rec["profit_amount"] / sp_assess_val) * 100.0, 2) if (sp_assess_val > 0 and so_with_cost_cnt > 0) else None
 
         salespeople.append({
             "salesperson": most_common_name,
@@ -527,6 +579,10 @@ def sales_performance(
             "win_rate_value": round(qwv / qv * 100.0, 1) if qv > 0 else None,
             "so_count": soc,
             "so_value": sov,
+            "profit_amount": sp_prof_amt,
+            "profit_percent": sp_prof_pct,
+            "so_with_cost_count": so_with_cost_cnt,
+            "so_without_cost_count": so_wout_cost_cnt,
             "invoiced_value": inv_v,
             "collected_value": col_v,
             "avg_deal_size": round(sov / soc, 2) if soc > 0 else None,
@@ -713,6 +769,9 @@ def _get_history_dataset(
                 "salesperson": sp_display,
                 "status": q.status,
                 "amount": round(float(q.total_amount or 0.0), 2),
+                "total_cost": q.total_cost,
+                "profit_amount": q.profit_amount,
+                "profit_percent": q.profit_percent,
                 "linked_lead_number": lead.lead_number if lead else None,
                 "linked_so_number": so_by_q.get(q.id),
                 "created_at_str": str(q.created_at or '')
@@ -767,6 +826,9 @@ def _get_history_dataset(
                 "salesperson": sp_display,
                 "status": so.status,
                 "amount": round(float(so.total_amount or 0.0), 2),
+                "total_cost": so.total_cost,
+                "profit_amount": so.profit_amount,
+                "profit_percent": so.profit_percent,
                 "linked_lead_number": lead.lead_number if lead else None,
                 "linked_so_number": q.quote_number if q else None,
                 "created_at_str": str(so.created_at or '')
