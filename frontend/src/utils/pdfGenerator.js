@@ -402,14 +402,17 @@ const drawText = (doc, text, x, y, opts = {}) => {
   try { doc.text(String(text || ''), x, y, opts) } catch { }
 }
 
-const drawBorder = (doc) => {
+const drawBorder = (doc, pageW = PAGE_W, pageH = PAGE_H) => {
+  const contentW = pageW - MARGIN.l - MARGIN.r
   // Main page bounding box border
-  drawRect(doc, MARGIN.l - 2, MARGIN.t - 2, CONTENT_W + 4, PAGE_H - MARGIN.t - 7, null, C.primary, 0.4)
+  drawRect(doc, MARGIN.l - 2, MARGIN.t - 2, contentW + 4, pageH - MARGIN.t - 7, null, C.primary, 0.4)
 }
 
 // ── Header & Customer Cards ──────
-const drawHeader = (doc, company, docTitle) => {
+const drawHeader = (doc, company, docTitle, pageW = PAGE_W) => {
   const yStart = MARGIN.t // 10mm
+  const contentW = pageW - MARGIN.l - MARGIN.r
+  const centreX = pageW / 2
 
   const fitImage = (imgW, imgH, maxW, maxH) => {
     const ratio = imgW / imgH
@@ -431,8 +434,9 @@ const drawHeader = (doc, company, docTitle) => {
   // 1. Company Name
   const nameText = (company.name || 'ESSAR GLASS').toUpperCase()
   let nameFontSize = 16
+  const maxCenterTextW = contentW - 86
   setFont(doc, nameFontSize, 'bold', C.primary)
-  while (doc.getTextWidth(nameText) > 104 && nameFontSize > 10) {
+  while (doc.getTextWidth(nameText) > maxCenterTextW && nameFontSize > 10) {
     nameFontSize -= 0.5
     setFont(doc, nameFontSize, 'bold', C.primary)
   }
@@ -448,7 +452,7 @@ const drawHeader = (doc, company, docTitle) => {
   ].filter(Boolean).join(', ')
   const combinedAddrText = rawAddrText ? ("Add: " + rawAddrText) : ""
   setFont(doc, 8.5, 'normal', C.text)
-  const addressLines = combinedAddrText ? doc.splitTextToSize(combinedAddrText, 104).slice(0, 2) : []
+  const addressLines = combinedAddrText ? doc.splitTextToSize(combinedAddrText, maxCenterTextW).slice(0, 2) : []
   const addrLineH = 3.6
   const addrTotalH = addressLines.length * addrLineH
 
@@ -482,7 +486,7 @@ const drawHeader = (doc, company, docTitle) => {
 
   const statutoryLine = statutoryParts.join('   ')
   setFont(doc, 8, 'bold', C.text)
-  const statutoryLines = statutoryLine ? doc.splitTextToSize(statutoryLine, 104).slice(0, 2) : []
+  const statutoryLines = statutoryLine ? doc.splitTextToSize(statutoryLine, maxCenterTextW).slice(0, 2) : []
   const statLineH = 3.5
   const statTotalH = statutoryLines.length * statLineH
 
@@ -497,13 +501,13 @@ const drawHeader = (doc, company, docTitle) => {
   const padBot = 3.5
   const boxH = Math.max(28, centerTextH + padTop + padBot)
 
-  // 5. Draw Outer Header Box & Separators (content width = 190mm at x=10)
-  drawRect(doc, 10, yStart, CONTENT_W, boxH, null, [120, 130, 140], 0.3)
-  // Subtle vertical column separators at x=50 and x=160
-  drawLine(doc, 50, yStart, 50, yStart + boxH, [120, 130, 140], 0.3)
-  drawLine(doc, 160, yStart, 160, yStart + boxH, [120, 130, 140], 0.3)
+  // 5. Draw Outer Header Box & Separators
+  drawRect(doc, MARGIN.l, yStart, contentW, boxH, null, [120, 130, 140], 0.3)
+  // Subtle vertical column separators
+  drawLine(doc, MARGIN.l + 40, yStart, MARGIN.l + 40, yStart + boxH, [120, 130, 140], 0.3)
+  drawLine(doc, MARGIN.l + contentW - 40, yStart, MARGIN.l + contentW - 40, yStart + boxH, [120, 130, 140], 0.3)
 
-  // 6. Draw Left Column logo / monogram (x=10 to 50, width=40mm)
+  // 6. Draw Left Column logo / monogram (x=MARGIN.l to MARGIN.l+40, width=40mm)
   const maxLogoW = 34
   const maxLogoH = boxH - 4
   let primaryDrawSuccess = false
@@ -516,7 +520,7 @@ const drawHeader = (doc, company, docTitle) => {
   if (logoObj) {
     try {
       const dims = fitImage(logoObj.w, logoObj.h, maxLogoW, maxLogoH)
-      const xImg = 10 + (40 - dims.w) / 2
+      const xImg = MARGIN.l + (40 - dims.w) / 2
       const yImg = yStart + (boxH - dims.h) / 2
       const alias = company.id ? `company_logo_${company.id}` : 'company_logo'
       doc.addImage(logoObj.dataUrl, 'JPEG', xImg, yImg, dims.w, dims.h, alias)
@@ -533,7 +537,7 @@ const drawHeader = (doc, company, docTitle) => {
         imgH = company._logoImg.naturalHeight || company._logoImg.height || 150
       }
       const dims = fitImage(imgW, imgH, maxLogoW, maxLogoH)
-      const xImg = 10 + (40 - dims.w) / 2
+      const xImg = MARGIN.l + (40 - dims.w) / 2
       const yImg = yStart + (boxH - dims.h) / 2
       const format = getFormat(company.logo)
       const alias = company.id ? `company_logo_${company.id}` : 'company_logo'
@@ -546,48 +550,43 @@ const drawHeader = (doc, company, docTitle) => {
 
   if (!primaryDrawSuccess) {
     const initials = (company.name || 'E').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
-    const xBox = 10 + (40 - 18) / 2
+    const xBox = MARGIN.l + (40 - 18) / 2
     const yBox = yStart + (boxH - 18) / 2
     drawCard(doc, xBox, yBox, 18, 18, C.primaryLight, C.primary, 1.0)
     setFont(doc, 10, 'bold', C.primary)
     drawText(doc, initials, xBox + 9, yBox + 10.5, { align: 'center' })
   }
 
-  // 7. Draw Right Column — 2×2 brand logo grid (x=160 to 200, width=40mm)
-  //    Fixed "Authorized Dealer" branding — same for every company.
+  // 7. Draw Right Column — 2×2 brand logo grid (x=MARGIN.l+contentW-40 to MARGIN.l+contentW, width=40mm)
   ;(() => {
-    const colX   = 160          // right column starts here
-    const colW   = 40           // 160→200 mm
-    const padH   = 1.5          // top/bottom padding inside column
-    const padSide = 1.5         // left/right padding
+    const colX   = MARGIN.l + contentW - 40
+    const colW   = 40
+    const padH   = 1.5
+    const padSide = 1.5
 
-    // Optional caption: "Authorized Dealer" in tiny muted text
-    const captionH = 4.5        // height reserved for caption text
+    const captionH = 4.5
     const captionGap = 0.5
 
     const gridTop = yStart + padH + captionH + captionGap
     const gridH   = boxH - padH * 2 - captionH - captionGap - 0.5
-    const cellW   = (colW - padSide * 2) / 2   // ~18.5mm each
+    const cellW   = (colW - padSide * 2) / 2
     const cellH   = gridH / 2
 
-    // Caption
     setFont(doc, 5.5, 'normal', [140, 150, 165])
     drawText(doc, 'AUTHORIZED DEALER', colX + colW / 2, yStart + padH + 3.2, { align: 'center' })
 
-    // Draw a thin separator line under the caption
     drawLine(doc, colX + padSide, yStart + padH + captionH, colX + colW - padSide, yStart + padH + captionH, [200, 210, 220], 0.2)
 
     const cached = BRAND_LOGOS.map(b => _brandCache[b.src] || null)
 
     cached.forEach((logo, idx) => {
       if (!logo) return
-      const row = Math.floor(idx / 2)   // 0 or 1
-      const col = idx % 2               // 0 or 1
+      const row = Math.floor(idx / 2)
+      const col = idx % 2
 
       const cellX = colX + padSide + col * cellW
       const cellY = gridTop + row * cellH
 
-      // inner padding within cell
       const innerPad = 1.5
       const availW = cellW - innerPad * 2
       const availH = cellH - innerPad * 2
@@ -604,13 +603,13 @@ const drawHeader = (doc, company, docTitle) => {
     })
   })()
 
-  // 8. Draw Center Column text (x=50 to 160, center x = 105mm)
+  // 8. Draw Center Column text
   const textTopY = yStart + (boxH - centerTextH) / 2
   let ly = textTopY + nameLineH * 0.75
 
   // Line 1: Company Name
   setFont(doc, nameFontSize, 'bold', C.primary)
-  drawText(doc, nameText, 105, ly, { align: 'center' })
+  drawText(doc, nameText, centreX, ly, { align: 'center' })
 
   // Line 2: Address
   if (addressLines.length > 0) {
@@ -623,7 +622,7 @@ const drawHeader = (doc, company, docTitle) => {
         const addW = doc.getTextWidth("Add: ")
         setFont(doc, 8.5, 'normal', C.text)
         const restW = doc.getTextWidth(rest)
-        const startX = 105 - (addW + restW) / 2
+        const startX = centreX - (addW + restW) / 2
 
         setFont(doc, 8.5, 'bold', C.text)
         drawText(doc, "Add: ", startX, ly)
@@ -631,7 +630,7 @@ const drawHeader = (doc, company, docTitle) => {
         drawText(doc, rest, startX + addW, ly)
       } else {
         setFont(doc, 8.5, 'normal', C.text)
-        drawText(doc, line, 105, ly, { align: 'center' })
+        drawText(doc, line, centreX, ly, { align: 'center' })
       }
     })
   }
@@ -655,7 +654,7 @@ const drawHeader = (doc, company, docTitle) => {
       totalW += lw + vw
     })
 
-    let currentX = 105 - totalW / 2
+    let currentX = centreX - totalW / 2
     segments.forEach((seg, idx) => {
       if (idx > 0) currentX += segmentSpacing
       setFont(doc, 8, 'bold', C.text)
@@ -673,22 +672,23 @@ const drawHeader = (doc, company, docTitle) => {
     statutoryLines.forEach((l) => {
       ly += statLineH
       setFont(doc, 8, 'bold', C.text)
-      drawText(doc, l, 105, ly, { align: 'center' })
+      drawText(doc, l, centreX, ly, { align: 'center' })
     })
   }
 
   // 9. Document Title Band
   const titleY = yStart + boxH + 2
-  drawRect(doc, MARGIN.l - 2, titleY, CONTENT_W + 4, 10, C.accent)
+  drawRect(doc, MARGIN.l - 2, titleY, contentW + 4, 10, C.accent)
   setFont(doc, 10, 'bold', C.white)
-  drawText(doc, docTitle || 'PROFORMA INVOICE', PAGE_W / 2, titleY + 6.5, { align: 'center' })
+  drawText(doc, docTitle || 'PROFORMA INVOICE', centreX, titleY + 6.5, { align: 'center' })
 
   return titleY + 10 + 4
 }
 
-const drawDocInfo = (doc, quotation, y, docTitle, items = null) => {
+const drawDocInfo = (doc, quotation, y, docTitle, items = null, pageW = PAGE_W) => {
+  const contentW = pageW - MARGIN.l - MARGIN.r
   const boxH = 11
-  drawCard(doc, MARGIN.l, y, CONTENT_W, boxH, C.summaryBg, C.border, 1.5)
+  drawCard(doc, MARGIN.l, y, contentW, boxH, C.summaryBg, C.border, 1.5)
   const itemList = items || [
     { label: 'Document Type', value: docTitle },
     { label: 'Quote / Ref No', value: quotation.quote_number || quotation.so_number || quotation.po_number || 'QT-NEW' },
@@ -697,7 +697,7 @@ const drawDocInfo = (doc, quotation, y, docTitle, items = null) => {
     { label: 'Salesperson', value: quotation.salesperson || 'Admin' },
     { label: 'Payment Terms', value: quotation.payment_terms || 'Immediate' },
   ].filter(Boolean)
-  const cellW = CONTENT_W / itemList.length
+  const cellW = contentW / itemList.length
   itemList.forEach((item, i) => {
     const x = MARGIN.l + i * cellW
     if (i > 0) drawLine(doc, x, y, x, y + boxH, C.border, 0.2)
@@ -719,10 +719,11 @@ const drawDocInfo = (doc, quotation, y, docTitle, items = null) => {
   return y + boxH + SP_16
 }
 
-const drawCustomerCard = (doc, cust, y, shipCust = null) => {
+const drawCustomerCard = (doc, cust, y, shipCust = null, pageW = PAGE_W) => {
+  const contentW = pageW - MARGIN.l - MARGIN.r
   const cardH = 40
-  const mid = PAGE_W / 2
-  const cardW = CONTENT_W / 2 - 2
+  const mid = pageW / 2
+  const cardW = contentW / 2 - 2
   const actualShipCust = shipCust || cust
   
   // Bill To
@@ -740,7 +741,7 @@ const drawCustomerCard = (doc, cust, y, shipCust = null) => {
   const drawSide = (data, startX) => {
     let ly = y + 11.5
     setFont(doc, 8.5, 'bold', C.primaryMid)
-    drawText(doc, cleanVal(data.name).substring(0, 32), startX + 4, ly)
+    drawText(doc, cleanVal(data.name).substring(0, 50), startX + 4, ly)
     ly += 4.5
     setFont(doc, 7.5, 'normal', C.textMid)
     
@@ -3156,15 +3157,15 @@ export const generateDeliveryChallanPDF = async (dc) => {
 export const generateWorkshopOrderPDF = async (wo) => {
   if (!wo) return
   try {
-    const doc = new jsPDF('p', 'mm', 'a4')
+    const doc = new jsPDF('l', 'mm', 'a4')
     const company = await preloadCompanyLogos(await fetchCompany(wo.company_id))
 
     const pageW = doc.internal.pageSize.getWidth()
     const pageH = doc.internal.pageSize.getHeight()
     const margin = 10
 
-    drawBorder(doc)
-    let y = drawHeader(doc, company, 'WORKSHOP ORDER')
+    drawBorder(doc, pageW, pageH)
+    let y = drawHeader(doc, company, 'WORKSHOP ORDER', pageW)
 
     // Document Meta Info
     const woDocInfoItems = [
@@ -3175,7 +3176,7 @@ export const generateWorkshopOrderPDF = async (wo) => {
       { label: 'Required By', value: wo.required_by ? formatDate(wo.required_by) : '—' },
       { label: 'Priority', value: (wo.priority || 'Normal').toUpperCase() },
     ]
-    y = drawDocInfo(doc, wo, y, 'WORKSHOP ORDER', woDocInfoItems)
+    y = drawDocInfo(doc, wo, y, 'WORKSHOP ORDER', woDocInfoItems, pageW)
 
     // Customer Card
     let cust = {
@@ -3194,7 +3195,7 @@ export const generateWorkshopOrderPDF = async (wo) => {
         }
       } catch { }
     }
-    y = drawCustomerCard(doc, cust, y)
+    y = drawCustomerCard(doc, cust, y, null, pageW)
 
     // Job Cards Table
     const lines = wo.lines || []
@@ -3211,7 +3212,7 @@ export const generateWorkshopOrderPDF = async (wo) => {
         seen.set(key, true)
         groupedRows.push([{
           content: key.toUpperCase(),
-          colSpan: 12,
+          colSpan: 13,
           styles: {
             fillColor: [227, 242, 253],
             textColor: [10, 40, 120],
@@ -3223,6 +3224,7 @@ export const generateWorkshopOrderPDF = async (wo) => {
       }
       groupedRows.push([
         rowNo++,
+        line.description || '—',
         line.serial_no || '—',
         line.act_w_in ? `${toFraction(line.act_w_in)}"` : '—',
         line.act_h_in ? `${toFraction(line.act_h_in)}"` : '—',
@@ -3240,35 +3242,36 @@ export const generateWorkshopOrderPDF = async (wo) => {
     autoTable(doc, {
       theme: 'grid',
       startY: y + 4,
-      head: [['#', 'Serial No', 'W (in)', 'H (in)', 'W (mm)', 'H (mm)', 'Qty', 'CEP', 'Process', 'Tgh', 'Wt (kg)', 'Remark']],
+      head: [['#', 'Description', 'Serial No', 'W (in)', 'H (in)', 'W (mm)', 'H (mm)', 'Qty', 'CEP', 'Process', 'Tgh', 'Wt (kg)', 'Remark']],
       body: groupedRows,
-      styles: { fontSize: 7.5, cellPadding: 2.5, lineWidth: 0.15, lineColor: [148, 163, 184], overflow: 'linebreak' },
+      styles: { fontSize: 8, cellPadding: 2.5, lineWidth: 0.15, lineColor: [148, 163, 184], overflow: 'linebreak' },
       headStyles: {
         fillColor: [99, 102, 241],
         textColor: 255,
         fontStyle: 'bold',
-        fontSize: 8,
+        fontSize: 8.5,
         lineWidth: 0.15,
         lineColor: [99, 102, 241],
       },
       alternateRowStyles: { fillColor: [248, 250, 252] },
       columnStyles: {
-        0:  { cellWidth: 8,  halign: 'center' },   // #
-        1:  { cellWidth: 18, halign: 'center' },   // Serial No
-        2:  { cellWidth: 16, halign: 'center' },   // W (in)
-        3:  { cellWidth: 16, halign: 'center' },   // H (in)
-        4:  { cellWidth: 15, halign: 'center' },   // W (mm)
-        5:  { cellWidth: 15, halign: 'center' },   // H (mm)
-        6:  { cellWidth: 10, halign: 'center' },   // Qty
-        7:  { cellWidth: 10, halign: 'center' },   // CEP
-        8:  { cellWidth: 28 },                     // Process
-        9:  { cellWidth: 10, halign: 'center' },   // Tgh
-        10: { cellWidth: 14, halign: 'right' },    // Wt (kg)
-        11: { cellWidth: 'auto' },                 // Remark
+        0:  { cellWidth: 10,  halign: 'center' },  // #
+        1:  { cellWidth: 50 },                     // Description
+        2:  { cellWidth: 24,  halign: 'center' },  // Serial No
+        3:  { cellWidth: 18,  halign: 'center' },  // W (in)
+        4:  { cellWidth: 18,  halign: 'center' },  // H (in)
+        5:  { cellWidth: 18,  halign: 'center' },  // W (mm)
+        6:  { cellWidth: 18,  halign: 'center' },  // H (mm)
+        7:  { cellWidth: 12,  halign: 'center' },  // Qty
+        8:  { cellWidth: 12,  halign: 'center' },  // CEP
+        9:  { cellWidth: 38 },                     // Process
+        10: { cellWidth: 12,  halign: 'center' },  // Tgh
+        11: { cellWidth: 20,  halign: 'right'  },  // Wt (kg)
+        12: { cellWidth: 'auto' },                 // Remark
       },
       didParseCell: (data) => {
         if (data.row.raw.length === 1) return
-        if (data.section === 'body' && (data.column.index === 7 || data.column.index === 9)) {
+        if (data.section === 'body' && (data.column.index === 8 || data.column.index === 10)) {
           const v = data.cell.raw
           if (v === 'YES') {
             data.cell.text = ['4']
@@ -3282,12 +3285,12 @@ export const generateWorkshopOrderPDF = async (wo) => {
             data.cell.styles.fontSize = 8.5
           }
         }
-        if (data.section === 'body' && data.column.index === 10 && data.cell.raw !== '—') {
+        if (data.section === 'body' && data.column.index === 11 && data.cell.raw !== '—') {
           data.cell.styles.textColor = [15, 118, 110]
           data.cell.styles.fontStyle = 'bold'
         }
       },
-      margin: { left: margin, right: margin },
+      margin: { left: 10, right: 10 },
     })
 
     const afterTableY = doc.lastAutoTable ? doc.lastAutoTable.finalY + 5 : y + 20
@@ -3296,7 +3299,7 @@ export const generateWorkshopOrderPDF = async (wo) => {
     doc.setTextColor(15, 118, 110)
     doc.text(
       `Total Weight: ${parseFloat(totalWeightKg.toFixed(2))} kg`,
-      pageW - margin,
+      pageW - 10,
       afterTableY,
       { align: 'right' }
     )
