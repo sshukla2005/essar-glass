@@ -1,7 +1,9 @@
 import { jsPDF } from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import html2canvas from 'html2canvas'
+import dayjs from 'dayjs'
 import { customerApi, vendorApi, companyApi } from '../api'
+import { computeLineWeightKg } from './glassCalc'
 
 // ── Brand logo assets (Vite-bundled, fingerprinted) ──────
 import asahiPng      from '../assets/brands/asahi.png'
@@ -288,23 +290,14 @@ const preloadCompanyLogos = async (company) => {
 const getCompany = (id) => {
   try {
     const all = JSON.parse(localStorage.getItem('companies_master') || '[]')
-    const c = all.find(x => x.id === id)
-    if (c) return c
+    if (id) {
+      const c = all.find(x => x.id === id)
+      if (c) return c
+    }
+    const active = all.find(x => x.is_active) || all[0]
+    if (active) return active
   } catch { }
-  return {
-    name: 'ESSAR SONS',
-    short_name: 'ESSAR',
-    tagline: "AN 'ESSAR SONS' GROUP COMPANY",
-    address: 'Shop No.11, Rashmi Shopping Centre, Agashi Road',
-    city: 'Virar West, Vasai Virar - 401303, Palghar, Maharashtra',
-    gst: '27AAIFE0491M1Z4', phone: '08047515289',
-    website: 'www.essarsons.in', email: 'sales@essarsons.in',
-    bank_ac_name: 'ESSAR SONS',
-    bank_name: 'HDFC Bank Ltd',
-    bank_branch: 'Virar West',
-    bank_ac_no: '50200012345678',
-    bank_ifsc: 'HDFC0000123'
-  }
+  return null
 }
 
 const fetchCompany = async (id) => {
@@ -313,9 +306,25 @@ const fetchCompany = async (id) => {
       const res = await companyApi.get(id)
       const c = res?.data || res
       if (c && c.name) return c
-    } catch { }
+    } catch (err) {
+      console.warn(`[fetchCompany] API fetch failed for company ID ${id}:`, err?.message)
+    }
   }
-  return getCompany(id)
+
+  const cached = getCompany(id)
+  if (cached && cached.name) return cached
+
+  try {
+    const res = await companyApi.list()
+    const items = res?.data?.items || res?.data || (Array.isArray(res) ? res : [])
+    const c = (id ? items.find(x => x.id === id) : null) || items.find(x => x.is_active) || items[0]
+    if (c && c.name) return c
+  } catch (err) {
+    console.warn('[fetchCompany] Company list API call failed:', err?.message)
+  }
+
+  console.error('Failed to resolve company for PDF generation. Company ID:', id)
+  throw new Error('Company details load nahi ho paayi. Page refresh karke dobara try karein.')
 }
 
 // ── Color Theme and Layout Constants ──────
@@ -677,10 +686,10 @@ const drawHeader = (doc, company, docTitle) => {
   return titleY + 10 + 4
 }
 
-const drawDocInfo = (doc, quotation, y, docTitle) => {
+const drawDocInfo = (doc, quotation, y, docTitle, items = null) => {
   const boxH = 11
   drawCard(doc, MARGIN.l, y, CONTENT_W, boxH, C.summaryBg, C.border, 1.5)
-  const items = [
+  const itemList = items || [
     { label: 'Document Type', value: docTitle },
     { label: 'Quote / Ref No', value: quotation.quote_number || quotation.so_number || quotation.po_number || 'QT-NEW' },
     { label: 'Date', value: formatDate(quotation.quote_date || quotation.order_date || quotation.po_date || '') },
@@ -688,14 +697,24 @@ const drawDocInfo = (doc, quotation, y, docTitle) => {
     { label: 'Salesperson', value: quotation.salesperson || 'Admin' },
     { label: 'Payment Terms', value: quotation.payment_terms || 'Immediate' },
   ].filter(Boolean)
-  const cellW = CONTENT_W / items.length
-  items.forEach((item, i) => {
+  const cellW = CONTENT_W / itemList.length
+  itemList.forEach((item, i) => {
     const x = MARGIN.l + i * cellW
     if (i > 0) drawLine(doc, x, y, x, y + boxH, C.border, 0.2)
     setFont(doc, 6.5, 'normal', C.textLight)
     drawText(doc, item.label, x + 3, y + 4)
-    setFont(doc, 7.5, 'bold', C.text)
-    drawText(doc, String(item.value || '').substring(0, 20), x + 3, y + 8)
+    let valStr = String(item.value || '')
+    let valFontSize = 7.5
+    setFont(doc, valFontSize, 'bold', C.text)
+    const maxValW = cellW - 5
+    while (doc.getTextWidth(valStr) > maxValW && valFontSize > 5.5) {
+      valFontSize -= 0.5
+      setFont(doc, valFontSize, 'bold', C.text)
+    }
+    if (doc.getTextWidth(valStr) > maxValW) {
+      valStr = valStr.substring(0, 18) + '…'
+    }
+    drawText(doc, valStr, x + 3, y + 8)
   })
   return y + boxH + SP_16
 }
@@ -1756,7 +1775,7 @@ const drawFooter = (doc, quoteNo, pageNum, totalPages) => {
 }
 
 // Page Break Manager with precise heights and page numbering pass
-const checkPageBreak = (doc, y, heightNeeded, pageNum, quotation) => {
+const checkPageBreak = (doc, y, heightNeeded, pageNum, quotation, company) => {
   const usablePageHeight = PAGE_H - 20
   if (y + heightNeeded > usablePageHeight) {
     doc.addPage()
@@ -1765,7 +1784,7 @@ const checkPageBreak = (doc, y, heightNeeded, pageNum, quotation) => {
     
     let ny = MARGIN.t + SP_8
     setFont(doc, 9, 'bold', C.primary)
-    drawText(doc, getCompany(quotation.company_id).name || 'ESSAR SONS', MARGIN.l + 2, ny + 4)
+    drawText(doc, company?.name || quotation?.company_name || 'COMPANY', MARGIN.l + 2, ny + 4)
     setFont(doc, 7, 'normal', C.textLight)
     drawText(doc, `Ref No: ${quotation.quote_number || quotation.so_number || quotation.po_number || ''}`, PAGE_W - MARGIN.r - 2, ny + 4, { align: 'right' })
     drawLine(doc, MARGIN.l, ny + 7, MARGIN.l + CONTENT_W, ny + 7, C.border, 0.3)
@@ -2507,7 +2526,7 @@ export const generatePOPDF = async (po) => {
   try {
     const doc = new jsPDF('p', 'mm', 'a4')
     const [company] = await Promise.all([
-      preloadCompanyLogos(getCompany(po.company_id)),
+      preloadCompanyLogos(await fetchCompany(po.company_id)),
       preloadBrandLogos(),
     ])
     let vend = { name: po.vendor_name || '', address: '', phone: '', gstin: '' }
@@ -2577,7 +2596,10 @@ export const generatePOPDF = async (po) => {
 export const generateTougheningChallanPDF = async (batch) => {
   if (!batch) return
 
-  const company = getCompany(batch.company_id)
+  const [company] = await Promise.all([
+    preloadCompanyLogos(await fetchCompany(batch.company_id)),
+    preloadBrandLogos(),
+  ])
 
   // Resolve vendor name
   let vendorName = cleanVal(batch.vendor_name)
@@ -2627,52 +2649,6 @@ export const generateTougheningChallanPDF = async (batch) => {
     return { mm: '', rest: desc }
   }
 
-  // Construct body rows for ONE continuous autotable
-  const allBodyRows = []
-
-  // 1. Company Name — colSpan 6, centered, large bold (~16pt)
-  allBodyRows.push([{
-    content: (company.name || 'ESSAR GLASS').toUpperCase(),
-    colSpan: 6,
-    styles: { halign: 'center', fontStyle: 'bold', fontSize: 16 }
-  }])
-
-  // 2. "GSTIN NO : <company.gstin>" (colSpan 3, left) | "DATE : <formatDate(...)>" (colSpan 3, left)
-  const gstinStr = cleanVal(company.gstin || company.gst)
-  const dateStr = formatDate(batch.sent_date || batch.batch_date || new Date())
-  allBodyRows.push([
-    { content: `GSTIN NO : ${gstinStr}`, colSpan: 3, styles: { halign: 'left', fontStyle: 'bold' } },
-    { content: `DATE : ${dateStr}`, colSpan: 3, styles: { halign: 'left', fontStyle: 'bold' } }
-  ])
-
-  // 3. "MOB NO.   <company.phone>" (colSpan 3, left) | "CHALLAN SR NO.  <batch.tb_number>" (colSpan 3, left)
-  const phoneVal = cleanVal(company.phone)
-  const phone2Val = cleanVal(company.phone2)
-  const mobStr = phoneVal ? `MOB NO.   ${phoneVal}${phone2Val ? ' / ' + phone2Val : ''}` : 'MOB NO.'
-  const tbNumStr = cleanVal(batch.tb_number || '—')
-  allBodyRows.push([
-    { content: mobStr, colSpan: 3, styles: { halign: 'left', fontStyle: 'bold' } },
-    { content: `CHALLAN SR NO.  ${tbNumStr}`, colSpan: 3, styles: { halign: 'left', fontStyle: 'bold' } }
-  ])
-
-  // 4. "JOB WORK CHALLAN" — colSpan 6, centered, bold
-  allBodyRows.push([{
-    content: 'JOB WORK CHALLAN',
-    colSpan: 6,
-    styles: { halign: 'center', fontStyle: 'bold', fontSize: 12 }
-  }])
-
-  // 5. "MATERIAL BEING SENT TO  TOUGHNED , <VENDOR> FOR JOBWORK" — colSpan 6, centered, bold
-  const vendorBannerText = vendorName
-    ? `MATERIAL BEING SENT TO  TOUGHNED , ${vendorName.toUpperCase()} FOR JOBWORK`
-    : `MATERIAL BEING SENT TO  TOUGHNED  FOR JOBWORK`
-
-  allBodyRows.push([{
-    content: vendorBannerText,
-    colSpan: 6,
-    styles: { halign: 'center', fontStyle: 'bold', fontSize: 9.5 }
-  }])
-
   // Helper to extract process name(s) for a line item
   const getItemProcessStr = (item) => {
     if (!item) return ''
@@ -2706,23 +2682,42 @@ export const generateTougheningChallanPDF = async (batch) => {
     return ''
   }
 
-  // 6. Column header row: MM | DESCRIPTION | LENGTH (mm) | WIDTH (mm) | QTY | PROCESS
-  allBodyRows.push([
-    { content: 'MM', styles: { fontStyle: 'bold', halign: 'center', fontSize: 9 } },
-    { content: 'DESCRIPTION', styles: { fontStyle: 'bold', halign: 'center', fontSize: 9 } },
-    { content: 'LENGTH (mm)', styles: { fontStyle: 'bold', halign: 'center', fontSize: 8.5 } },
-    { content: 'WIDTH (mm)', styles: { fontStyle: 'bold', halign: 'center', fontSize: 8.5 } },
-    { content: 'QTY', styles: { fontStyle: 'bold', halign: 'center', fontSize: 9 } },
-    { content: 'PROCESS', styles: { fontStyle: 'bold', halign: 'center', fontSize: 9 } },
-  ])
+  const doc = new jsPDF('p', 'mm', 'a4')
 
-  // 7. One blank row (as in reference)
-  allBodyRows.push(['', '', '', '', '', ''])
+  // R2 — Standard Header & Border
+  drawBorder(doc)
+  let y = drawHeader(doc, company, 'JOB WORK CHALLAN')
 
-  // Track row indices of each group's first row for bolding MM & DESCRIPTION
+  // R3 — Doc Info Strip
+  const docInfoItems = [
+    { label: 'Document Type', value: 'JOB WORK CHALLAN' },
+    { label: 'Challan No', value: batch.tb_number || 'TB-DRAFT' },
+    { label: 'Date', value: formatDate(batch.sent_date || batch.batch_date) || '—' },
+    { label: 'Vendor', value: vendorName || '—' },
+    { label: 'Expected Return', value: batch.expected_return ? formatDate(batch.expected_return) : '—' },
+    { label: 'Vehicle No', value: batch.vehicle_number || '—' },
+  ]
+  y = drawDocInfo(doc, batch, y, 'JOB WORK CHALLAN', docInfoItems)
+
+  // R4 — Vendor Banner
+  const vendorBannerText = vendorName
+    ? `MATERIAL BEING SENT TO TOUGHNED , ${vendorName.toUpperCase()} FOR JOBWORK`
+    : `MATERIAL BEING SENT TO TOUGHNED FOR JOBWORK`
+
+  drawRect(doc, MARGIN.l, y, CONTENT_W, 7, C.glassHeaderBg, C.glassHeader, 0.2)
+  let bannerFontSize = 8.5
+  setFont(doc, bannerFontSize, 'bold', C.glassHeader)
+  while (doc.getTextWidth(vendorBannerText) > CONTENT_W - 10 && bannerFontSize > 6.5) {
+    bannerFontSize -= 0.5
+    setFont(doc, bannerFontSize, 'bold', C.glassHeader)
+  }
+  drawText(doc, vendorBannerText, 105, y + 4.8, { align: 'center' })
+  y += 7 + SP_8
+
+  // R5 — Data Table
+  const tableBodyRows = []
   const groupFirstRowIndices = new Set()
 
-  // 8. Grouped data rows
   groupedMap.forEach((itemsInGroup, groupDesc) => {
     const parsed = parseThickness(groupDesc)
     itemsInGroup.forEach((item, idx) => {
@@ -2735,8 +2730,8 @@ export const generateTougheningChallanPDF = async (batch) => {
       const widthStr = h_mm ? `${Math.round(h_mm)}` : '—'
 
       if (idx === 0) {
-        groupFirstRowIndices.add(allBodyRows.length)
-        allBodyRows.push([
+        groupFirstRowIndices.add(tableBodyRows.length)
+        tableBodyRows.push([
           parsed.mm,
           String(parsed.rest || '').toUpperCase(),
           lengthStr,
@@ -2745,7 +2740,7 @@ export const generateTougheningChallanPDF = async (batch) => {
           procStr
         ])
       } else {
-        allBodyRows.push([
+        tableBodyRows.push([
           '',
           '',
           lengthStr,
@@ -2755,47 +2750,54 @@ export const generateTougheningChallanPDF = async (batch) => {
         ])
       }
     })
-    // ONE fully blank spacer row after each group
-    allBodyRows.push(['', '', '', '', '', ''])
+    // Spacer row after group
+    tableBodyRows.push(['', '', '', '', '', ''])
   })
 
-  // 9. Filler blank rows so grid extends down page nicely before signatory block (target ~25 rows total)
-  const currentBodyCount = allBodyRows.length
-  const targetRowsPerPage = 25
-
-  if (currentBodyCount < targetRowsPerPage) {
-    const fillerNeeded = targetRowsPerPage - currentBodyCount
+  // R6 — Target Filler Rows (12 rows target)
+  const targetRowsPerPage = 12
+  if (tableBodyRows.length < targetRowsPerPage) {
+    const fillerNeeded = targetRowsPerPage - tableBodyRows.length
     for (let i = 0; i < fillerNeeded; i++) {
-      allBodyRows.push(['', '', '', '', '', ''])
+      tableBodyRows.push(['', '', '', '', '', ''])
     }
   }
 
-  // Create A4 PDF document
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-
   autoTable(doc, {
     theme: 'grid',
-    margin: { top: 10, left: 10, right: 10, bottom: 10 },
-    body: allBodyRows,
+    startY: y,
+    head: [['MM', 'DESCRIPTION', 'LENGTH', 'WIDTH', 'QTY', 'PROCESS']],
+    body: tableBodyRows,
+    margin: { left: 10, right: 10 },
     styles: {
-      fontSize: 9.5,
+      fontSize: 8.5,
       cellPadding: 2.2,
-      lineWidth: 0.2,
-      lineColor: [0, 0, 0],
-      textColor: [0, 0, 0],
+      lineWidth: 0.15,
+      lineColor: [148, 163, 184],
+      textColor: C.text,
       halign: 'center',
       valign: 'middle',
+      overflow: 'linebreak',
+    },
+    headStyles: {
+      fillColor: C.glassHeader,
+      textColor: C.white,
+      fontStyle: 'bold',
+      fontSize: 8.5,
+      lineWidth: 0.15,
+      lineColor: C.glassHeader,
+      halign: 'center',
     },
     alternateRowStyles: {
-      fillColor: [255, 255, 255]
+      fillColor: [248, 250, 252]
     },
     columnStyles: {
-      0: { cellWidth: 15 },
-      1: { cellWidth: 75 },
-      2: { cellWidth: 25 },
-      3: { cellWidth: 25 },
-      4: { cellWidth: 15 },
-      5: { cellWidth: 35 },
+      0: { cellWidth: 15, halign: 'center' },
+      1: { cellWidth: 75, halign: 'left' },
+      2: { cellWidth: 25, halign: 'center' },
+      3: { cellWidth: 25, halign: 'center' },
+      4: { cellWidth: 15, halign: 'center' },
+      5: { cellWidth: 35, halign: 'left' },
     },
     didParseCell: (data) => {
       if (data.section === 'body' && groupFirstRowIndices.has(data.row.index)) {
@@ -2806,40 +2808,42 @@ export const generateTougheningChallanPDF = async (batch) => {
     },
   })
 
-  // 10. Clean, dedicated Signatory Section
-  let sigY = doc.lastAutoTable ? doc.lastAutoTable.finalY + 6 : 240
-  if (sigY + 32 > 285) {
+  // Signatory Section
+  let sigY = doc.lastAutoTable ? doc.lastAutoTable.finalY + 6 : 220
+  if (sigY + 32 > 275) {
     doc.addPage()
     sigY = 15
   }
 
   const boxX = 10
   const boxW = 190
-  const boxH = 32
+  const boxH = 30
 
-  // Draw container box matching table width & border style
-  drawRect(doc, boxX, sigY, boxW, boxH, [255, 255, 255], [0, 0, 0], 0.2)
+  drawCard(doc, boxX, sigY, boxW, boxH, C.white, C.border, 1.5)
 
   // Receiver acknowledgement (left side)
-  setFont(doc, 8.5, 'bold', [0, 0, 0])
-  drawText(doc, "Receiver's Signature / Stamp:", boxX + 8, sigY + 7)
-  drawLine(doc, boxX + 8, sigY + 22, boxX + 65, sigY + 22, [0, 0, 0], 0.25)
-  setFont(doc, 7.5, 'normal', [100, 116, 139])
-  drawText(doc, "Received In Good Condition", boxX + 8, sigY + 26)
+  setFont(doc, 8, 'bold', C.text)
+  drawText(doc, "Receiver's Signature / Stamp:", boxX + 6, sigY + 6)
+  drawLine(doc, boxX + 6, sigY + 20, boxX + 65, sigY + 20, C.border, 0.25)
+  setFont(doc, 7, 'normal', C.textLight)
+  drawText(doc, "Received In Good Condition", boxX + 6, sigY + 24)
 
   // Signatory block (right side)
   const compNameUpper = (company.name || 'ESSAR GLASS').toUpperCase()
-  setFont(doc, 9, 'bold', [0, 0, 0])
-  drawText(doc, `FOR, ${compNameUpper}`, boxX + boxW - 8, sigY + 7, { align: 'right' })
+  setFont(doc, 8.5, 'bold', C.text)
+  drawText(doc, `FOR, ${compNameUpper}`, boxX + boxW - 6, sigY + 6, { align: 'right' })
 
   const sigLineW = 60
-  const sigLineX2 = boxX + boxW - 8
+  const sigLineX2 = boxX + boxW - 6
   const sigLineX1 = sigLineX2 - sigLineW
-  const sigLineY = sigY + 22
-  drawLine(doc, sigLineX1, sigLineY, sigLineX2, sigLineY, [0, 0, 0], 0.25)
+  const sigLineY = sigY + 20
+  drawLine(doc, sigLineX1, sigLineY, sigLineX2, sigLineY, C.border, 0.25)
 
-  setFont(doc, 8, 'normal', [71, 85, 105])
+  setFont(doc, 7.5, 'normal', C.textMid)
   drawText(doc, "Authorised Signatory", sigLineX1 + sigLineW / 2, sigLineY + 4.5, { align: 'center' })
+
+  // R7 — Footer Standardize
+  addFootersAndPageNumbers(doc, batch.tb_number || 'TB')
 
   const fileName = makePdfFilename(batch.tb_number || 'TB', vendorName, 'Vendor')
   doc.save(fileName)
@@ -2852,7 +2856,7 @@ export const generateDeliveryChallanPDF = async (dc) => {
   try {
     const doc = new jsPDF('p', 'mm', 'a4')
     const [company] = await Promise.all([
-      preloadCompanyLogos(getCompany(dc.company_id)),
+      preloadCompanyLogos(await fetchCompany(dc.company_id)),
       preloadBrandLogos(),
     ])
 
@@ -3124,18 +3128,7 @@ export const generateDeliveryChallanPDF = async (dc) => {
     const cardW = (CONTENT_W - SP_8) / 2
     const cardH = 22
 
-    // Left card: Receiver's Acknowledgment
-    const x1 = MARGIN.l
-    drawCard(doc, x1, y, cardW, cardH, C.white, C.border, 1.5)
-    setFont(doc, 7.5, 'bold', C.primaryMid)
-    drawText(doc, "Receiver's Acknowledgment", x1 + 4, y + 4.5)
-    setFont(doc, 6.5, 'normal', C.textLight)
-    drawText(doc, "Received In Good Condition", x1 + 4, y + 8.5)
-    drawLine(doc, x1 + 4, y + 15.5, x1 + cardW - 4, y + 15.5, C.border, 0.25)
-    setFont(doc, 6.5, 'normal', C.textLight)
-    drawText(doc, "Receiver's Signature & Stamp", x1 + cardW / 2, y + 19.5, { align: 'center' })
-
-    // Right card: Authorised Signatory for Company
+      // Right card: Authorised Signatory for Company
     const x2 = MARGIN.l + cardW + SP_8
     const compNameUpper = (company.name || 'ESSAR GLASS').toUpperCase()
     drawCard(doc, x2, y, cardW, cardH, C.white, C.border, 1.5)
@@ -3155,6 +3148,394 @@ export const generateDeliveryChallanPDF = async (dc) => {
     return doc
   } catch (err) {
     console.error('Failed to generate Delivery Challan PDF:', err)
+    throw err
+  }
+}
+
+// ── Workshop Order PDF Generator ─────────────────────────────────────────────
+export const generateWorkshopOrderPDF = async (wo) => {
+  if (!wo) return
+  try {
+    const doc = new jsPDF('p', 'mm', 'a4')
+    const company = await preloadCompanyLogos(await fetchCompany(wo.company_id))
+
+    const pageW = doc.internal.pageSize.getWidth()
+    const pageH = doc.internal.pageSize.getHeight()
+    const margin = 10
+
+    drawBorder(doc)
+    let y = drawHeader(doc, company, 'WORKSHOP ORDER')
+
+    // Document Meta Info
+    const woDocInfoItems = [
+      { label: 'Document Type', value: 'WORKSHOP ORDER' },
+      { label: 'WO No', value: wo.wo_number || 'WO-DRAFT' },
+      { label: 'Date', value: formatDate(wo.order_date) },
+      { label: 'SO Ref', value: wo.so_number || (wo.so_id ? `SO #${wo.so_id}` : '—') },
+      { label: 'Required By', value: wo.required_by ? formatDate(wo.required_by) : '—' },
+      { label: 'Priority', value: (wo.priority || 'Normal').toUpperCase() },
+    ]
+    y = drawDocInfo(doc, wo, y, 'WORKSHOP ORDER', woDocInfoItems)
+
+    // Customer Card
+    let cust = {
+      name: wo.customer_name || wo.customer?.name || '',
+      address: '', phone: '', gstin: ''
+    }
+    if (wo.customer_id) {
+      try {
+        const res = await customerApi.get(wo.customer_id)
+        const c = res.data || res
+        if (c) cust = {
+          name: c.name || wo.customer_name || '',
+          address: [c.address, c.city, c.state, c.pincode].filter(Boolean).join(', '),
+          phone: c.phone || c.mobile || '',
+          gstin: c.gstin || ''
+        }
+      } catch { }
+    }
+    y = drawCustomerCard(doc, cust, y)
+
+    // Job Cards Table
+    const lines = wo.lines || []
+    const groupedRows = []
+    const seen = new Map()
+    let totalWeightKg = 0
+    let rowNo = 1
+
+    lines.forEach((line) => {
+      const lineWeight = computeLineWeightKg(line)
+      totalWeightKg += lineWeight
+      const key = (line.description || 'Unspecified').trim()
+      if (!seen.has(key)) {
+        seen.set(key, true)
+        groupedRows.push([{
+          content: key.toUpperCase(),
+          colSpan: 12,
+          styles: {
+            fillColor: [227, 242, 253],
+            textColor: [10, 40, 120],
+            fontStyle: 'bold',
+            fontSize: 9.5,
+            halign: 'left',
+          },
+        }])
+      }
+      groupedRows.push([
+        rowNo++,
+        line.serial_no || '—',
+        line.act_w_in ? `${toFraction(line.act_w_in)}"` : '—',
+        line.act_h_in ? `${toFraction(line.act_h_in)}"` : '—',
+        line.act_w_mm ? `${line.act_w_mm}mm` : '—',
+        line.act_h_mm ? `${line.act_h_mm}mm` : '—',
+        line.qty || line.quantity || 1,
+        line.cep ? 'YES' : 'NO',
+        line.process_label || line.process_name || '—',
+        (line.is_toughened || line.toughened) ? 'YES' : '—',
+        lineWeight > 0 ? `${lineWeight}` : '—',
+        line.remark || '—',
+      ])
+    })
+
+    autoTable(doc, {
+      theme: 'grid',
+      startY: y + 4,
+      head: [['#', 'Serial No', 'W (in)', 'H (in)', 'W (mm)', 'H (mm)', 'Qty', 'CEP', 'Process', 'Tgh', 'Wt (kg)', 'Remark']],
+      body: groupedRows,
+      styles: { fontSize: 7.5, cellPadding: 2.5, lineWidth: 0.15, lineColor: [148, 163, 184], overflow: 'linebreak' },
+      headStyles: {
+        fillColor: [99, 102, 241],
+        textColor: 255,
+        fontStyle: 'bold',
+        fontSize: 8,
+        lineWidth: 0.15,
+        lineColor: [99, 102, 241],
+      },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
+      columnStyles: {
+        0:  { cellWidth: 8,  halign: 'center' },   // #
+        1:  { cellWidth: 18, halign: 'center' },   // Serial No
+        2:  { cellWidth: 16, halign: 'center' },   // W (in)
+        3:  { cellWidth: 16, halign: 'center' },   // H (in)
+        4:  { cellWidth: 15, halign: 'center' },   // W (mm)
+        5:  { cellWidth: 15, halign: 'center' },   // H (mm)
+        6:  { cellWidth: 10, halign: 'center' },   // Qty
+        7:  { cellWidth: 10, halign: 'center' },   // CEP
+        8:  { cellWidth: 28 },                     // Process
+        9:  { cellWidth: 10, halign: 'center' },   // Tgh
+        10: { cellWidth: 14, halign: 'right' },    // Wt (kg)
+        11: { cellWidth: 'auto' },                 // Remark
+      },
+      didParseCell: (data) => {
+        if (data.row.raw.length === 1) return
+        if (data.section === 'body' && (data.column.index === 7 || data.column.index === 9)) {
+          const v = data.cell.raw
+          if (v === 'YES') {
+            data.cell.text = ['4']
+            data.cell.styles.font = 'zapfdingbats'
+            data.cell.styles.textColor = [22, 163, 74]
+            data.cell.styles.fontSize = 8.5
+          } else if (v === 'NO') {
+            data.cell.text = ['8']
+            data.cell.styles.font = 'zapfdingbats'
+            data.cell.styles.textColor = [203, 213, 225]
+            data.cell.styles.fontSize = 8.5
+          }
+        }
+        if (data.section === 'body' && data.column.index === 10 && data.cell.raw !== '—') {
+          data.cell.styles.textColor = [15, 118, 110]
+          data.cell.styles.fontStyle = 'bold'
+        }
+      },
+      margin: { left: margin, right: margin },
+    })
+
+    const afterTableY = doc.lastAutoTable ? doc.lastAutoTable.finalY + 5 : y + 20
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(9)
+    doc.setTextColor(15, 118, 110)
+    doc.text(
+      `Total Weight: ${parseFloat(totalWeightKg.toFixed(2))} kg`,
+      pageW - margin,
+      afterTableY,
+      { align: 'right' }
+    )
+
+    let currentExtraY = afterTableY + 4
+    if (wo.instructions && wo.instructions.trim()) {
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(8.5)
+      doc.setTextColor(15, 23, 42)
+      doc.text('Special Instructions:', margin, currentExtraY)
+      doc.setFont('helvetica', 'normal')
+      const textW = pageW - margin * 2 - 35
+      const splitInstr = doc.splitTextToSize(wo.instructions.trim(), textW)
+      doc.text(splitInstr, margin + 32, currentExtraY)
+    }
+
+    // Panel Maps & Line Artwork Sheets
+    const PANEL_COLORS = [
+      '#6366f1', '#10b981', '#f59e0b', '#ef4444',
+      '#8b5cf6', '#06b6d4', '#ec4899', '#f97316'
+    ]
+    const contentW = pageW - margin * 2
+
+    const drawSheetHeader = (title, subtitle) => {
+      doc.setFillColor(company.primary_color ? parseInt(company.primary_color.slice(1), 16) : 124, 58, 237)
+      doc.rect(0, 0, pageW, 16, 'F')
+      doc.setFontSize(12); doc.setFont('helvetica', 'bold'); doc.setTextColor(255, 255, 255)
+      doc.text(title, margin, 10)
+      doc.setFontSize(8); doc.setFont('helvetica', 'normal')
+      doc.text(subtitle, pageW - margin, 10, { align: 'right' })
+    }
+
+    const fitDims = (iw, ih, maxW, maxH) => {
+      const s = Math.min(maxW / iw, maxH / ih)
+      return { w: iw * s, h: ih * s }
+    }
+
+    // 1) PANEL MAP SHEETS
+    const artworkMaps = wo.artworkMaps || wo.artwork_maps || []
+    const validMaps = (artworkMaps || []).filter(m => m.image && (m.panels || []).length > 0)
+    for (let mi = 0; mi < validMaps.length; mi++) {
+      const map = validMaps[mi]
+      try {
+        const oImg = new Image()
+        await new Promise((resolve, reject) => {
+          oImg.onload = resolve
+          oImg.onerror = reject
+          oImg.src = map.image
+        })
+
+        const oCanvas = document.createElement('canvas')
+        const UPSCALE_TARGET = 1400
+        const up = Math.max(1, Math.min(3, UPSCALE_TARGET / Math.max(oImg.width, 1)))
+        oCanvas.width = Math.round(oImg.width * up)
+        oCanvas.height = Math.round(oImg.height * up)
+        const oCtx = oCanvas.getContext('2d')
+        oCtx.imageSmoothingEnabled = true
+        oCtx.imageSmoothingQuality = 'high'
+        oCtx.drawImage(oImg, 0, 0, oCanvas.width, oCanvas.height)
+
+        const k = Math.max(oCanvas.width, oCanvas.height) / 800
+
+        map.panels.forEach((p, i) => {
+          const color = PANEL_COLORS[i % PANEL_COLORS.length]
+          const line = (p.lineIndex != null) ? lines[p.lineIndex] : null
+          const px = (p.nx != null) ? p.nx * oCanvas.width : p.x * up
+          const py = (p.ny != null) ? p.ny * oCanvas.height : p.y * up
+          const pw = (p.nw != null) ? p.nw * oCanvas.width : p.w * up
+          const ph = (p.nh != null) ? p.nh * oCanvas.height : p.h * up
+          oCtx.strokeStyle = color
+          oCtx.lineWidth = 1.5 * k
+          oCtx.strokeRect(px, py, pw, ph)
+          oCtx.fillStyle = color + '14'
+          oCtx.fillRect(px, py, pw, ph)
+          const bs = 34 * k
+          oCtx.fillStyle = color
+          oCtx.fillRect(px + 3 * k, py + 3 * k, bs, bs)
+          oCtx.fillStyle = '#ffffff'
+          oCtx.font = `bold ${22 * k}px sans-serif`
+          oCtx.fillText(String(i + 1), px + 12 * k, py + 27 * k)
+          if (line) {
+            const label = `${line.description || 'Line ' + (p.lineIndex + 1)}  ${line.act_w_in ? toFraction(line.act_w_in) : '?'}"x${line.act_h_in ? toFraction(line.act_h_in) : '?'}" x${line.qty || 1}`
+            oCtx.font = `bold ${18 * k}px sans-serif`
+            const tw = oCtx.measureText(label).width + 14 * k
+            oCtx.fillStyle = 'rgba(255,255,255,0.96)'
+            oCtx.fillRect(px + 3 * k, py + ph - 26 * k, Math.min(tw, Math.max(pw - 6 * k, 40 * k)), 23 * k)
+            oCtx.fillStyle = '#111111'
+            oCtx.fillText(label, px + 8 * k, py + ph - 8 * k)
+          }
+        })
+
+        doc.addPage()
+        drawSheetHeader(
+          `PANEL MAP ${validMaps.length > 1 ? `${mi + 1}/${validMaps.length} — ` : '— '}${String(map.name || 'ARTWORK').toUpperCase().substring(0, 30)}`,
+          `${wo.wo_number || 'WO'}${cust.name ? ' | ' + cust.name : ''}`
+        )
+
+        const legendH = 12 + map.panels.length * 7
+        const maxImgH = pageH - 16 - 12 - legendH - 14
+        const dims = fitDims(oCanvas.width, oCanvas.height, contentW, Math.max(90, maxImgH))
+        const imgData = oCanvas.toDataURL('image/png')
+        doc.addImage(imgData, 'PNG', (pageW - dims.w) / 2, 20, dims.w, dims.h)
+
+        const pmTableRows = map.panels.map((p, i) => {
+          const line = (p.lineIndex != null) ? lines[p.lineIndex] : null
+          return [
+            String(i + 1),
+            line ? (line.description || `Line ${p.lineIndex + 1}`) : 'NOT ASSIGNED',
+            line ? `${line.act_w_in ? toFraction(line.act_w_in) : '?'}" × ${line.act_h_in ? toFraction(line.act_h_in) : '?'}"` : '—',
+            line ? String(line.qty || line.quantity || 1) : '—',
+            (line?.toughened || line?.is_toughened) ? 'YES' : '—',
+            p.note || '—',
+          ]
+        })
+
+        autoTable(doc, {
+          theme: 'grid',
+          startY: 20 + dims.h + 6,
+          head: [['Panel', 'Glass Line', 'Size', 'Qty', 'Tgh', 'Note']],
+          body: pmTableRows,
+          styles: { fontSize: 8.5, cellPadding: 2.5, lineWidth: 0.15, lineColor: [148, 163, 184] },
+          headStyles: { fillColor: [124, 58, 237], textColor: 255, fontStyle: 'bold', lineWidth: 0.15, lineColor: [99, 102, 241] },
+          alternateRowStyles: { fillColor: [245, 243, 255] },
+          columnStyles: {
+            0: { cellWidth: 14, halign: 'center' },
+            1: { cellWidth: 70, fontStyle: 'bold' },
+            2: { cellWidth: 35 },
+            3: { cellWidth: 12, halign: 'center' },
+            4: { cellWidth: 12, halign: 'center' },
+            5: { cellWidth: 'auto' },
+          },
+          margin: { left: margin, right: margin },
+          didParseCell: (data) => {
+            if (data.row.raw.length === 1) return
+            if (data.section === 'body' && data.column.index === 0) {
+              const c = PANEL_COLORS[data.row.index % PANEL_COLORS.length]
+              data.cell.styles.fillColor = [
+                parseInt(c.slice(1, 3), 16),
+                parseInt(c.slice(3, 5), 16),
+                parseInt(c.slice(5, 7), 16),
+              ]
+              data.cell.styles.textColor = 255
+              data.cell.styles.fontStyle = 'bold'
+            }
+            if (data.section === 'body' && data.column.index === 1) {
+              data.cell.styles.fontStyle = 'bold'
+            }
+          },
+        })
+      } catch (imgErr) {
+        console.error('Panel map sheet failed:', imgErr)
+      }
+    }
+
+    // 2) LINE ARTWORK SHEETS
+    const processLines = lines.filter(l => l.has_process && l.artwork_file_data)
+    const artworkMap = new Map()
+    processLines.forEach(l => {
+      const key = l.artwork_master_id || l.key || l.id
+      if (!artworkMap.has(key)) {
+        artworkMap.set(key, {
+          name: l.artwork_name || l.artwork_file_name || 'Artwork',
+          data: l.artwork_file_data,
+          rows: []
+        })
+      }
+      artworkMap.get(key).rows.push(l)
+    })
+
+    for (const [, art] of artworkMap) {
+      if (validMaps.some(m => m.image === art.data)) continue
+
+      if (art.data && art.data.startsWith('data:image/')) {
+        try {
+          const im = new Image()
+          await new Promise((res, rej) => { im.onload = res; im.onerror = rej; im.src = art.data })
+
+          doc.addPage()
+          drawSheetHeader(
+            `ARTWORK: ${String(art.name).toUpperCase().substring(0, 40)}`,
+            `${wo.wo_number || 'WO'}`
+          )
+
+          const tblH = 14 + art.rows.length * 7
+          const maxImgH = pageH - 16 - 12 - tblH - 14
+          const dims = fitDims(im.width, im.height, contentW, Math.max(100, maxImgH))
+          const fmt = art.data.includes('data:image/png') ? 'PNG' : 'JPEG'
+          doc.addImage(art.data, fmt, (pageW - dims.w) / 2, 20, dims.w, dims.h)
+
+          autoTable(doc, {
+            theme: 'grid',
+            startY: 20 + dims.h + 6,
+            head: [['#', 'Glass Line (uses this artwork)', 'Size', 'Qty', 'Tgh', 'Remark']],
+            body: art.rows.map((l, i) => [
+              String(i + 1),
+              l.description || '—',
+              `${l.act_w_in ? toFraction(l.act_w_in) : '?'}" × ${l.act_h_in ? toFraction(l.act_h_in) : '?'}"`,
+              String(l.qty || l.quantity || 1),
+              (l.toughened || l.is_toughened) ? 'YES' : '—',
+              l.remark || '—',
+            ]),
+            styles: { fontSize: 8.5, cellPadding: 2.5, lineWidth: 0.15, lineColor: [148, 163, 184] },
+            headStyles: { fillColor: [99, 102, 241], textColor: 255, fontStyle: 'bold', lineWidth: 0.15, lineColor: [99, 102, 241] },
+            alternateRowStyles: { fillColor: [238, 242, 255] },
+            margin: { left: margin, right: margin },
+          })
+        } catch (e) {
+          console.error('Artwork sheet failed:', e)
+        }
+      } else if (art.data && art.data.startsWith('data:application/pdf')) {
+        doc.addPage()
+        drawSheetHeader(
+          `ARTWORK: ${String(art.name).toUpperCase().substring(0, 40)}`,
+          `${wo.wo_number || 'WO'}`
+        )
+        doc.setFontSize(10); doc.setFont('helvetica', 'normal'); doc.setTextColor(80, 80, 80)
+        doc.text(`PDF artwork attached: "${art.name}" — print/open the PDF file separately.`, margin, 30)
+      }
+    }
+
+    // Footers and Page Numbers
+    const pageCount = doc.internal.getNumberOfPages()
+    for (let p = 1; p <= pageCount; p++) {
+      doc.setPage(p)
+      const footerY = doc.internal.pageSize.getHeight() - 8
+      doc.setFontSize(7)
+      doc.setFont('helvetica', 'normal')
+      doc.setTextColor(150, 150, 150)
+      doc.text(
+        `Generated: ${dayjs().format('DD/MM/YYYY HH:mm')} | ${company.name || 'ESSAR GLASS'} Workshop Order`,
+        margin, footerY
+      )
+      doc.text(`Page ${p} of ${pageCount}`, pageW - margin, footerY, { align: 'right' })
+    }
+
+    doc.save(makePdfFilename(wo.wo_number || 'WO', cust.name || 'Customer', 'Customer'))
+    return doc
+  } catch (err) {
+    console.error('Workshop Order PDF generation failed:', err)
     throw err
   }
 }
