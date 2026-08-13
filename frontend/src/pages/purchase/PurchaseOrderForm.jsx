@@ -435,25 +435,11 @@ const PurchaseOrderForm = () => {
   }
 
   const receiveMutation = useMutation({
-    mutationFn: async () => {
-      const lines = getFlatLines()
-      for (const line of lines) {
-        if (line.product_id) {
-          await stockMovementApi.create({
-            product_id: line.product_id,
-            quantity: line.quantity,
-            movement_type: 'in',
-            po_id: parseInt(id),
-            reference: record?.po_number,
-            date: new Date().toISOString()
-          })
-        }
-      }
-      await purchaseOrderApi.changeStatus(id, 'received')
-    },
+    mutationFn: () => purchaseOrderApi.changeStatus(id, 'received'),
     onSuccess: () => {
-      message.success('Stock updated for all products')
+      message.success('Purchase Order marked as received & stock posted')
       queryClient.invalidateQueries({ queryKey: ['purchase_orders', id] })
+      queryClient.invalidateQueries({ queryKey: ['products'] })
     }
   })
 

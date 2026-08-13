@@ -352,6 +352,21 @@ def make_crud_router(
         db.add(item)
         db.commit()
         db.refresh(item)
+
+        tbl = getattr(model, "__tablename__", None)
+        if tbl == "stock_movements":
+            from app.services.stock_service import recompute_stock
+            recompute_stock(db, item.product_id, item.company_id)
+            db.commit()
+        elif tbl == "purchase_orders" and item.status == "received":
+            from app.services.stock_service import sync_po_stock_movements
+            sync_po_stock_movements(db, item, "received", None)
+            db.commit()
+        elif tbl == "delivery_challans" and item.status == "delivered":
+            from app.services.stock_service import sync_dc_stock_movements
+            sync_dc_stock_movements(db, item, "delivered", None)
+            db.commit()
+
         return serialize_row(item)
 
     @router.put("/{item_id}")
@@ -368,6 +383,9 @@ def make_crud_router(
         item = q.first()
         if not item:
             raise HTTPException(status_code=404, detail="Not found")
+
+        old_status = getattr(item, "status", None)
+        old_product_id = getattr(item, "product_id", None)
 
         update_data = data.model_dump(exclude_unset=True)
 
@@ -500,6 +518,27 @@ def make_crud_router(
 
         db.commit()
         db.refresh(item)
+
+        tbl = getattr(model, "__tablename__", None)
+        if tbl == "stock_movements":
+            from app.services.stock_service import recompute_stock
+            recompute_stock(db, item.product_id, item.company_id)
+            if old_product_id and old_product_id != item.product_id:
+                recompute_stock(db, old_product_id, item.company_id)
+            db.commit()
+        elif tbl == "purchase_orders":
+            new_st = getattr(item, "status", None)
+            if new_st != old_status:
+                from app.services.stock_service import sync_po_stock_movements
+                sync_po_stock_movements(db, item, new_st, old_status)
+                db.commit()
+        elif tbl == "delivery_challans":
+            new_st = getattr(item, "status", None)
+            if new_st != old_status:
+                from app.services.stock_service import sync_dc_stock_movements
+                sync_dc_stock_movements(db, item, new_st, old_status)
+                db.commit()
+
         return serialize_row(item)
 
     @router.patch("/{item_id}/status")
@@ -529,9 +568,22 @@ def make_crud_router(
             if not all_complete:
                 raise HTTPException(status_code=400, detail="Cannot mark workshop order as completed when lines are uncut.")
 
+        old_st = getattr(item, "status", None)
+        new_st = data.get("status")
         if hasattr(item, "status"):
-            item.status = data.get("status")
+            item.status = new_st
         db.commit()
+
+        tbl = getattr(model, "__tablename__", None)
+        if tbl == "purchase_orders" and new_st != old_st:
+            from app.services.stock_service import sync_po_stock_movements
+            sync_po_stock_movements(db, item, new_st, old_st)
+            db.commit()
+        elif tbl == "delivery_challans" and new_st != old_st:
+            from app.services.stock_service import sync_dc_stock_movements
+            sync_dc_stock_movements(db, item, new_st, old_st)
+            db.commit()
+
         db.refresh(item)
         return serialize_row(item)
 
@@ -592,11 +644,21 @@ def make_crud_router(
                 if active_superadmin_count <= 1:
                     raise HTTPException(status_code=403, detail="Cannot archive or delete the last remaining active superadmin")
 
+        tbl = getattr(model, "__tablename__", None)
+        pid = getattr(item, "product_id", None)
+        cid = getattr(item, "company_id", None)
+
         if hasattr(model, "is_active"):
             item.is_active = False
         else:
             db.delete(item)
         db.commit()
+
+        if tbl == "stock_movements" and pid:
+            from app.services.stock_service import recompute_stock
+            recompute_stock(db, pid, cid)
+            db.commit()
+
         return {"message": "Deleted"}
 
     return router

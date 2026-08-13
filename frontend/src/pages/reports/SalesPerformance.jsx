@@ -112,7 +112,7 @@ const DeltaChip = ({ current, previous, isPercent = false }) => {
 }
 
 // ── KPI Card Component ────────────────────────────────────────────────────────
-const KpiCard = ({ title, value, previousValue, prefix, suffix, color, icon, loading, isPercent = false, tooltipText }) => {
+const KpiCard = ({ title, value, previousValue, prefix, suffix, color, icon, loading, isPercent = false, tooltipText, subLine }) => {
   const formattedVal = value == null ? '—' : `${prefix || ''}${typeof value === 'number' ? value.toLocaleString('en-IN', { maximumFractionDigits: 1 }) : value}${suffix || ''}`
 
   return (
@@ -151,8 +151,15 @@ const KpiCard = ({ title, value, previousValue, prefix, suffix, color, icon, loa
         {loading ? (
           <Skeleton.Button active size="small" style={{ width: 100, height: 28 }} />
         ) : (
-          <div style={{ fontSize: 22, fontWeight: 700, color: value == null ? '#94a3b8' : '#0f172a', lineHeight: 1.2 }}>
-            {formattedVal}
+          <div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: value == null ? '#94a3b8' : '#0f172a', lineHeight: 1.2 }}>
+              {formattedVal}
+            </div>
+            {subLine && (
+              <div style={{ fontSize: 11, color: '#64748b', marginTop: 4, fontWeight: 500 }}>
+                {subLine}
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -170,7 +177,7 @@ const SalesPerformance = () => {
   const [historyPage, setHistoryPage] = useState(1)
   const [historyPageSize, setHistoryPageSize] = useState(25)
   const [historySalesperson, setHistorySalesperson] = useState('')
-  const [historyDocType, setHistoryDocType] = useState('')
+  const [historyDocType, setHistoryDocType] = useState('Sales Order')
   const [historySearch, setHistorySearch] = useState('')
   const [exporting, setExporting] = useState(false)
 
@@ -261,6 +268,18 @@ const SalesPerformance = () => {
     )
   }, [summary, isLoading])
 
+  const profitSubLine = useMemo(() => {
+    const totalSo = summary.so_count || 0
+    const withoutCost = summary.so_without_cost_count || 0
+    const withCost = summary.so_with_cost_count || 0
+
+    if (totalSo === 0) return 'No sales orders in period'
+    if (withoutCost === totalSo) {
+      return `No cost data — ${withoutCost} of ${totalSo} orders excluded`
+    }
+    return `Based on ${withCost} of ${totalSo} orders`
+  }, [summary.so_count, summary.so_without_cost_count, summary.so_with_cost_count])
+
   const maxSoValue = useMemo(() => {
     return Math.max(...salespeople.map(r => r.so_value || 0), 1)
   }, [salespeople])
@@ -283,7 +302,9 @@ const SalesPerformance = () => {
   const handleExport = async () => {
     try {
       setExporting(true)
-      const res = await api.get('/api/v1/reports/sales-performance/export', { params: reportParams })
+      const exportParams = { ...reportParams, doc_type: historyDocType }
+      if (historySalesperson) exportParams.salesperson = historySalesperson
+      const res = await api.get('/api/v1/reports/sales-performance/export', { params: exportParams })
       const fullData = res.data
 
       const fullHistory = fullData.history || []
@@ -831,7 +852,8 @@ const SalesPerformance = () => {
             color="#10b981"
             icon={<DollarOutlined />}
             loading={isLoading}
-            tooltipText="Sum of profit amount across all sales orders with cost rates filled."
+            subLine={profitSubLine}
+            tooltipText="Sum of profit amount across sales orders with cost rates. Cost rates are entered on the quotation's Cost Analysis section."
           />
         </Col>
         <Col xs={24} sm={12} md={8} lg={4}>
@@ -844,7 +866,8 @@ const SalesPerformance = () => {
             icon={<RiseOutlined />}
             loading={isLoading}
             isPercent={true}
-            tooltipText="Weighted average margin % (Total Profit / Total Assessable Value with cost rates)."
+            subLine={profitSubLine}
+            tooltipText="Weighted average margin % (Total Profit / Total Assessable Value with cost rates). Cost rates are entered on the quotation's Cost Analysis section."
           />
         </Col>
         <Col xs={24} sm={12} md={8} lg={4}>
@@ -937,22 +960,31 @@ const SalesPerformance = () => {
                       const maxVal = Math.max(...funnel.map(f => f.value), 1)
                       const pct = Math.min(100, Math.round((item.value / maxVal) * 100))
                       const prevStage = idx > 0 ? funnel[idx - 1] : null
-                      const dropoffPct = prevStage && prevStage.count > 0 ? ((item.count / prevStage.count) * 100).toFixed(0) : null
+                      
+                      let convRate = null
+                      if (prevStage && prevStage.count > 0) {
+                        const convertedFromPrev = item.converted_from_prev != null ? item.converted_from_prev : item.count
+                        convRate = Math.min(100, Math.round((convertedFromPrev / prevStage.count) * 100))
+                      }
+
+                      const breakdownTag = item.sub_text ? ` (${item.sub_text})` : ''
 
                       return (
                         <div key={item.stage} style={{ background: '#f8fafc', borderRadius: 10, padding: '10px 14px', border: '1px solid #f1f5f9' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                            <Space>
+                            <Space wrap>
                               <Text strong style={{ fontSize: 13, color: '#1e293b' }}>{item.stage}</Text>
-                              <Tag style={{ borderRadius: 10, fontSize: 11 }}>{item.count} items</Tag>
+                              <Tag style={{ borderRadius: 10, fontSize: 11 }}>
+                                {item.count} items{breakdownTag}
+                              </Tag>
                             </Space>
                             <Space>
                               <Text strong style={{ color: COLORS[idx % COLORS.length], fontSize: 13 }}>
                                 {fmtINR(item.value)}
                               </Text>
-                              {dropoffPct != null && (
+                              {convRate != null && (
                                 <Text type="secondary" style={{ fontSize: 11 }}>
-                                  ({dropoffPct}% conv)
+                                  ({convRate}% conv)
                                 </Text>
                               )}
                             </Space>
@@ -1058,14 +1090,13 @@ const SalesPerformance = () => {
               style={{ width: 200, borderRadius: 8 }}
             />
             <Select
-              value={historyDocType || undefined}
+              value={historyDocType}
               onChange={v => { setHistoryDocType(v || ''); setHistoryPage(1); }}
-              placeholder="Filter Type"
-              allowClear
-              style={{ width: 140, borderRadius: 8 }}
+              style={{ width: 190, borderRadius: 8 }}
             >
-              <Option value="Quotation">Quotations</Option>
-              <Option value="Sales Order">Sales Orders</Option>
+              <Option value="Sales Order">Sales Orders Only</Option>
+              <Option value="Quotation">Quotations Only</Option>
+              <Option value="">All Documents (SOs & Quotes)</Option>
             </Select>
             <Select
               value={historySalesperson || undefined}

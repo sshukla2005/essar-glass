@@ -18,6 +18,12 @@ class Product(Base, TimestampMixin, SoftDeleteMixin):
     on_hand_qty    = Column(Float,       default=0)
     min_qty        = Column(Float,       default=0)
     max_qty        = Column(Float,       nullable=True)
+    sheet_width_mm = Column(Float,       nullable=True)
+    sheet_height_mm= Column(Float,       nullable=True)
+    stock_uom      = Column(String(20),  default="sheet", nullable=True)
+    brand          = Column(String(50),  nullable=True)
+    on_hand_sqm    = Column(Float,       default=0)
+    on_hand_sheets = Column(Float,       default=0)
     extra_data     = Column(JSON, nullable=True)
     company_id     = Column(Integer, ForeignKey("companies.id"),
                             nullable=True, index=True)

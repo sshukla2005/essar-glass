@@ -214,22 +214,11 @@ const DeliveryChallanForm = () => {
   })
 
   const deliverMutation = useMutation({
-    mutationFn: async () => {
-      const lines = getFlatLines()
-      for (const line of lines) {
-        if (line.product_id) {
-          await stockMovementApi.create({
-            product_id: line.product_id, quantity: line.qty_dispatched || line.quantity,
-            movement_type: 'out', dc_id: parseInt(id),
-            reference: record?.dc_number, date: new Date().toISOString()
-          })
-        }
-      }
-      await deliveryChallanApi.changeStatus(id, 'delivered')
-    },
+    mutationFn: () => deliveryChallanApi.changeStatus(id, 'delivered'),
     onSuccess: () => {
-      message.success('Stock deducted successfully')
+      message.success('Delivery Challan marked as delivered & stock posted')
       queryClient.invalidateQueries({ queryKey: ['delivery_challans', id] })
+      queryClient.invalidateQueries({ queryKey: ['products'] })
     }
   })
 

@@ -176,6 +176,8 @@ def _calc_summary(
 
     so_count = sos_q.count()
     so_value = round(float(sos_q.with_entities(func.sum(SalesOrder.total_amount)).scalar() or 0.0), 2)
+    so_from_quote_count = sos_q.filter(SalesOrder.quotation_id.isnot(None)).count()
+    so_direct_count = max(0, so_count - so_from_quote_count)
 
     # Profit calculation for SOs in period
     so_cost_rows = sos_q.with_entities(
@@ -263,6 +265,7 @@ def _calc_summary(
 
     return {
         "leads_created": leads_created,
+        "leads_with_q": leads_with_q,
         "quotes_created": quotes_created,
         "quotes_value": quotes_value,
         "quotes_won": quotes_won,
@@ -272,6 +275,8 @@ def _calc_summary(
         "lead_conversion_rate": lead_conversion_rate,
         "so_count": so_count,
         "so_value": so_value,
+        "so_from_quote_count": so_from_quote_count,
+        "so_direct_count": so_direct_count,
         "profit_amount": overall_profit_amount,
         "profit_percent": overall_profit_percent,
         "so_with_cost_count": so_with_cost_count,
@@ -595,12 +600,54 @@ def sales_performance(
 
     # ── Funnel Pipeline ──────────────────────────────────────────────────────
     funnel = [
-        {"stage": "Leads",        "count": summary["leads_created"],  "value": summary["expected_rev_sum"]},
-        {"stage": "Quotes",       "count": summary["quotes_created"], "value": summary["quotes_value"]},
-        {"stage": "Won",          "count": summary["quotes_won"],     "value": summary["quotes_won_value"]},
-        {"stage": "Sales Orders", "count": summary["so_count"],       "value": summary["so_value"]},
-        {"stage": "Invoiced",     "count": summary["invoiced_count"], "value": summary["invoiced_value"]},
-        {"stage": "Collected",    "count": summary["collected_count"],"value": summary["collected_value"]},
+        {
+            "stage": "Leads",
+            "count": summary["leads_created"],
+            "value": summary["expected_rev_sum"],
+            "converted_from_prev": summary["leads_with_q"],
+            "direct_count": 0,
+            "sub_text": None,
+        },
+        {
+            "stage": "Quotes",
+            "count": summary["quotes_created"],
+            "value": summary["quotes_value"],
+            "converted_from_prev": summary["leads_with_q"],
+            "direct_count": max(0, summary["quotes_created"] - summary["leads_with_q"]),
+            "sub_text": f"{summary['leads_with_q']} from leads, {max(0, summary['quotes_created'] - summary['leads_with_q'])} direct" if (summary["leads_created"] > 0 and summary["quotes_created"] > 0) else None,
+        },
+        {
+            "stage": "Won",
+            "count": summary["quotes_won"],
+            "value": summary["quotes_won_value"],
+            "converted_from_prev": summary["quotes_won"],
+            "direct_count": 0,
+            "sub_text": None,
+        },
+        {
+            "stage": "Sales Orders",
+            "count": summary["so_count"],
+            "value": summary["so_value"],
+            "converted_from_prev": summary["so_from_quote_count"],
+            "direct_count": summary["so_direct_count"],
+            "sub_text": f"{summary['so_from_quote_count']} from quotes, {summary['so_direct_count']} direct" if (summary["so_count"] > 0 and summary["so_direct_count"] > 0) else None,
+        },
+        {
+            "stage": "Invoiced",
+            "count": summary["invoiced_count"],
+            "value": summary["invoiced_value"],
+            "converted_from_prev": min(summary["invoiced_count"], summary["so_count"]),
+            "direct_count": max(0, summary["invoiced_count"] - summary["so_count"]),
+            "sub_text": None,
+        },
+        {
+            "stage": "Collected",
+            "count": summary["collected_count"],
+            "value": summary["collected_value"],
+            "converted_from_prev": summary["collected_count"],
+            "direct_count": 0,
+            "sub_text": None,
+        },
     ]
 
     # ── Monthly Trend (Last 12 Months) ───────────────────────────────────────
@@ -879,6 +926,7 @@ def sales_performance_export(
     from_date:   Optional[str] = Query(None, alias="from"),
     to_date:     Optional[str] = Query(None, alias="to"),
     salesperson: Optional[str] = Query(None),
+    doc_type:    Optional[str] = Query(None),
     db:          Session = Depends(get_db),
     user = Depends(get_current_user),
 ):
@@ -886,7 +934,7 @@ def sales_performance_export(
     f_date, t_date, period_label = _parse_dates(from_date, to_date)
 
     report_data = sales_performance(from_date=f_date.isoformat(), to_date=t_date.isoformat(), db=db, user=user)
-    history_dataset = _get_history_dataset(f_date, t_date, cid, db, salesperson_filter=salesperson)
+    history_dataset = _get_history_dataset(f_date, t_date, cid, db, salesperson_filter=salesperson, doc_type_filter=doc_type)
 
     report_data["history"] = history_dataset
     return report_data

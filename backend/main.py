@@ -835,6 +835,357 @@ def receivables_by_customer(
     return {"items": result, "total": len(result)}
 
 
+# ─── INVENTORY RECOMPUTATION & OPENING BALANCE ENDPOINTS ──────────────────────
+
+class OpeningBalanceItem(BaseModel):
+    product_id: int
+    quantity: float
+    remarks: Optional[str] = "Opening stock balance"
+
+class OpeningBalanceRequest(BaseModel):
+    items: List[OpeningBalanceItem]
+
+@app.post("/api/v1/inventory/recompute-all")
+def api_recompute_all_stock(
+    db: Session = Depends(get_db),
+    user = Depends(get_current_user)
+):
+    from app.models.product import Product
+    from app.services.stock_service import recompute_stock
+    products = db.query(Product).all()
+    recomputed = []
+    for p in products:
+        new_qty = recompute_stock(db, p.id, p.company_id)
+        recomputed.append({
+            "product_id": p.id,
+            "name": p.name,
+            "company_id": p.company_id,
+            "on_hand_qty": new_qty,
+            "stock_uom": p.stock_uom or "sheet"
+        })
+    db.commit()
+    return {"status": "success", "recomputed_count": len(recomputed), "items": recomputed}
+
+@app.post("/api/v1/inventory/recompute/{product_id}")
+def api_recompute_single_stock(
+    product_id: int,
+    db: Session = Depends(get_db),
+    user = Depends(get_current_user)
+):
+    from app.models.product import Product
+    from app.services.stock_service import recompute_stock
+    p = db.query(Product).filter(Product.id == product_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Product not found")
+    new_qty = recompute_stock(db, p.id, p.company_id)
+    db.commit()
+    return {"status": "success", "product_id": p.id, "on_hand_qty": new_qty}
+
+@app.post("/api/v1/inventory/opening-balance")
+def api_post_opening_balance(
+    payload: OpeningBalanceRequest,
+    db: Session = Depends(get_db),
+    user = Depends(get_current_user)
+):
+    from app.models.product import Product
+    from app.models.inventory import StockMovement
+    from app.services.stock_service import recompute_stock
+    from app.utils.helpers import get_next_code
+    from datetime import datetime
+
+    created = []
+    for item in payload.items:
+        p = db.query(Product).filter(Product.id == item.product_id).first()
+        if not p:
+            continue
+        cid = user.active_company_id or p.company_id
+        move_code = get_next_code(db, StockMovement, "move_number", "SM", company_id=cid)
+        sm = StockMovement(
+            move_number=move_code,
+            product_id=p.id,
+            movement_type="adjustment",
+            quantity=float(item.quantity),
+            reference="OPENING-BAL",
+            remarks=item.remarks or "Opening stock balance",
+            date=datetime.utcnow().isoformat(),
+            company_id=cid,
+        )
+        db.add(sm)
+        db.flush()
+        new_qty = recompute_stock(db, p.id, cid)
+        created.append({"product_id": p.id, "quantity": new_qty})
+
+    db.commit()
+    return {"status": "success", "updated_count": len(created), "items": created}
+
+
+class BulkImportOpeningItem(BaseModel):
+    row_number: int
+    product_id: Optional[int] = None
+    create_new: Optional[bool] = False
+    skip: Optional[bool] = False
+    product_code: Optional[str] = None
+    product_name: Optional[str] = None
+    brand: Optional[str] = None
+    glass_type: Optional[str] = None
+    thickness_mm: Optional[float] = None
+    sheet_width_mm: Optional[int] = None
+    sheet_height_mm: Optional[int] = None
+    stock_uom: Optional[str] = "sheet"
+    quantity: float
+    quantity_sqm: Optional[float] = None
+    quantity_sheets: Optional[float] = None
+    unit_rate: Optional[float] = None
+    total_value: Optional[float] = None
+    rate: Optional[float] = 0.0
+
+class BulkImportOpeningRequest(BaseModel):
+    import_date: Optional[str] = None
+    filename: Optional[str] = "Import.xlsx"
+    warehouse_id: Optional[int] = None
+    warehouse_name: Optional[str] = None
+    expected_total_sqm: Optional[float] = None
+    expected_total_value: Optional[float] = None
+    items: List[BulkImportOpeningItem]
+
+@app.post("/api/v1/inventory/import-opening-stock")
+def api_import_opening_stock(
+    payload: BulkImportOpeningRequest,
+    db: Session = Depends(get_db),
+    user = Depends(get_current_user)
+):
+    from app.models.product import Product
+    from app.models.inventory import StockMovement
+    from app.models.warehouse import Warehouse
+    from app.services.stock_service import recompute_stock
+    from app.utils.helpers import get_next_code
+    from datetime import datetime
+
+    company_id = user.active_company_id
+    if not company_id:
+        raise HTTPException(status_code=400, detail="Active company context is required for stock import.")
+
+    import_date = payload.import_date or datetime.utcnow().strftime("%Y-%m-%d")
+    import_timestamp = int(datetime.utcnow().timestamp())
+    ref = f"OPENING-IMPORT-{import_timestamp}"
+
+    # Resolve or create Warehouse
+    target_warehouse = None
+    if payload.warehouse_id:
+        target_warehouse = db.query(Warehouse).filter(
+            Warehouse.id == payload.warehouse_id,
+            Warehouse.company_id == company_id
+        ).first()
+
+    if not target_warehouse:
+        w_name = (payload.warehouse_name or "YZA Location").strip()
+        target_warehouse = db.query(Warehouse).filter(
+            func.lower(Warehouse.name) == w_name.lower(),
+            Warehouse.company_id == company_id,
+            Warehouse.is_active == True
+        ).first()
+
+        if not target_warehouse:
+            target_warehouse = Warehouse(
+                name=w_name,
+                code="YZA",
+                company_id=company_id,
+                is_active=True
+            )
+            db.add(target_warehouse)
+            db.flush()
+
+    results = []
+    imported_count = 0
+    created_count = 0
+    skipped_count = 0
+    total_imported_sqm = 0.0
+    total_imported_value = 0.0
+
+    try:
+        with db.begin_nested():
+            for item in payload.items:
+                q_sqm = item.quantity_sqm if item.quantity_sqm is not None else float(item.quantity or 0.0)
+                q_sheets = item.quantity_sheets
+
+                if item.skip or (q_sqm <= 0 and (q_sheets is None or q_sheets <= 0)):
+                    skipped_count += 1
+                    results.append({
+                        "row_number": item.row_number,
+                        "product_name": item.product_name or "—",
+                        "status": "skipped",
+                        "reason": "Marked as skip or zero/invalid quantity",
+                        "product_id": item.product_id
+                    })
+                    continue
+
+                target_product = None
+                is_new_created = False
+
+                # Handle Create New Product
+                if item.create_new:
+                    p_code = (item.product_code or "").strip()
+                    p_name = (item.product_name or "").strip()
+                    if not p_name:
+                        raise HTTPException(status_code=400, detail=f"Row #{item.row_number}: Product Name is required to create a new product.")
+
+                    # Check for collision in company
+                    existing = None
+                    if p_code:
+                        existing = db.query(Product).filter(
+                            Product.company_id == company_id,
+                            func.lower(Product.internal_ref) == p_code.lower(),
+                            Product.is_active == True
+                        ).first()
+                    if not existing:
+                        existing = db.query(Product).filter(
+                            Product.company_id == company_id,
+                            func.lower(Product.name) == p_name.lower(),
+                            Product.is_active == True
+                        ).first()
+
+                    if existing:
+                        target_product = existing
+                    else:
+                        uom_val = (item.stock_uom or "sheet").lower()
+                        if uom_val not in ["sheet", "nos", "service"]:
+                            uom_val = "sheet"
+
+                        if not p_code:
+                            p_code = get_next_code(db, Product, "internal_ref", "PROD", company_id=company_id)
+
+                        unit_cost = float(item.unit_rate or item.rate or 0.0)
+
+                        target_product = Product(
+                            company_id=company_id,
+                            internal_ref=p_code,
+                            name=p_name,
+                            brand=item.brand,
+                            glass_type=item.glass_type,
+                            thickness_mm=item.thickness_mm,
+                            sheet_width_mm=item.sheet_width_mm,
+                            sheet_height_mm=item.sheet_height_mm,
+                            stock_uom=uom_val,
+                            cost_price=unit_cost,
+                            sale_price=unit_cost,
+                            product_type="storable" if uom_val != "service" else "service",
+                            on_hand_qty=0.0,
+                            on_hand_sqm=0.0,
+                            on_hand_sheets=0.0,
+                            is_active=True
+                        )
+                        db.add(target_product)
+                        db.flush()
+                        is_new_created = True
+                        created_count += 1
+
+                elif item.product_id:
+                    target_product = db.query(Product).filter(
+                        Product.id == item.product_id,
+                        Product.company_id == company_id
+                    ).first()
+                    if not target_product:
+                        raise HTTPException(status_code=400, detail=f"Row #{item.row_number}: Product ID {item.product_id} not found in active company.")
+                else:
+                    raise HTTPException(status_code=400, detail=f"Row #{item.row_number}: Neither product_id nor create_new was provided.")
+
+                if target_product.stock_uom == "service":
+                    skipped_count += 1
+                    results.append({
+                        "row_number": item.row_number,
+                        "product_name": target_product.name,
+                        "status": "skipped",
+                        "reason": "Service product (non-stock)",
+                        "product_id": target_product.id
+                    })
+                    continue
+
+                # Update brand / cost_price if provided and missing
+                if item.brand and not target_product.brand:
+                    target_product.brand = item.brand
+                if item.unit_rate is not None and item.unit_rate > 0 and (not target_product.cost_price or target_product.cost_price == 0):
+                    target_product.cost_price = item.unit_rate
+
+                move_code = get_next_code(db, StockMovement, "move_number", "SM", company_id=company_id)
+                sm = StockMovement(
+                    move_number=move_code,
+                    product_id=target_product.id,
+                    movement_type="adjustment",
+                    quantity=q_sqm,
+                    quantity_sqm=q_sqm,
+                    quantity_sheets=q_sheets,
+                    warehouse_id=target_warehouse.id,
+                    unit_rate=item.unit_rate,
+                    total_value=item.total_value,
+                    reference=ref,
+                    remarks=f"Tally Import ({target_warehouse.name}), Row #{item.row_number}",
+                    date=import_date,
+                    company_id=company_id,
+                )
+                db.add(sm)
+                db.flush()
+
+                new_sqm = recompute_stock(db, target_product.id, company_id)
+
+                imported_count += 1
+                total_imported_sqm += q_sqm
+                if item.total_value is not None:
+                    total_imported_value += item.total_value
+
+                results.append({
+                    "row_number": item.row_number,
+                    "product_id": target_product.id,
+                    "product_name": target_product.name,
+                    "product_code": target_product.internal_ref,
+                    "status": "created" if is_new_created else "imported",
+                    "quantity_sqm": q_sqm,
+                    "quantity_sheets": q_sheets,
+                    "unit_rate": item.unit_rate,
+                    "total_value": item.total_value,
+                    "on_hand_sqm": new_sqm,
+                    "on_hand_sheets": target_product.on_hand_sheets,
+                    "reason": "Product created & opening movement posted" if is_new_created else "Opening movement posted"
+                })
+
+        db.commit()
+
+    except Exception as e:
+        db.rollback()
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=400, detail=f"Import failed during transaction. All changes rolled back. Error: {str(e)}")
+
+    rounded_imported_sqm = round(total_imported_sqm, 4)
+    rounded_imported_val = round(total_imported_value, 2)
+
+    exp_sqm = payload.expected_total_sqm if payload.expected_total_sqm is not None else 4068.0108
+    exp_val = payload.expected_total_value if payload.expected_total_value is not None else 1993017.58
+
+    diff_sqm = round(rounded_imported_sqm - exp_sqm, 4)
+    diff_val = round(rounded_imported_val - exp_val, 2)
+
+    return {
+        "status": "success",
+        "reference": ref,
+        "filename": payload.filename,
+        "warehouse": {
+            "id": target_warehouse.id,
+            "name": target_warehouse.name
+        },
+        "summary": {
+            "total_rows": len(payload.items),
+            "imported": imported_count,
+            "created": created_count,
+            "skipped": skipped_count,
+            "imported_sqm": rounded_imported_sqm,
+            "imported_value": rounded_imported_val,
+            "expected_sqm": exp_sqm,
+            "expected_value": exp_val,
+            "variance_sqm": diff_sqm,
+            "variance_value": diff_val,
+        },
+        "results": results
+    }
 
 
 

@@ -273,10 +273,33 @@ const ProductForm = () => {
       label: 'Inventory',
       children: (
         <>
+          <Divider orientation="left">Stock & Unit Settings</Divider>
+          <Row gutter={16}>
+            <Col span={8}>
+              <Form.Item name="stock_uom" label="Stock Unit of Measure (UoM)">
+                <Select options={[
+                  { value: 'sheet', label: 'Sheets (Glass)' },
+                  { value: 'nos', label: 'Nos (Items / Hardware)' },
+                  { value: 'service', label: 'Service (Non-Stock)' },
+                ]} />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="sheet_width_mm" label="Sheet Width (mm)">
+                <InputNumber min={0} style={{ width: '100%' }} placeholder="e.g., 2440" />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="sheet_height_mm" label="Sheet Height (mm)">
+                <InputNumber min={0} style={{ width: '100%' }} placeholder="e.g., 3660" />
+              </Form.Item>
+            </Col>
+          </Row>
+
           <Divider orientation="left">Stock Levels</Divider>
           <Row gutter={16}>
             <Col span={8}>
-              <Form.Item name="on_hand_qty" label="On Hand Qty">
+              <Form.Item name="on_hand_qty" label="On Hand Qty (Derived)">
                 <InputNumber disabled style={{ width: '100%' }} />
               </Form.Item>
             </Col>
@@ -313,7 +336,7 @@ const ProductForm = () => {
       onDiscard={() => navigate('/masters/products')}
     >
       <Form form={form} layout="vertical" initialValues={{
-        product_type: 'storable', can_be_sold: true, can_be_purchased: true, on_hand_qty: 0,
+        product_type: 'storable', stock_uom: 'sheet', can_be_sold: true, can_be_purchased: true, on_hand_qty: 0,
       }}>
         <CompanySelector form={form} />
         <Tabs items={tabItems} size="large" />
