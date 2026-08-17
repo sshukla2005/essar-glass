@@ -19,16 +19,90 @@ import OpeningStockImportModal from './OpeningStockImportModal'
 
 const { Title, Text } = Typography
 
+const NewProductFields = ({ form, products }) => {
+  const newName = Form.useWatch('new_name', form)
+  const similarProducts = useMemo(() => {
+    if (!newName || !newName.trim()) return []
+    const normTyped = newName.trim().toLowerCase().replace(/\s+/g, ' ')
+    return products.filter(p => {
+      const normName = (p.name || '').trim().toLowerCase().replace(/\s+/g, ' ')
+      return normName.includes(normTyped) || normTyped.includes(normName)
+    }).slice(0, 3)
+  }, [newName, products])
+
+  return (
+    <div style={{ border: '1px dashed #3b82f6', borderRadius: 8, padding: 12, marginBottom: 16, background: '#eff6ff' }}>
+      <Text strong style={{ display: 'block', marginBottom: 8, color: '#1d4ed8', fontSize: 13 }}>
+        ✨ New Product Master Details
+      </Text>
+
+      {similarProducts.length > 0 && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message={
+            <div>
+              Similar products already exist — select one instead of creating a duplicate:
+              <ul style={{ margin: '4px 0 0 16px', padding: 0 }}>
+                {similarProducts.map(p => (
+                  <li key={p.id}>{p.name} ({p.sheet_width_mm}×{p.sheet_height_mm}mm)</li>
+                ))}
+              </ul>
+            </div>
+          }
+        />
+      )}
+
+      <Form.Item
+        name="new_name"
+        label="Product Name"
+        rules={[{ required: true, message: 'Please enter product name' }]}
+        style={{ marginBottom: 12 }}
+      >
+        <Input placeholder="e.g. CLEAR FLOAT IMP 12 X 214 X 366" />
+      </Form.Item>
+
+      <Row gutter={12}>
+        <Col span={8}>
+          <Form.Item name="new_brand" label="Brand" style={{ marginBottom: 12 }}>
+            <Input placeholder="e.g. Saint-Gobain" />
+          </Form.Item>
+        </Col>
+        <Col span={8}>
+          <Form.Item
+            name="new_thickness_mm"
+            label="Thickness (mm)"
+            rules={[{ required: true, message: 'Required' }]}
+            style={{ marginBottom: 12 }}
+          >
+            <InputNumber min={0} style={{ width: '100%' }} placeholder="e.g. 12" />
+          </Form.Item>
+        </Col>
+        <Col span={8}>
+          <Form.Item name="new_cost_price" label="Cost Rate (₹/sqm)" style={{ marginBottom: 12 }}>
+            <InputNumber min={0} style={{ width: '100%' }} placeholder="e.g. 450" />
+          </Form.Item>
+        </Col>
+      </Row>
+    </div>
+  )
+}
+
 const StockOverview = () => {
   const { message } = App.useApp()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const [search, setSearch] = useState('')
   const [adjModalOpen, setAdjModalOpen] = useState(false)
   const [openingModalOpen, setOpeningModalOpen] = useState(false)
   const [importModalOpen, setImportModalOpen] = useState(false)
   const [adjForm] = Form.useForm()
   const [openingForm] = Form.useForm()
+  const [search, setSearch] = useState('')
+  const [openingSearchText, setOpeningSearchText] = useState('')
+  const [openingIsNew, setOpeningIsNew] = useState(false)
+  const [adjSearchText, setAdjSearchText] = useState('')
+  const [adjIsNew, setAdjIsNew] = useState(false)
 
   const { data: productsData, isLoading: isProductsLoading } = useQuery({
     queryKey: ['products-all'],
@@ -37,7 +111,7 @@ const StockOverview = () => {
 
   const { data: movementsData } = useQuery({
     queryKey: ['stock-movements-overview'],
-    queryFn: () => stockMovementApi.list({ page_size: 2000 }).then(r => r.data)
+    queryFn: () => stockMovementApi.list({ page_size: 1000 }).then(r => r.data)
   })
 
   const { data: warehouses = [] } = useQuery({
@@ -53,10 +127,92 @@ const StockOverview = () => {
     return rawProducts.filter(p => p.stock_uom !== 'service' && p.product_type !== 'service')
   }, [rawProducts])
 
+  const distinctGlassTypes = useMemo(() => {
+    const typesSet = new Set()
+    products.forEach(p => {
+      if (p.glass_type && p.glass_type.trim()) {
+        typesSet.add(p.glass_type.trim())
+      }
+    })
+    const defaults = ['Clear', 'Tinted', 'Reflective', 'Mirror', 'Low-E', 'Frosted']
+    defaults.forEach(d => typesSet.add(d))
+    return Array.from(typesSet).map(gt => ({ value: gt, label: gt }))
+  }, [products])
+
+  const openingProductOptions = useMemo(() => {
+    const opts = products.map(p => ({
+      value: p.id,
+      label: `${p.name}${p.sheet_width_mm && p.sheet_height_mm ? ` — ${p.sheet_width_mm}×${p.sheet_height_mm}mm` : ''}`
+    }))
+    if (openingSearchText && openingSearchText.trim()) {
+      const trimmed = openingSearchText.trim()
+      const exactMatch = products.some(p => (p.name || '').toLowerCase() === trimmed.toLowerCase())
+      if (!exactMatch || products.length === 0) {
+        opts.unshift({
+          value: '__NEW__',
+          label: `✨ Create new product: "${trimmed}"`
+        })
+      }
+    } else if (products.length === 0) {
+      opts.unshift({
+        value: '__NEW__',
+        label: `✨ Create new product`
+      })
+    }
+    return opts
+  }, [products, openingSearchText])
+
+  const adjProductOptions = useMemo(() => {
+    const opts = products.map(p => ({
+      value: p.id,
+      label: `${p.name}${p.sheet_width_mm && p.sheet_height_mm ? ` — ${p.sheet_width_mm}×${p.sheet_height_mm}mm` : ''} (Current Stock: ${p.on_hand_sqm || 0} sqm)`
+    }))
+    if (adjSearchText && adjSearchText.trim()) {
+      const trimmed = adjSearchText.trim()
+      const exactMatch = products.some(p => (p.name || '').toLowerCase() === trimmed.toLowerCase())
+      if (!exactMatch || products.length === 0) {
+        opts.unshift({
+          value: '__NEW__',
+          label: `✨ Create new product: "${trimmed}"`
+        })
+      }
+    } else if (products.length === 0) {
+      opts.unshift({
+        value: '__NEW__',
+        label: `✨ Create new product`
+      })
+    }
+    return opts
+  }, [products, adjSearchText])
+
   // Mutations
   const adjustMutation = useMutation({
     mutationFn: async (values) => {
-      const p = products.find(item => item.id === values.product_id)
+      let productId = values.product_id
+      let p = products.find(item => item.id === productId)
+
+      // Inline product creation (AI4 & AI5)
+      if (values.is_new_product || productId === '__NEW__') {
+        const rawGt = values.glass_type || values.new_glass_type
+        const glassTypeVal = Array.isArray(rawGt) ? rawGt[0] : rawGt
+        const widthVal = values.sheet_width_mm || values.new_sheet_width_mm
+        const heightVal = values.sheet_height_mm || values.new_sheet_height_mm
+
+        const created = await productApi.create({
+          name: values.new_name,
+          glass_type: glassTypeVal,
+          brand: values.new_brand || null,
+          thickness_mm: values.new_thickness_mm ? parseFloat(values.new_thickness_mm) : null,
+          sheet_width_mm: widthVal ? parseFloat(widthVal) : null,
+          sheet_height_mm: heightVal ? parseFloat(heightVal) : null,
+          cost_price: values.new_cost_price ? parseFloat(values.new_cost_price) : 0,
+          stock_uom: 'sheet',
+        })
+        const newProd = created?.data || created
+        productId = newProd.id
+        p = newProd
+      }
+
       let qtySqm = (values.qty_change !== undefined && values.qty_change !== null && values.qty_change !== '')
         ? parseFloat(values.qty_change)
         : ((values.quantity_sqm !== undefined && values.quantity_sqm !== null && values.quantity_sqm !== '')
@@ -87,10 +243,13 @@ const StockOverview = () => {
       if (qtySqm === null || isNaN(qtySqm)) qtySqm = 0
       if (qtySheets === null || isNaN(qtySheets)) qtySheets = 0
 
-      const warehouseId = values.warehouse_id || warehouses[0]?.id || 1
+      const warehouseId = values.warehouse_id || warehouses[0]?.id
+      if (!warehouseId) {
+        throw new Error('No valid warehouse available for the active company. Please select or create a warehouse first.')
+      }
 
       return stockMovementApi.create({
-        product_id: values.product_id,
+        product_id: productId,
         movement_type: 'adjustment',
         quantity: qtySqm,
         quantity_sqm: qtySqm,
@@ -106,6 +265,8 @@ const StockOverview = () => {
       message.success('Stock movement posted successfully')
       setAdjModalOpen(false)
       adjForm.resetFields()
+      setAdjIsNew(false)
+      setAdjSearchText('')
     },
     onError: (err) => {
       const errorMsg = err?.response?.data?.detail || err?.message || 'Failed to post stock adjustment'
@@ -115,41 +276,68 @@ const StockOverview = () => {
 
   const openingStockMutation = useMutation({
     mutationFn: async (values) => {
-      const p = products.find(item => item.id === values.product_id)
-      let qtySqm = (values.opening_qty !== undefined && values.opening_qty !== null && values.opening_qty !== '')
-        ? parseFloat(values.opening_qty)
-        : ((values.quantity_sqm !== undefined && values.quantity_sqm !== null && values.quantity_sqm !== '')
-          ? parseFloat(values.quantity_sqm)
-          : ((values.quantity !== undefined && values.quantity !== null && values.quantity !== '')
-            ? parseFloat(values.quantity)
-            : null))
+      let productId = values.product_id
+      let p = products.find(item => item.id === productId)
+
+      // Inline product creation (AI4)
+      if (values.is_new_product || productId === '__NEW__') {
+        const rawGt = values.glass_type || values.new_glass_type
+        const glassTypeVal = Array.isArray(rawGt) ? rawGt[0] : rawGt
+        const widthVal = values.sheet_width_mm || values.new_sheet_width_mm
+        const heightVal = values.sheet_height_mm || values.new_sheet_height_mm
+
+        const created = await productApi.create({
+          name: values.new_name,
+          glass_type: glassTypeVal,
+          brand: values.new_brand || null,
+          thickness_mm: values.new_thickness_mm ? parseFloat(values.new_thickness_mm) : null,
+          sheet_width_mm: widthVal ? parseFloat(widthVal) : null,
+          sheet_height_mm: heightVal ? parseFloat(heightVal) : null,
+          cost_price: values.new_cost_price ? parseFloat(values.new_cost_price) : 0,
+          stock_uom: 'sheet',
+        })
+        const newProd = created?.data || created
+        productId = newProd.id
+        p = newProd
+      }
 
       let qtySheets = (values.quantity_sheets !== undefined && values.quantity_sheets !== null && values.quantity_sheets !== '')
         ? parseFloat(values.quantity_sheets)
         : null
 
-      // Derive missing unit based on product sheet dimensions (X1)
+      let qtySqm = (values.quantity_sqm !== undefined && values.quantity_sqm !== null && values.quantity_sqm !== '')
+        ? parseFloat(values.quantity_sqm)
+        : ((values.opening_qty !== undefined && values.opening_qty !== null && values.opening_qty !== '')
+          ? parseFloat(values.opening_qty)
+          : ((values.quantity !== undefined && values.quantity !== null && values.quantity !== '')
+            ? parseFloat(values.quantity)
+            : null))
+
+      // Derive missing unit based on product sheet dimensions
       const widthM = p?.sheet_width_mm ? p.sheet_width_mm / 1000.0 : 0
       const heightM = p?.sheet_height_mm ? p.sheet_height_mm / 1000.0 : 0
       const sheetArea = widthM * heightM
 
-      if (qtySqm !== null && !isNaN(qtySqm)) {
-        if (qtySheets === null || isNaN(qtySheets)) {
-          qtySheets = sheetArea > 0 ? Math.round((qtySqm / sheetArea) * 10000) / 10000 : 0
-        }
-      } else if (qtySheets !== null && !isNaN(qtySheets)) {
+      if (qtySheets !== null && !isNaN(qtySheets)) {
         if (qtySqm === null || isNaN(qtySqm)) {
           qtySqm = sheetArea > 0 ? Math.round((qtySheets * sheetArea) * 10000) / 10000 : 0
+        }
+      } else if (qtySqm !== null && !isNaN(qtySqm)) {
+        if (qtySheets === null || isNaN(qtySheets)) {
+          qtySheets = sheetArea > 0 ? Math.round((qtySqm / sheetArea) * 10000) / 10000 : 0
         }
       }
 
       if (qtySqm === null || isNaN(qtySqm)) qtySqm = 0
       if (qtySheets === null || isNaN(qtySheets)) qtySheets = 0
 
-      const warehouseId = values.warehouse_id || warehouses[0]?.id || 1
+      const warehouseId = values.warehouse_id || warehouses[0]?.id
+      if (!warehouseId) {
+        throw new Error('No valid warehouse available for the active company. Please select or create a warehouse first.')
+      }
 
       return stockMovementApi.create({
-        product_id: values.product_id,
+        product_id: productId,
         movement_type: 'adjustment',
         quantity: qtySqm,
         quantity_sqm: qtySqm,
@@ -165,6 +353,8 @@ const StockOverview = () => {
       message.success('Opening stock balance set successfully')
       setOpeningModalOpen(false)
       openingForm.resetFields()
+      setOpeningIsNew(false)
+      setOpeningSearchText('')
     },
     onError: (err) => {
       const errorMsg = err?.response?.data?.detail || err?.message || 'Failed to set opening stock balance'
@@ -291,27 +481,62 @@ const StockOverview = () => {
       render: v => v ? <Tag color="blue">{v}</Tag> : '—'
     },
     {
-      title: 'Thickness', dataIndex: 'thickness_mm', key: 'thickness_mm', width: 90,
-      render: v => v ? `${v} mm` : '—'
+      title: 'Company Warehouse', key: 'warehouse', width: 160,
+      render: (_, r) => {
+        // When a warehouse filter is active, show that warehouse.
+        // Otherwise list every warehouse holding stock of this product.
+        if (selectedWarehouseFilter) {
+          const w = warehouses.find(x => x.id === selectedWarehouseFilter)
+          return w ? <Tag color="geekblue">{w.name || w.label}</Tag> : '—'
+        }
+        const ids = [...new Set(
+          (movements || [])
+            .filter(m => m.product_id === r.id && m.warehouse_id)
+            .map(m => m.warehouse_id)
+        )]
+        if (!ids.length) return <Text type="secondary" style={{ fontSize: 12 }}>—</Text>
+        return (
+          <Space size={2} wrap>
+            {ids.map(id => {
+              const w = warehouses.find(x => x.id === id)
+              return <Tag key={id} color="geekblue" style={{ fontSize: 10, marginInlineEnd: 2 }}>{w?.name || w?.label || `#${id}`}</Tag>
+            })}
+          </Space>
+        )
+      }
     },
     {
-      title: 'Dimensions', key: 'dims', width: 120,
-      render: (_, r) => r.sheet_width_mm && r.sheet_height_mm ? `${r.sheet_width_mm}×${r.sheet_height_mm}mm` : '—'
+      title: 'Sheet Size', key: 'dims', width: 130,
+      render: (_, r) => r.sheet_width_mm && r.sheet_height_mm
+        ? <Text style={{ fontSize: 12 }}>{r.sheet_width_mm} × {r.sheet_height_mm} mm</Text>
+        : <Text type="secondary">—</Text>
     },
     {
-      title: 'On Hand Stock (Derived)', key: 'on_hand_qty', width: 180,
+      title: 'QTY', key: 'qty_sheets', width: 110, align: 'right',
       render: (_, r) => {
         const status = getStockStatus(r)
-        const { sqm, sheets } = getProductStock(r)
+        const { sheets } = getProductStock(r)
+        const col = status.color === 'green' ? '#16a34a' : status.color === 'orange' ? '#ea580c' : '#dc2626'
         return (
           <div>
-            <Text strong style={{ color: status.color === 'green' ? '#16a34a' : status.color === 'orange' ? '#ea580c' : '#dc2626', fontSize: 15 }}>
-              {sqm.toLocaleString(undefined, { maximumFractionDigits: 4 })} sqm
+            <Text strong style={{ color: col, fontSize: 15 }}>
+              {sheets.toLocaleString(undefined, { maximumFractionDigits: 2 })}
             </Text>
-            <br />
-            <Text type="secondary" style={{ fontSize: 12 }}>
-              ({sheets.toLocaleString(undefined, { maximumFractionDigits: 2 })} sheets)
+            <div><Text type="secondary" style={{ fontSize: 10 }}>sheets</Text></div>
+          </div>
+        )
+      }
+    },
+    {
+      title: 'Balance', key: 'balance_sqm', width: 130, align: 'right',
+      render: (_, r) => {
+        const { sqm } = getProductStock(r)
+        return (
+          <div>
+            <Text strong style={{ color: '#1e293b', fontSize: 14 }}>
+              {sqm.toLocaleString(undefined, { maximumFractionDigits: 4 })}
             </Text>
+            <div><Text type="secondary" style={{ fontSize: 10 }}>sqm</Text></div>
           </div>
         )
       }
@@ -349,7 +574,20 @@ const StockOverview = () => {
             size="small"
             icon={<ToolOutlined />}
             onClick={() => {
-              adjForm.setFieldsValue({ product_id: r.id, qty_change: 0 })
+              const gt = r.glass_type ? (Array.isArray(r.glass_type) ? r.glass_type : [r.glass_type]) : []
+              adjForm.resetFields()
+              adjForm.setFieldsValue({
+                product_id: r.id,
+                is_new_product: false,
+                glass_type: gt,
+                sheet_width_mm: r.sheet_width_mm,
+                sheet_height_mm: r.sheet_height_mm,
+                quantity_sheets: undefined,
+                qty_change: undefined,
+                warehouse_id: warehouses[0]?.id
+              })
+              setAdjIsNew(false)
+              setAdjSearchText('')
               setAdjModalOpen(true)
             }}
           >
@@ -508,15 +746,15 @@ const StockOverview = () => {
               Import Tally Stock (.xlsx)
             </Button>
             <Button
-              onClick={() => { openingForm.resetFields(); setOpeningModalOpen(true) }}
+              onClick={() => { openingForm.resetFields(); setOpeningIsNew(false); setOpeningSearchText(''); setOpeningModalOpen(true) }}
             >
               Set Opening Balance
             </Button>
             <Button
               icon={<PlusOutlined />}
-              onClick={() => { adjForm.resetFields(); setAdjModalOpen(true) }}
+              onClick={() => { adjForm.resetFields(); setAdjIsNew(false); setAdjSearchText(''); setAdjModalOpen(true) }}
             >
-              Adjust Stock
+              Add Stock
             </Button>
           </Space>
         </div>
@@ -536,41 +774,187 @@ const StockOverview = () => {
         />
       </Card>
 
-      {/* Adjust Stock Modal */}
+      {/* Add Stock Modal */}
       <Modal
-        title="📦 Adjust Stock"
+        title="📦 Add Stock"
         open={adjModalOpen}
         onCancel={() => setAdjModalOpen(false)}
         footer={null}
-        width={480}
+        width={520}
       >
-        <Form form={adjForm} layout="vertical" initialValues={{ warehouse_id: warehouses[0]?.id }} onFinish={v => adjustMutation.mutate(v)}>
+        <Form
+          form={adjForm}
+          layout="vertical"
+          initialValues={{ warehouse_id: warehouses[0]?.id, is_new_product: false }}
+          onFinish={v => adjustMutation.mutate(v)}
+          onValuesChange={(changedValues, allValues) => {
+            const { product_id, sheet_width_mm, sheet_height_mm } = allValues
+            const p = products.find(x => x.id === product_id || String(x.id) === String(product_id))
+            const w = sheet_width_mm || p?.sheet_width_mm || 0
+            const h = sheet_height_mm || p?.sheet_height_mm || 0
+            const area = (w / 1000.0) * (h / 1000.0)
+
+            if ('quantity_sheets' in changedValues) {
+              const s = changedValues.quantity_sheets
+              if (s !== undefined && s !== null && s !== '' && !isNaN(s) && area > 0) {
+                adjForm.setFieldsValue({ qty_change: Math.round(s * area * 10000) / 10000 })
+              } else if (s === undefined || s === null || s === '') {
+                adjForm.setFieldsValue({ qty_change: undefined })
+              }
+            } else if ('qty_change' in changedValues) {
+              const q = changedValues.qty_change
+              if (q !== undefined && q !== null && q !== '' && !isNaN(q) && area > 0) {
+                adjForm.setFieldsValue({ quantity_sheets: Math.round((q / area) * 10000) / 10000 })
+              } else if (q === undefined || q === null || q === '') {
+                adjForm.setFieldsValue({ quantity_sheets: undefined })
+              }
+            }
+          }}
+        >
+          <Form.Item name="is_new_product" hidden initialValue={false}>
+            <Input type="hidden" />
+          </Form.Item>
+
+          {/* 1. Product */}
           <Form.Item name="product_id" label="Product" rules={[{ required: true, message: 'Please select a product' }]}>
             <Select
               showSearch
-              placeholder="Select product"
-              options={products.map(p => ({
-                value: p.id,
-                label: `${p.name} (Current Stock: ${p.on_hand_sqm || 0} sqm)`
-              }))}
-              filterOption={(i, o) => o.label.toLowerCase().includes(i.toLowerCase())}
+              placeholder="Select or search product"
+              options={adjProductOptions}
+              onSearch={val => setAdjSearchText(val)}
+              onChange={(val) => {
+                if (val === '__NEW__') {
+                  setAdjIsNew(true)
+                  adjForm.setFieldsValue({
+                    product_id: '__NEW__',
+                    is_new_product: true,
+                    new_name: adjSearchText.trim(),
+                    glass_type: undefined,
+                    sheet_width_mm: undefined,
+                    sheet_height_mm: undefined,
+                  })
+                } else {
+                  setAdjIsNew(false)
+                  const p = products.find(x => x.id === val || String(x.id) === String(val))
+                  const gt = p?.glass_type ? (Array.isArray(p.glass_type) ? p.glass_type : [p.glass_type]) : undefined
+                  adjForm.setFieldsValue({
+                    is_new_product: false,
+                    glass_type: gt,
+                    sheet_width_mm: p?.sheet_width_mm ?? undefined,
+                    sheet_height_mm: p?.sheet_height_mm ?? undefined,
+                  })
+                  const sheets = adjForm.getFieldValue('quantity_sheets')
+                  const qtyChange = adjForm.getFieldValue('qty_change')
+                  if (p?.sheet_width_mm && p?.sheet_height_mm) {
+                    const area = (p.sheet_width_mm / 1000.0) * (p.sheet_height_mm / 1000.0)
+                    if (sheets !== undefined && sheets !== null && sheets !== '' && !isNaN(sheets) && area > 0) {
+                      adjForm.setFieldsValue({ qty_change: Math.round(sheets * area * 10000) / 10000 })
+                    } else if (qtyChange !== undefined && qtyChange !== null && qtyChange !== '' && !isNaN(qtyChange) && area > 0) {
+                      adjForm.setFieldsValue({ quantity_sheets: Math.round((qtyChange / area) * 10000) / 10000 })
+                    }
+                  }
+                }
+              }}
+              filterOption={(input, option) => {
+                if (option?.value === '__NEW__') return true
+                return (option?.label || '').toLowerCase().includes(input.toLowerCase())
+              }}
             />
           </Form.Item>
-          <Form.Item name="qty_change" label="Quantity Change (sqm)" tooltip="Use positive to add stock, negative to reduce" rules={[{ required: true, message: 'Please enter quantity change' }]}>
-            <InputNumber style={{ width: '100%' }} placeholder="+10 sqm to add, -5 sqm to reduce" />
+
+          {adjIsNew && (
+            <NewProductFields form={adjForm} products={products} />
+          )}
+
+          <Form.Item shouldUpdate noStyle>
+            {() => {
+              const pid = adjForm.getFieldValue('product_id')
+              const isNew = pid === '__NEW__' || adjForm.getFieldValue('is_new_product') === true || adjIsNew
+              const p = products.find(x => x.id === pid || String(x.id) === String(pid))
+              const isExisting = !isNew && !!p
+
+              return (
+                <>
+                  {/* 2. Glass Type */}
+                  <Form.Item
+                    name="glass_type"
+                    label="Glass Type"
+                    rules={adjIsNew ? [{ required: true, message: 'Please select or enter glass type' }] : []}
+                    extra={isExisting ? <Text type="secondary" style={{ fontSize: 11 }}>From product master</Text> : null}
+                  >
+                    <Select
+                      mode="tags"
+                      maxCount={1}
+                      disabled={!adjIsNew}
+                      placeholder="Select or type glass type"
+                      options={distinctGlassTypes}
+                    />
+                  </Form.Item>
+
+                  {/* 3. Company Warehouse */}
+                  <Form.Item name="warehouse_id" label="Company Warehouse" rules={[{ required: true, message: 'Please select a warehouse' }]}>
+                    <Select
+                      placeholder="Select warehouse"
+                      options={warehouses.map(w => ({ value: w.id, label: w.name }))}
+                    />
+                  </Form.Item>
+
+                  {/* 4. Sheet Size */}
+                  <Row gutter={12}>
+                    <Col span={12}>
+                      <Form.Item
+                        name="sheet_width_mm"
+                        label="Width (mm)"
+                        rules={adjIsNew ? [{ required: true, message: 'Width required' }] : []}
+                        extra={isExisting ? <Text type="secondary" style={{ fontSize: 11 }}>From product master</Text> : null}
+                      >
+                        <InputNumber disabled={!adjIsNew} style={{ width: '100%' }} placeholder="e.g. 2440" />
+                      </Form.Item>
+                    </Col>
+                    <Col span={12}>
+                      <Form.Item
+                        name="sheet_height_mm"
+                        label="Height (mm)"
+                        rules={adjIsNew ? [{ required: true, message: 'Height required' }] : []}
+                        extra={isExisting ? <Text type="secondary" style={{ fontSize: 11 }}>From product master</Text> : null}
+                      >
+                        <InputNumber disabled={!adjIsNew} style={{ width: '100%' }} placeholder="e.g. 3660" />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+
+                  {/* 5. QTY (sheets) & Balance (sqm) */}
+                  <Row gutter={12}>
+                    <Col span={12}>
+                      <Form.Item
+                        name="quantity_sheets"
+                        label="QTY (sheets)"
+                        rules={[{ required: true, message: 'Please enter sheet count' }]}
+                      >
+                        <InputNumber style={{ width: '100%' }} placeholder="e.g. 10" />
+                      </Form.Item>
+                    </Col>
+                    <Col span={12}>
+                      <Form.Item
+                        name="qty_change"
+                        label="Balance (sqm)"
+                      >
+                        <InputNumber style={{ width: '100%' }} placeholder="e.g. 89.304" />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+                </>
+              )
+            }}
           </Form.Item>
-          <Form.Item name="warehouse_id" label="Warehouse" rules={[{ required: true, message: 'Please select a warehouse' }]}>
-            <Select
-              placeholder="Select warehouse"
-              options={warehouses.map(w => ({ value: w.id, label: w.name }))}
-            />
-          </Form.Item>
+
+          {/* 6. Reason / Remarks */}
           <Form.Item name="remarks" label="Reason / Remarks">
             <Input.TextArea rows={2} placeholder="e.g., Physical count, damaged goods, etc." />
           </Form.Item>
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
             <Button onClick={() => setAdjModalOpen(false)}>Cancel</Button>
-            <Button type="primary" htmlType="submit" loading={adjustMutation.isPending}>Post Movement</Button>
+            <Button type="primary" htmlType="submit" loading={adjustMutation.isPending}>Save</Button>
           </div>
         </Form>
       </Modal>
@@ -581,41 +965,189 @@ const StockOverview = () => {
         open={openingModalOpen}
         onCancel={() => setOpeningModalOpen(false)}
         footer={null}
-        width={480}
+        width={520}
       >
-        <Form form={openingForm} layout="vertical" initialValues={{ warehouse_id: warehouses[0]?.id, remarks: 'Physical stock audit count' }} onFinish={v => openingStockMutation.mutate(v)}>
+        <Form
+          form={openingForm}
+          layout="vertical"
+          initialValues={{ warehouse_id: warehouses[0]?.id, is_new_product: false, remarks: 'Physical stock audit count' }}
+          onFinish={v => openingStockMutation.mutate(v)}
+          onValuesChange={(changedValues, allValues) => {
+            const { product_id, sheet_width_mm, sheet_height_mm } = allValues
+            const p = products.find(x => x.id === product_id || String(x.id) === String(product_id))
+            const w = sheet_width_mm || p?.sheet_width_mm || 0
+            const h = sheet_height_mm || p?.sheet_height_mm || 0
+            const area = (w / 1000.0) * (h / 1000.0)
+
+            if ('quantity_sheets' in changedValues) {
+              const s = changedValues.quantity_sheets
+              if (s !== undefined && s !== null && s !== '' && !isNaN(s) && area > 0) {
+                const calculatedSqm = Math.round(s * area * 10000) / 10000
+                openingForm.setFieldsValue({ quantity_sqm: calculatedSqm, qty_change: calculatedSqm })
+              } else if (s === undefined || s === null || s === '') {
+                openingForm.setFieldsValue({ quantity_sqm: undefined, qty_change: undefined })
+              }
+            } else if ('quantity_sqm' in changedValues || 'qty_change' in changedValues) {
+              const q = changedValues.quantity_sqm ?? changedValues.qty_change
+              if (q !== undefined && q !== null && q !== '' && !isNaN(q) && area > 0) {
+                openingForm.setFieldsValue({ quantity_sheets: Math.round((q / area) * 10000) / 10000 })
+              } else if (q === undefined || q === null || q === '') {
+                openingForm.setFieldsValue({ quantity_sheets: undefined })
+              }
+            }
+          }}
+        >
+          <Form.Item name="is_new_product" hidden initialValue={false}>
+            <Input type="hidden" />
+          </Form.Item>
           <Alert
             message="This creates an adjustment baseline movement and sets the initial stock for the selected product."
             type="info"
             showIcon
             style={{ marginBottom: 16 }}
           />
+
+          {/* 1. Product */}
           <Form.Item name="product_id" label="Product" rules={[{ required: true, message: 'Please select a product' }]}>
             <Select
               showSearch
-              placeholder="Select product"
-              options={products.map(p => ({
-                value: p.id,
-                label: `${p.name}`
-              }))}
-              filterOption={(i, o) => o.label.toLowerCase().includes(i.toLowerCase())}
+              placeholder="Select or search product"
+              options={openingProductOptions}
+              onSearch={val => setOpeningSearchText(val)}
+              onChange={(val) => {
+                if (val === '__NEW__') {
+                  setOpeningIsNew(true)
+                  openingForm.setFieldsValue({
+                    product_id: '__NEW__',
+                    is_new_product: true,
+                    new_name: openingSearchText.trim(),
+                    glass_type: undefined,
+                    sheet_width_mm: undefined,
+                    sheet_height_mm: undefined,
+                  })
+                } else {
+                  setOpeningIsNew(false)
+                  const p = products.find(x => x.id === val || String(x.id) === String(val))
+                  const gt = p?.glass_type ? (Array.isArray(p.glass_type) ? p.glass_type : [p.glass_type]) : undefined
+                  openingForm.setFieldsValue({
+                    is_new_product: false,
+                    glass_type: gt,
+                    sheet_width_mm: p?.sheet_width_mm ?? undefined,
+                    sheet_height_mm: p?.sheet_height_mm ?? undefined,
+                  })
+                  const sheets = openingForm.getFieldValue('quantity_sheets')
+                  const qtySqm = openingForm.getFieldValue('quantity_sqm') ?? openingForm.getFieldValue('qty_change')
+                  if (p?.sheet_width_mm && p?.sheet_height_mm) {
+                    const area = (p.sheet_width_mm / 1000.0) * (p.sheet_height_mm / 1000.0)
+                    if (sheets !== undefined && sheets !== null && sheets !== '' && !isNaN(sheets) && area > 0) {
+                      const calculatedSqm = Math.round(sheets * area * 10000) / 10000
+                      openingForm.setFieldsValue({ quantity_sqm: calculatedSqm, qty_change: calculatedSqm })
+                    } else if (qtySqm !== undefined && qtySqm !== null && qtySqm !== '' && !isNaN(qtySqm) && area > 0) {
+                      openingForm.setFieldsValue({ quantity_sheets: Math.round((qtySqm / area) * 10000) / 10000 })
+                    }
+                  }
+                }
+              }}
+              filterOption={(input, option) => {
+                if (option?.value === '__NEW__') return true
+                return (option?.label || '').toLowerCase().includes(input.toLowerCase())
+              }}
             />
           </Form.Item>
-          <Form.Item name="opening_qty" label="Physical Opening Count (sqm)" rules={[{ required: true, message: 'Please enter physical count' }]}>
-            <InputNumber min={0} style={{ width: '100%' }} placeholder="Enter initial count in sqm (e.g. 50 sqm)" />
+
+          {openingIsNew && (
+            <NewProductFields form={openingForm} products={products} />
+          )}
+
+          <Form.Item shouldUpdate noStyle>
+            {() => {
+              const pid = openingForm.getFieldValue('product_id')
+              const isNew = pid === '__NEW__' || openingForm.getFieldValue('is_new_product') === true || openingIsNew
+              const p = products.find(x => x.id === pid || String(x.id) === String(pid))
+              const isExisting = !isNew && !!p
+
+              return (
+                <>
+                  {/* 2. Glass Type */}
+                  <Form.Item
+                    name="glass_type"
+                    label="Glass Type"
+                    rules={openingIsNew ? [{ required: true, message: 'Please select or enter glass type' }] : []}
+                    extra={isExisting ? <Text type="secondary" style={{ fontSize: 11 }}>From product master</Text> : null}
+                  >
+                    <Select
+                      mode="tags"
+                      maxCount={1}
+                      disabled={!openingIsNew}
+                      placeholder="Select or type glass type"
+                      options={distinctGlassTypes}
+                    />
+                  </Form.Item>
+
+                  {/* 3. Company Warehouse */}
+                  <Form.Item name="warehouse_id" label="Company Warehouse" rules={[{ required: true, message: 'Please select a warehouse' }]}>
+                    <Select
+                      placeholder="Select warehouse"
+                      options={warehouses.map(w => ({ value: w.id, label: w.name }))}
+                    />
+                  </Form.Item>
+
+                  {/* 4. Sheet Size */}
+                  <Row gutter={12}>
+                    <Col span={12}>
+                      <Form.Item
+                        name="sheet_width_mm"
+                        label="Width (mm)"
+                        rules={openingIsNew ? [{ required: true, message: 'Width required' }] : []}
+                        extra={isExisting ? <Text type="secondary" style={{ fontSize: 11 }}>From product master</Text> : null}
+                      >
+                        <InputNumber disabled={!openingIsNew} style={{ width: '100%' }} placeholder="e.g. 2440" />
+                      </Form.Item>
+                    </Col>
+                    <Col span={12}>
+                      <Form.Item
+                        name="sheet_height_mm"
+                        label="Height (mm)"
+                        rules={openingIsNew ? [{ required: true, message: 'Height required' }] : []}
+                        extra={isExisting ? <Text type="secondary" style={{ fontSize: 11 }}>From product master</Text> : null}
+                      >
+                        <InputNumber disabled={!openingIsNew} style={{ width: '100%' }} placeholder="e.g. 3660" />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+
+                  {/* 5. QTY (sheets) & Balance (sqm) */}
+                  <Row gutter={12}>
+                    <Col span={12}>
+                      <Form.Item
+                        name="quantity_sheets"
+                        label="QTY (sheets)"
+                        rules={[{ required: true, message: 'Please enter sheet count' }]}
+                      >
+                        <InputNumber style={{ width: '100%' }} placeholder="e.g. 10" />
+                      </Form.Item>
+                    </Col>
+                    <Col span={12}>
+                      <Form.Item
+                        name="quantity_sqm"
+                        label="Balance (sqm)"
+                      >
+                        <InputNumber style={{ width: '100%' }} placeholder="e.g. 89.304" />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+                </>
+              )
+            }}
           </Form.Item>
-          <Form.Item name="warehouse_id" label="Warehouse" rules={[{ required: true, message: 'Please select a warehouse' }]}>
-            <Select
-              placeholder="Select warehouse"
-              options={warehouses.map(w => ({ value: w.id, label: w.name }))}
-            />
-          </Form.Item>
-          <Form.Item name="remarks" label="Remarks">
+
+          {/* 6. Reason / Remarks */}
+          <Form.Item name="remarks" label="Reason / Remarks">
             <Input.TextArea rows={2} placeholder="Physical stock audit count" />
           </Form.Item>
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
             <Button onClick={() => setOpeningModalOpen(false)}>Cancel</Button>
-            <Button type="primary" htmlType="submit" loading={openingStockMutation.isPending}>Set Opening Stock</Button>
+            <Button type="primary" htmlType="submit" loading={openingStockMutation.isPending}>Save</Button>
           </div>
         </Form>
       </Modal>

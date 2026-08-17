@@ -246,6 +246,31 @@ def make_crud_router(
                 company_id=obj_data.get("company_id"),
             )
 
+        # Server-side guard: reject stock movements whose warehouse or product belongs to a different company
+        if getattr(model, "__tablename__", None) == "stock_movements":
+            wh_id = obj_data.get("warehouse_id")
+            if wh_id:
+                from app.models.warehouse import Warehouse
+                wh = db.query(Warehouse).filter(Warehouse.id == wh_id, Warehouse.is_active == True).first()
+                if not wh:
+                    raise HTTPException(status_code=400, detail=f"Warehouse {wh_id} not found or inactive")
+                if wh.company_id != obj_data.get("company_id"):
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Warehouse {wh_id} belongs to company {wh.company_id}, but stock movement is for company {obj_data.get('company_id')}"
+                    )
+            prod_id = obj_data.get("product_id")
+            if prod_id:
+                from app.models.product import Product
+                prod = db.query(Product).filter(Product.id == prod_id, Product.is_active == True).first()
+                if not prod:
+                    raise HTTPException(status_code=400, detail=f"Product {prod_id} not found or inactive")
+                if prod.company_id != obj_data.get("company_id"):
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Product {prod_id} belongs to company {prod.company_id}, but stock movement is for company {obj_data.get('company_id')}"
+                    )
+
         # Parse JSON string fields → proper objects
         for json_field in ['groups', 'lines', 'processes', 'permissions']:
             if json_field in obj_data and isinstance(obj_data[json_field], str):
@@ -397,6 +422,26 @@ def make_crud_router(
         update_data.pop("total_cost", None)
         update_data.pop("profit_amount", None)
         update_data.pop("profit_percent", None)
+
+        if getattr(model, "__tablename__", None) == "stock_movements":
+            wh_id = update_data.get("warehouse_id", getattr(item, "warehouse_id", None))
+            if wh_id:
+                from app.models.warehouse import Warehouse
+                wh = db.query(Warehouse).filter(Warehouse.id == wh_id, Warehouse.is_active == True).first()
+                if not wh or wh.company_id != item.company_id:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Warehouse {wh_id} belongs to company {wh.company_id if wh else None}, but stock movement is for company {item.company_id}"
+                    )
+            prod_id = update_data.get("product_id", getattr(item, "product_id", None))
+            if prod_id:
+                from app.models.product import Product
+                prod = db.query(Product).filter(Product.id == prod_id, Product.is_active == True).first()
+                if not prod or prod.company_id != item.company_id:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Product {prod_id} belongs to company {prod.company_id if prod else None}, but stock movement is for company {item.company_id}"
+                    )
 
         # Parse JSON string fields → proper objects
         for json_field in ['groups', 'lines', 'processes', 'permissions']:
