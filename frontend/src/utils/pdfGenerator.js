@@ -125,6 +125,11 @@ const toFraction = (d) => {
   return w === 0 ? `${s / g}/${16 / g}` : `${w} ${s / g}/${16 / g}`
 }
 
+export const fmtDim = (inchVal, unitMode = 'inch') =>
+  !inchVal ? '' :
+  unitMode === 'mm' ? String(Math.round(inchVal * 25.4)) : toFraction(inchVal)
+
+
 // ── Currency Formatter ──────
 const fmtR = (v) =>
   'Rs. ' + Number(v || 0).toLocaleString('en-IN', {
@@ -868,15 +873,15 @@ const drawVendorCard = (doc, vend, y) => {
 }
 
 // ── Table Column Definitions ──────
-// ── Table Column Definitions ──────
-const getColsConfig = (hasCep) => {
+const getColsConfig = (hasCep, unitMode = 'inch') => {
+  const unitLabel = unitMode === 'mm' ? 'mm' : 'Inch'
   if (hasCep) {
     return [
       { id: 'sr', h: 'Sr\nNo', w: 8 },
-      { id: 'act_w', h: 'WIDTH', w: 17, parent: 'Actual Size-Inch' },
-      { id: 'act_h', h: 'HEIGHT', w: 17, parent: 'Actual Size-Inch' },
-      { id: 'chg_w', h: 'WIDTH', w: 17, parent: 'Charge Size-Inch' },
-      { id: 'chg_h', h: 'HEIGHT', w: 17, parent: 'Charge Size-Inch' },
+      { id: 'act_w', h: 'WIDTH', w: 17, parent: `Actual Size-${unitLabel}` },
+      { id: 'act_h', h: 'HEIGHT', w: 17, parent: `Actual Size-${unitLabel}` },
+      { id: 'chg_w', h: 'WIDTH', w: 17, parent: `Charge Size-${unitLabel}` },
+      { id: 'chg_h', h: 'HEIGHT', w: 17, parent: `Charge Size-${unitLabel}` },
       { id: 'qty', h: 'Qty', w: 10, a: 'c' },
       { id: 'sqft', h: 'Sqft', w: 20, a: 'r' },
       { id: 'rate', h: 'Rate', w: 22, a: 'r' },
@@ -886,10 +891,10 @@ const getColsConfig = (hasCep) => {
   } else {
     return [
       { id: 'sr', h: 'Sr\nNo', w: 8 },
-      { id: 'act_w', h: 'WIDTH', w: 17, parent: 'Actual Size-Inch' },
-      { id: 'act_h', h: 'HEIGHT', w: 17, parent: 'Actual Size-Inch' },
-      { id: 'chg_w', h: 'WIDTH', w: 17, parent: 'Charge Size-Inch' },
-      { id: 'chg_h', h: 'HEIGHT', w: 17, parent: 'Charge Size-Inch' },
+      { id: 'act_w', h: 'WIDTH', w: 17, parent: `Actual Size-${unitLabel}` },
+      { id: 'act_h', h: 'HEIGHT', w: 17, parent: `Actual Size-${unitLabel}` },
+      { id: 'chg_w', h: 'WIDTH', w: 17, parent: `Charge Size-${unitLabel}` },
+      { id: 'chg_h', h: 'HEIGHT', w: 17, parent: `Charge Size-${unitLabel}` },
       { id: 'qty', h: 'Qty', w: 10, a: 'c' },
       { id: 'sqft', h: 'Sqft', w: 24, a: 'r' },
       { id: 'rate', h: 'Rate', w: 24, a: 'r' },
@@ -898,8 +903,8 @@ const getColsConfig = (hasCep) => {
   }
 }
 
-const buildCols = (hasCep) => {
-  const base = getColsConfig(hasCep)
+const buildCols = (hasCep, unitMode = 'inch') => {
+  const base = getColsConfig(hasCep, unitMode)
   let x = MARGIN.l
   const cols = base.map(c => {
     const res = { ...c, x }
@@ -1109,7 +1114,7 @@ const calculateGroupHeight = (group, hasCep) => {
 }
 
 // ── Draw Glass Card (Splits Dynamically across pages) ──
-const drawGroupCard = (doc, group, groupNo, hasCep, cols, startY, pageNum, quotation) => {
+const drawGroupCard = (doc, group, groupNo, hasCep, cols, startY, pageNum, quotation, unitMode = 'inch') => {
   const sizes = group.sizes || []
   
   const groupHeight = calculateGroupHeight(group, hasCep)
@@ -1163,10 +1168,10 @@ const drawGroupCard = (doc, group, groupNo, hasCep, cols, startY, pageNum, quota
     
     const vals = [
       String(si + 1),
-      w > 0 ? toFraction(w) : '',
-      h > 0 ? toFraction(h) : '',
-      chargedW > 0 ? toFraction(chargedW) : '',
-      chargedH > 0 ? toFraction(chargedH) : '',
+      w > 0 ? fmtDim(w, unitMode) : '',
+      h > 0 ? fmtDim(h, unitMode) : '',
+      chargedW > 0 ? fmtDim(chargedW, unitMode) : '',
+      chargedH > 0 ? fmtDim(chargedH, unitMode) : '',
       String(qty),
       sqft.toFixed(3),
       fmtN(rate),
@@ -1973,7 +1978,8 @@ export const generateQuotationPDF = async (quotation) => {
 
     const groups = quotation.groups || []
     const hasCep = groups.some(g => g.cep)
-    const cols = buildCols(hasCep)
+    const unitMode = quotation.unit_mode || 'inch'
+    const cols = buildCols(hasCep, unitMode)
     let pageNum = { val: 1, total: '?' }
 
     // Page 1 Setup
@@ -1987,7 +1993,7 @@ export const generateQuotationPDF = async (quotation) => {
 
     groups.forEach((group) => {
       groupNo++
-      const res = drawGroupCard(doc, group, groupNo, hasCep, cols, y, pageNum, quotation)
+      const res = drawGroupCard(doc, group, groupNo, hasCep, cols, y, pageNum, quotation, unitMode)
       totalQty += res.grpQty
       totalSqft += res.grpSqft
       totalCep += res.grpCep
@@ -2147,7 +2153,7 @@ export const generateQuotationPDF = async (quotation) => {
 
 // ── Draw Sales Order Items Card (Splits dynamically) ──
 // ── Draw Sales Order Items Card (Splits dynamically) ──
-const drawSOItemsCard = (doc, lines, hasCep, cols, startY, pageNum, so) => {
+const drawSOItemsCard = (doc, lines, hasCep, cols, startY, pageNum, so, unitMode = 'inch') => {
   let y = startY
   let ly = y + SP_8
   
@@ -2181,10 +2187,10 @@ const drawSOItemsCard = (doc, lines, hasCep, cols, startY, pageNum, so) => {
     
     const vals = [
       String(i + 1),
-      w > 0 ? toFraction(w) : '',
-      h > 0 ? toFraction(h) : '',
-      chargedW > 0 ? toFraction(chargedW) : '',
-      chargedH > 0 ? toFraction(chargedH) : '',
+      w > 0 ? fmtDim(w, unitMode) : '',
+      h > 0 ? fmtDim(h, unitMode) : '',
+      chargedW > 0 ? fmtDim(chargedW, unitMode) : '',
+      chargedH > 0 ? fmtDim(chargedH, unitMode) : '',
       String(qty),
       area.toFixed(3),
       fmtN(rate),
@@ -2201,7 +2207,7 @@ const drawSOItemsCard = (doc, lines, hasCep, cols, startY, pageNum, so) => {
   return { endY: ly, tQty, tArea, tAmt }
 }
 
-const drawSOGroupCard = (doc, group, groupNo, hasCep, cols, startY, pageNum, so) => {
+const drawSOGroupCard = (doc, group, groupNo, hasCep, cols, startY, pageNum, so, unitMode = 'inch') => {
   const sizes = group.sizes || []
   
   const groupHeight = calculateGroupHeight(group, hasCep)
@@ -2255,10 +2261,10 @@ const drawSOGroupCard = (doc, group, groupNo, hasCep, cols, startY, pageNum, so)
     
     const vals = [
       String(si + 1),
-      w > 0 ? toFraction(w) : '',
-      h > 0 ? toFraction(h) : '',
-      chargedW > 0 ? toFraction(chargedW) : '',
-      chargedH > 0 ? toFraction(chargedH) : '',
+      w > 0 ? fmtDim(w, unitMode) : '',
+      h > 0 ? fmtDim(h, unitMode) : '',
+      chargedW > 0 ? fmtDim(chargedW, unitMode) : '',
+      chargedH > 0 ? fmtDim(chargedH, unitMode) : '',
       String(qty),
       sqft.toFixed(3),
       fmtN(rate),
@@ -2275,6 +2281,7 @@ const drawSOGroupCard = (doc, group, groupNo, hasCep, cols, startY, pageNum, so)
   
   return { endY: ly, grpQty, grpSqft, grpCep, grpAmt }
 }
+
 
 export const generateSOPDF = async (so) => {
   try {
@@ -2321,7 +2328,8 @@ export const generateSOPDF = async (so) => {
 
     const groups = so.groups || []
     const hasCep = (groups.length > 0 ? groups.some(g => g.cep) : (so.lines || []).some(l => l.cep))
-    const cols = buildCols(hasCep)
+    const unitMode = so.unit_mode || 'inch'
+    const cols = buildCols(hasCep, unitMode)
     let pageNum = { val: 1, total: '?' }
 
     drawBorder(doc)
@@ -2344,7 +2352,7 @@ export const generateSOPDF = async (so) => {
       let groupNo = 0
       groups.forEach((group) => {
         groupNo++
-        const res = drawSOGroupCard(doc, group, groupNo, hasCep, cols, y, pageNum, so)
+        const res = drawSOGroupCard(doc, group, groupNo, hasCep, cols, y, pageNum, so, unitMode)
         totalQty += res.grpQty
         totalSqft += res.grpSqft
         totalCep += res.grpCep
@@ -2352,7 +2360,7 @@ export const generateSOPDF = async (so) => {
         y = res.endY + SP_16
       })
     } else {
-      const res = drawSOItemsCard(doc, so.lines || [], hasCep, cols, y, pageNum, so)
+      const res = drawSOItemsCard(doc, so.lines || [], hasCep, cols, y, pageNum, so, unitMode)
       totalQty = res.tQty
       totalSqft = res.tArea
       grandGlass = res.tAmt

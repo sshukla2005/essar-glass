@@ -1032,6 +1032,7 @@ const SalesOrderForm = () => {
       const sanitize = (obj) => Object.fromEntries(
         Object.entries(obj).map(([k, v]) => [k, v === null ? undefined : v])
       )
+      if (record.unit_mode) setSoUnit(record.unit_mode)
       form.setFieldsValue({
         ...sanitize(record),
         customer_id: record.customer_id,
@@ -1310,8 +1311,8 @@ const SalesOrderForm = () => {
       return {
         key: i,
         label: String.fromCharCode(97 + i),
-        width_display: soUnit === 'inch' ? `${toFraction(w)}"` : `${(w * 25.4).toFixed(1)}mm`,
-        height_display: soUnit === 'inch' ? `${toFraction(h)}"` : `${(h * 25.4).toFixed(1)}mm`,
+        width_display: soUnit === 'inch' ? `${toFraction(w)}"` : `${Math.round(w * 25.4)}mm`,
+        height_display: soUnit === 'inch' ? `${toFraction(h)}"` : `${Math.round(h * 25.4)}mm`,
         quantity: qty,
         selling_sqft: selling_sqft.toFixed(3),
         charged_sqft: Number(charged_sqft).toFixed(3),
@@ -1431,8 +1432,8 @@ const SalesOrderForm = () => {
           group_no: gi + 1,
           group_name: group.description || `Group ${gi + 1}`,
           size_label: String.fromCharCode(97 + si),
-          width_display: unit === 'inch' ? `${toFraction(w)}"` : `${(w * 25.4).toFixed(1)}mm`,
-          height_display: unit === 'inch' ? `${toFraction(h)}"` : `${(h * 25.4).toFixed(1)}mm`,
+          width_display: unit === 'inch' ? `${toFraction(w)}"` : `${Math.round(w * 25.4)}mm`,
+          height_display: unit === 'inch' ? `${toFraction(h)}"` : `${Math.round(h * 25.4)}mm`,
           quantity: qty,
           selling_rate: group.rate,
           cost_per_sqft: costPerSqft,
@@ -1589,6 +1590,7 @@ const SalesOrderForm = () => {
 
       values.lines = getFlatLines()
       values.groups = groups
+      values.unit_mode = soUnit
       values.hardware_items = hardwareItems
       values.labor_items = laborItems
       values.wastage_items = wastageItems
@@ -1618,6 +1620,8 @@ const SalesOrderForm = () => {
     try {
       const res = await quotationApi.get(val)
       const quotation = res.data
+
+      if (quotation.unit_mode) setSoUnit(quotation.unit_mode)
 
       form.setFieldsValue({
         customer_id: quotation.customer_id,
@@ -1957,6 +1961,7 @@ const SalesOrderForm = () => {
             discount_amount: discountAmt,
             dc_charges: dcCharges,
             advance_received: advanceRec,
+            unit_mode: unit,
             lines: getFlatLines(),
             groups,
             hardware_items: hardwareItems,

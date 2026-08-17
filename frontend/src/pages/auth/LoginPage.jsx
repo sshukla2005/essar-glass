@@ -1,23 +1,44 @@
-import React, { useState } from 'react'
-import { Form, Input, Button, Typography, Space, App } from 'antd'
+import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import brandLogo from '../../assets/Essar-logo.webp'
-
-const { Title, Text } = Typography
+import './LoginPage.css'
 
 const LoginPage = () => {
-  const { message } = App.useApp()
   const [loading, setLoading] = useState(false)
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const [errorMessage, setErrorMessage] = useState('')
+  const usernameInputRef = useRef(null)
+  const canvasRef = useRef(null)
   const navigate = useNavigate()
-  const [form] = Form.useForm()
 
-  const handleLogin = async (values) => {
+  useEffect(() => {
+    // AA6: Autofocus the username field on mount
+    if (usernameInputRef.current) {
+      usernameInputRef.current.focus()
+    }
+  }, [])
+
+  // AA4: Halved intensity mouse-tracking light
+  const handleMouseMove = (e) => {
+    if (!canvasRef.current) return
+    const rect = canvasRef.current.getBoundingClientRect()
+    const x = e.clientX - rect.left
+    const y = e.clientY - rect.top
+    canvasRef.current.style.setProperty('--mouse-x', `${x}px`)
+    canvasRef.current.style.setProperty('--mouse-y', `${y}px`)
+  }
+
+  const handleLogin = async (e) => {
+    if (e) e.preventDefault()
+    setErrorMessage('')
     setLoading(true)
+
     try {
       // Call backend auth endpoint
       const formData = new FormData()
-      formData.append('username', values.username)
-      formData.append('password', values.password)
+      formData.append('username', username)
+      formData.append('password', password)
 
       const response = await fetch(
         'http://localhost:8000/api/v1/auth/login',
@@ -29,7 +50,7 @@ const LoginPage = () => {
 
       if (!response.ok) {
         const err = await response.json()
-        message.error(err.detail || 'Invalid username or password')
+        setErrorMessage(err.detail || 'Invalid username or password')
         setLoading(false)
         return
       }
@@ -74,8 +95,6 @@ const LoginPage = () => {
         }
       }
 
-      message.success(`Welcome, ${data.user.name}! 👋`)
-
       // Route based on role
       if (data.user.role === 'superadmin') {
         navigate('/super-dashboard')
@@ -84,134 +103,172 @@ const LoginPage = () => {
       }
     } catch (err) {
       console.error('Login error:', err)
-      message.error('Connection error. Is the backend running?')
+      setErrorMessage('Connection error. Is the backend running?')
     }
     setLoading(false)
   }
 
+  const gaugeThicknesses = [
+    { label: '04', class: 't-04' },
+    { label: '05', class: 't-05' },
+    { label: '06', class: 't-06', active: true },
+    { label: '08', class: 't-08' },
+    { label: '10', class: 't-10' },
+    { label: '12', class: 't-12' },
+  ]
+
+  const companyChips = [
+    { code: 'ESSAR', lit: true },
+    { code: 'EXCEL', lit: false },
+    { code: 'ALFA-E', lit: false },
+    { code: 'ALFA-L', lit: false },
+  ]
+
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: '#fff' }}>
-      
-      {/* LEFT SIDE — Login Form */}
-      <div style={{ 
-        flex: 1, 
-        display: 'flex', 
-        alignItems: 'center', 
-        justifyContent: 'center', 
-        padding: '40px' 
-      }}>
-        <div style={{ width: '100%', maxWidth: 400 }}>
-          <div style={{ marginBottom: 40 }}>
-            <Title level={2} style={{ margin: 0, fontWeight: 700, color: '#0f172a' }}>Welcome back</Title>
-            <Text style={{ color: '#64748b', fontSize: 16 }}>Sign in to your account to continue</Text>
-          </div>
+    <div
+      ref={canvasRef}
+      className="login-canvas"
+      onMouseMove={handleMouseMove}
+    >
+      {/* ── Background Translucent Glass Panes & Cursor Light ── */}
+      <div className="glass-panes-bg">
+        <div className="pane pane-1"></div>
+        <div className="pane pane-2"></div>
+        <div className="pane pane-3"></div>
+        <div className="pane pane-4"></div>
+      </div>
+      <div className="cursor-light"></div>
 
-          <Form 
-            form={form} 
-            layout="vertical" 
-            onFinish={handleLogin} 
-            requiredMark={false}
-          >
-            <Form.Item 
-              name="username" 
-              label={<Text strong style={{ color: '#1e293b' }}>Email or Username</Text>}
-              rules={[{ required: true, message: 'Please enter your username' }]}
-              style={{ marginBottom: 24 }}
+      {/* ── Header ── */}
+      <header className="login-header">
+        <div className="header-brand">
+          <span className="wordmark">ESSAR GLASS</span>
+          <span className="brand-sub">Manufacturing & Processing</span>
+        </div>
+        <div className="header-chips">
+          {companyChips.map((chip) => (
+            <span
+              key={chip.code}
+              className={`chip ${chip.lit ? 'lit' : ''}`}
             >
-              <Input 
-                placeholder="admin" 
-                style={{ height: 50, borderRadius: 10, fontSize: 15 }}
-              />
-            </Form.Item>
+              {chip.code}
+            </span>
+          ))}
+        </div>
+      </header>
 
-            <Form.Item 
-              name="password" 
-              label={
-                <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
-                  <Text strong style={{ color: '#1e293b' }}>Password</Text>
-                  <Text style={{ color: '#2563eb', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}></Text>
+      {/* ── Centred Middle Section ── */}
+      <main className="login-middle">
+        <div className="console-wrapper">
+          {/* Thickness Gauge */}
+          <div className="gauge-column" aria-hidden="true">
+            {gaugeThicknesses.map((item) => (
+              <div
+                key={item.label}
+                className={`gauge-item ${item.active ? 'active' : ''}`}
+              >
+                <span className="gauge-label">{item.label}</span>
+                <div className="gauge-bar-track">
+                  <div className={`gauge-bar ${item.class}`}></div>
+                  {/* AA4: Brass marker static on one thickness (06) */}
+                  {item.active && <div className="brass-marker"></div>}
                 </div>
-              }
-              rules={[{ required: true, message: 'Please enter your password' }]}
-              style={{ marginBottom: 32 }}
-            >
-              <Input.Password 
-                placeholder="••••••••"
-                style={{ height: 50, borderRadius: 10, fontSize: 15 }}
-              />
-            </Form.Item>
-
-            <Button 
-              type="primary" 
-              htmlType="submit" 
-              loading={loading}
-              block
-              style={{ 
-                height: 50, 
-                borderRadius: 10, 
-                backgroundColor: '#1a337e', 
-                border: 'none',
-                fontSize: 16,
-                fontWeight: 600,
-                boxShadow: '0 4px 12px rgba(26, 51, 126, 0.2)'
-              }}
-            >
-              Sign In
-            </Button>
-          </Form>
-
-          <div style={{ marginTop: 40 }}>
-            <div style={{ background: '#f8faff', borderRadius: 8, padding: '10px 14px' }}>
-              <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 6 }}>
-                🔑 Demo Credentials:
-              </Text>
-              <div style={{ fontSize: 12, lineHeight: 2 }}>
-                <Text>Super Admin: </Text><Text code>superadmin</Text>
-                {' / '}<Text code>super@123</Text><br/>
-                <Text>Admin (Essar): </Text><Text code>admin</Text>
-                {' / '}<Text code>essar@123</Text><br/>
-                <Text>Sales: </Text><Text code>sales</Text>
-                {' / '}<Text code>sales@123</Text>
               </div>
+            ))}
+          </div>
+
+          {/* Sign-in Column */}
+          <div className="signin-column">
+            <div className="signin-header">
+              <span className="eyebrow">OPERATIONS CONSOLE</span>
+              <h1 className="signin-title">Sign in to the floor.</h1>
+              <p className="signin-desc">
+                Enter your credentials to access system routing and dispatch.
+              </p>
             </div>
+
+            {/* AA6: Inline Error Alert */}
+            {errorMessage && (
+              <div className="inline-error" role="alert">
+                <span className="inline-error-icon">⚠️</span>
+                <span>{errorMessage}</span>
+              </div>
+            )}
+
+            <form className="login-form" onSubmit={handleLogin}>
+              <div className="field-group">
+                <label className="field-label" htmlFor="login-username">
+                  USERNAME
+                </label>
+                <div className="input-wrapper">
+                  <input
+                    id="login-username"
+                    ref={usernameInputRef}
+                    type="text"
+                    className="console-input"
+                    placeholder="Enter username"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    required
+                    autoComplete="username"
+                  />
+                </div>
+              </div>
+
+              <div className="field-group">
+                <label className="field-label" htmlFor="login-password">
+                  PASSWORD
+                </label>
+                <div className="input-wrapper">
+                  <input
+                    id="login-password"
+                    type={showPassword ? 'text' : 'password'}
+                    className="console-input password-input"
+                    placeholder="Enter password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    autoComplete="current-password"
+                  />
+                  <button
+                    type="button"
+                    className="toggle-pwd-btn"
+                    onClick={() => setShowPassword(!showPassword)}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? 'HIDE' : 'SHOW'}
+                  </button>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                className="submit-btn"
+                disabled={loading}
+              >
+                {loading ? (
+                  <>
+                    <span className="btn-spinner" />
+                    <span>SIGNING IN...</span>
+                  </>
+                ) : (
+                  <span>SIGN IN</span>
+                )}
+              </button>
+
+              <p className="helper-text">
+                Protected operational network. All sessions logged.
+              </p>
+            </form>
           </div>
         </div>
-      </div>
+      </main>
 
-      {/* RIGHT SIDE — Branding Area */}
-      <div style={{ 
-        flex: 1.2, 
-        backgroundColor: '#1a337e', // Same Royal Blue as Sidebar
-        display: 'flex', 
-        alignItems: 'center', 
-        justifyContent: 'center', 
-        padding: '60px',
-        color: '#fff',
-        flexDirection: 'column',
-        textAlign: 'center'
-      }}>
-        <div style={{ 
-          width: 80, height: 80, backgroundColor: '#fff', borderRadius: 16,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          marginBottom: 32, padding: 10, boxShadow: '0 10px 40px rgba(0,0,0,0.2)'
-        }}>
-          <img src={brandLogo} alt="Logo" style={{ width: '80%', height: '80%', objectFit: 'contain' }} />
-        </div>
-        
-        <Title level={1} style={{ color: '#fff', fontSize: 48, fontWeight: 800, margin: '0 0 16px 0' }}>
-          Essar Glass
-        </Title>
-        
-        <Text style={{ 
-          color: 'rgba(255,255,255,0.7)', 
-          fontSize: 18, 
-          maxWidth: 460, 
-          lineHeight: 1.6,
-          fontWeight: 500
-        }}>
-          The complete platform for glass manufacturing, order management, and operational tracking.
-        </Text>
-      </div>
+      {/* ── Footer ── */}
+      <footer className="login-footer">
+        <span className="footer-left">Virar West · Palghar · Maharashtra</span>
+        <span className="footer-right">Four companies · One system</span>
+      </footer>
     </div>
   )
 }

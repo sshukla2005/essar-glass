@@ -276,7 +276,7 @@ const SizeTable = ({
       render: (v, row) => unit === 'inch' ? (
         <FractionInput value={v} onChange={val => updateSize(group.group_key, row.size_key, 'width_inch', val)} placeholder="84 1/4" />
       ) : (
-        <InputNumber size="small" value={v ? parseFloat((v * 25.4).toFixed(2)) : null} min={0} style={{ width: '100%' }} onChange={val => updateSize(group.group_key, row.size_key, 'width_inch', val ? val / 25.4 : null)} />
+        <InputNumber size="small" value={v ? parseFloat((v * 25.4).toFixed(1)) : null} min={0} step={1} precision={1} style={{ width: '100%' }} onChange={val => updateSize(group.group_key, row.size_key, 'width_inch', val ? val / 25.4 : null)} />
       )
     },
     {
@@ -286,7 +286,7 @@ const SizeTable = ({
       render: (v, row) => unit === 'inch' ? (
         <FractionInput value={v} onChange={val => updateSize(group.group_key, row.size_key, 'height_inch', val)} placeholder="48 1/2" />
       ) : (
-        <InputNumber size="small" value={v ? parseFloat((v * 25.4).toFixed(2)) : null} min={0} style={{ width: '100%' }} onChange={val => updateSize(group.group_key, row.size_key, 'height_inch', val ? val / 25.4 : null)} />
+        <InputNumber size="small" value={v ? parseFloat((v * 25.4).toFixed(1)) : null} min={0} step={1} precision={1} style={{ width: '100%' }} onChange={val => updateSize(group.group_key, row.size_key, 'height_inch', val ? val / 25.4 : null)} />
       )
     },
     {
@@ -304,17 +304,19 @@ const SizeTable = ({
       )
     },
     {
-      title: 'Charged W',
-      width: 90,
+      title: `Charged W (${unit === 'inch' ? 'in' : 'mm'})`,
+      width: 110,
       dataIndex: 'charged_w_inch',
       render: (v, row) => {
         const isManual = !!row._charged_w_manual;
+        const displayVal = v ? (unit === 'mm' ? parseFloat((v * 25.4).toFixed(1)) : parseFloat(v.toFixed(3))) : null;
         const input = (
           <InputNumber 
             size="small" 
-            value={v ? parseFloat(v.toFixed(3)) : null} 
+            value={displayVal} 
             min={0} 
-            step={0.5} 
+            step={unit === 'mm' ? 1 : 0.5} 
+            precision={1}
             style={{ width: '100%', borderColor: isManual ? '#f59e0b' : undefined, borderRadius: 4 }}
             onChange={val => setGroups(prev => prev.map(g => { 
               if (g.group_key !== group.group_key) return g; 
@@ -323,9 +325,10 @@ const SizeTable = ({
                 sizes: g.sizes.map(s => { 
                   if (s.size_key !== row.size_key) return s; 
                   const isManualVal = val !== null && val !== undefined;
+                  const inchVal = isManualVal ? (unit === 'mm' ? val / 25.4 : val) : null;
                   const updatedSize = {
                     ...s,
-                    charged_w_inch: val,
+                    charged_w_inch: inchVal,
                     _charged_w_manual: isManualVal
                   };
                   return calcGroupSize(g, updatedSize, products);
@@ -342,17 +345,19 @@ const SizeTable = ({
       }
     },
     {
-      title: 'Charged H',
-      width: 90,
+      title: `Charged H (${unit === 'inch' ? 'in' : 'mm'})`,
+      width: 110,
       dataIndex: 'charged_h_inch',
       render: (v, row) => {
         const isManual = !!row._charged_h_manual;
+        const displayVal = v ? (unit === 'mm' ? parseFloat((v * 25.4).toFixed(1)) : parseFloat(v.toFixed(3))) : null;
         const input = (
           <InputNumber 
             size="small" 
-            value={v ? parseFloat(v.toFixed(3)) : null} 
+            value={displayVal} 
             min={0} 
-            step={0.5} 
+            step={unit === 'mm' ? 1 : 0.5} 
+            precision={1}
             style={{ width: '100%', borderColor: isManual ? '#f59e0b' : undefined, borderRadius: 4 }}
             onChange={val => setGroups(prev => prev.map(g => { 
               if (g.group_key !== group.group_key) return g; 
@@ -361,9 +366,10 @@ const SizeTable = ({
                 sizes: g.sizes.map(s => { 
                   if (s.size_key !== row.size_key) return s; 
                   const isManualVal = val !== null && val !== undefined;
+                  const inchVal = isManualVal ? (unit === 'mm' ? val / 25.4 : val) : null;
                   const updatedSize = {
                     ...s,
-                    charged_h_inch: val,
+                    charged_h_inch: inchVal,
                     _charged_h_manual: isManualVal
                   };
                   return calcGroupSize(g, updatedSize, products);

@@ -531,6 +531,7 @@ const QuotationForm = () => {
         })
         setGroups(reconstructed)
       }
+      setUnit(record.unit_mode || 'inch')
       setGstMode(record.gst_mode || (record.is_inter_state ? 'igst' : 'cgst_sgst'))
       if (record.hardware_items) setHardwareItems(record.hardware_items)
       if (record.labor_items) setLaborItems(record.labor_items)
@@ -1315,6 +1316,7 @@ const QuotationForm = () => {
         totals: totals,
         quotation_id: parseInt(id),
         gst_mode: gstMode,
+        unit_mode: unit,
         is_inter_state: gstMode === 'igst',
         subtotal: totals.subIII,
         tax_amount: totals.cgst + totals.sgst + totals.igst,
@@ -1398,6 +1400,7 @@ const QuotationForm = () => {
       values.lines = getFlatLines()
       values.processes = []
       values.gst_mode = gstMode
+      values.unit_mode = unit
       values.is_inter_state = gstMode === 'igst'
       values.hardware_items = hardwareItems
       values.labor_items = laborItems
@@ -1509,8 +1512,8 @@ const QuotationForm = () => {
       return {
         key: i,
         label: String.fromCharCode(97 + i),
-        width_display: unit === 'inch' ? `${toFraction(w)}"` : `${(w * 25.4).toFixed(1)}mm`,
-        height_display: unit === 'inch' ? `${toFraction(h)}"` : `${(h * 25.4).toFixed(1)}mm`,
+        width_display: unit === 'inch' ? `${toFraction(w)}"` : `${Math.round(w * 25.4)}mm`,
+        height_display: unit === 'inch' ? `${toFraction(h)}"` : `${Math.round(h * 25.4)}mm`,
         quantity: qty,
         selling_sqft: selling_sqft.toFixed(3),
         charged_sqft: Number(charged_sqft).toFixed(3),
@@ -1763,8 +1766,8 @@ const QuotationForm = () => {
           group_no: gi + 1,
           group_name: group.description || `Group ${gi + 1}`,
           size_label: String.fromCharCode(97 + si),
-          width_display: unit === 'inch' ? `${toFraction(w)}"` : `${(w * 25.4).toFixed(1)}mm`,
-          height_display: unit === 'inch' ? `${toFraction(h)}"` : `${(h * 25.4).toFixed(1)}mm`,
+          width_display: unit === 'inch' ? `${toFraction(w)}"` : `${Math.round(w * 25.4)}mm`,
+          height_display: unit === 'inch' ? `${toFraction(h)}"` : `${Math.round(h * 25.4)}mm`,
           quantity: qty,
           selling_rate: group.rate,
           cost_per_sqft: costPerSqft,
@@ -2052,7 +2055,7 @@ const QuotationForm = () => {
           customer_name: customers.find(c => c.id === form.getFieldValue('customer_id'))?.name || '',
           customer_phone: customers.find(c => c.id === form.getFieldValue('customer_id'))?.phone || '',
           customer_gstin: customers.find(c => c.id === form.getFieldValue('customer_id'))?.gstin || '',
-          advance_received: advanceRec || 0, groups, totals, lines: getFlatLines(),
+          advance_received: advanceRec || 0, unit_mode: unit, groups, totals, lines: getFlatLines(),
           hardware_items: hardwareItems, labor_items: laborItems,
         })}
         onConvertToSO={() => {
@@ -2288,7 +2291,7 @@ const QuotationForm = () => {
               <Collapse.Panel key={gi} header={<Space><Tag color="blue">{gi + 1}</Tag><Text strong>{g.description}</Text><Tag>{g.sizes.length} sizes</Tag><Tag color="green">₹{g.rate}/sqft</Tag>{g.cep && <Tag color="orange">CEP</Tag>}</Space>}>
                 {g.sizes.map((s, si) => (
                   <div key={si} style={{ fontSize: 12, marginBottom: 4 }}>
-                    {String.fromCharCode(97 + si)}.{' '}{unit === 'inch' ? `${toFraction(s.width_inch)}"` : `${(s.width_inch * 25.4).toFixed(1)}mm`}{' × '}{unit === 'inch' ? `${toFraction(s.height_inch)}"` : `${(s.height_inch * 25.4).toFixed(1)}mm`}{' × '}{s.quantity} pcs{' = '}<Text strong>{s.total_sqft?.toFixed(3)} sqft</Text>{' → '}<Text strong style={{ color: '#059669' }}>₹{(s.subtotal || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Text>
+                    {String.fromCharCode(97 + si)}.{' '}{unit === 'inch' ? `${toFraction(s.width_inch)}"` : `${Math.round(s.width_inch * 25.4)}mm`}{' × '}{unit === 'inch' ? `${toFraction(s.height_inch)}"` : `${Math.round(s.height_inch * 25.4)}mm`}{' × '}{s.quantity} pcs{' = '}<Text strong>{s.total_sqft?.toFixed(3)} sqft</Text>{' → '}<Text strong style={{ color: '#059669' }}>₹{(s.subtotal || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Text>
                   </div>
                 ))}
               </Collapse.Panel>
