@@ -39,13 +39,12 @@ def get_group_overview(
     # Fetch active companies
     companies = db.query(Company).filter(Company.is_active == True).all()
 
-    # 1. Invoices aggregations (billed revenue, balance_due outstanding)
+    # 1. Invoices aggregations (outstanding balance_due only; revenue is SO-based per AE2)
     inv_rows = db.query(
         Invoice.company_id,
-        func.sum(case((Invoice.status != 'cancelled', Invoice.total_amount), else_=0)).label("revenue"),
         func.sum(case(((Invoice.status != 'cancelled') & (Invoice.balance_due > 0), Invoice.balance_due), else_=0)).label("outstanding"),
     ).filter(Invoice.is_active == True).group_by(Invoice.company_id).all()
-    inv_map = {r.company_id: (round(float(r.revenue or 0), 2), round(float(r.outstanding or 0), 2)) for r in inv_rows}
+    inv_map = {r.company_id: round(float(r.outstanding or 0), 2) for r in inv_rows}
 
     # 2. Collected per company = sum(PaymentAllocation.amount) for active allocations on active payments
     alloc_rows = db.query(
@@ -75,13 +74,35 @@ def get_group_overview(
     ).filter(PurchaseOrder.is_active == True).group_by(PurchaseOrder.company_id).all()
     po_map = {r.company_id: float(r.purchase_cost or 0) for r in po_rows}
 
-    # 5. Sales Orders aggregations (total_sos, active_sos)
+    # 5. Sales Orders aggregations (revenue, gross_margin inputs, total_sos, active_sos)
+    so_committed_statuses = ['confirmed', 'in_production', 'ready', 'delivered']
     so_rows = db.query(
         SalesOrder.company_id,
+        func.sum(case((SalesOrder.status.in_(so_committed_statuses), SalesOrder.total_amount), else_=0)).label("revenue"),
+        func.sum(case((SalesOrder.status.in_(so_committed_statuses), SalesOrder.profit_amount), else_=None)).label("profit_amount"),
+        func.sum(case((SalesOrder.status.in_(so_committed_statuses), SalesOrder.total_amount - func.coalesce(SalesOrder.tax_amount, 0)), else_=0)).label("net_revenue"),
+        func.count(case((SalesOrder.status.in_(so_committed_statuses) & ((SalesOrder.profit_amount == None) | (SalesOrder.total_cost == None)), SalesOrder.id), else_=None)).label("missing_cost_count"),
         func.count(SalesOrder.id).label("total_sos"),
         func.count(case((SalesOrder.status.in_(['confirmed', 'in_production', 'ready']), SalesOrder.id), else_=None)).label("active_sos"),
     ).filter(SalesOrder.is_active == True).group_by(SalesOrder.company_id).all()
-    so_map = {r.company_id: (int(r.total_sos or 0), int(r.active_sos or 0)) for r in so_rows}
+
+    so_map = {}
+    for r in so_rows:
+        rev = round(float(r.revenue or 0), 2)
+        net_rev = float(r.net_revenue or 0)
+        profit = float(r.profit_amount) if r.profit_amount is not None else None
+        missing_cost = int(r.missing_cost_count or 0)
+        if net_rev > 0 and profit is not None and missing_cost == 0:
+            margin = round((profit / net_rev) * 100, 1)
+        else:
+            margin = None
+
+        so_map[r.company_id] = {
+            "revenue": rev,
+            "gross_margin": margin,
+            "total_sos": int(r.total_sos or 0),
+            "active_sos": int(r.active_sos or 0),
+        }
 
     # 6. Quotations aggregations (total_quotes)
     quote_rows = db.query(
@@ -112,7 +133,7 @@ def get_group_overview(
     ).filter(CRMLead.is_active == True).group_by(CRMLead.company_id).all()
     lead_map = {r.company_id: (int(r.total_leads or 0), int(r.won_leads or 0)) for r in lead_rows}
 
-    # 10. Last 6 months monthly revenue per company
+    # 10. Last 6 months monthly revenue per company (SO-based per AE2)
     now = datetime.now()
     month_names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
     months_list = []
@@ -124,38 +145,50 @@ def get_group_overview(
             year -= 1
         months_list.append({'year': year, 'month': month, 'name': month_names[month - 1]})
 
-    inv_monthly = db.query(
-        Invoice.company_id,
-        func.extract('year', Invoice.created_at).label("yr"),
-        func.extract('month', Invoice.created_at).label("mo"),
-        func.sum(Invoice.total_amount).label("m_rev"),
+    so_monthly = db.query(
+        SalesOrder.company_id,
+        SalesOrder.order_date,
+        SalesOrder.created_at,
+        SalesOrder.total_amount,
     ).filter(
-        Invoice.is_active == True,
-        Invoice.status != 'cancelled',
-    ).group_by(
-        Invoice.company_id,
-        func.extract('year', Invoice.created_at),
-        func.extract('month', Invoice.created_at),
+        SalesOrder.is_active == True,
+        SalesOrder.status.in_(so_committed_statuses),
     ).all()
 
     monthly_map = {}
-    for r in inv_monthly:
+    for r in so_monthly:
         cid = r.company_id
-        yr = int(r.yr) if r.yr is not None else 0
-        mo = int(r.mo) if r.mo is not None else 0
-        rev = float(r.m_rev or 0)
-        monthly_map[(cid, yr, mo)] = rev
+        tot = float(r.total_amount or 0)
+        yr, mo = None, None
+        if r.order_date:
+            try:
+                parts = str(r.order_date).strip()[:10].split('-')
+                if len(parts) >= 2:
+                    yr = int(parts[0])
+                    mo = int(parts[1])
+            except Exception:
+                yr, mo = None, None
+        if (yr is None or mo is None) and r.created_at:
+            yr = r.created_at.year
+            mo = r.created_at.month
+
+        if yr is not None and mo is not None:
+            key = (cid, yr, mo)
+            monthly_map[key] = round(monthly_map.get(key, 0.0) + tot, 2)
 
     company_metrics = []
     for c in companies:
         cid = c.id
-        revenue, outstanding = inv_map.get(cid, (0.0, 0.0))
+        so_info = so_map.get(cid, {"revenue": 0.0, "gross_margin": None, "total_sos": 0, "active_sos": 0})
+        revenue = so_info["revenue"]
+        gross_margin = so_info["gross_margin"]
+        total_sos = so_info["total_sos"]
+        active_sos = so_info["active_sos"]
+        outstanding = inv_map.get(cid, 0.0)
         collected = alloc_map.get(cid, 0.0)
         tot_pay = pay_map.get(cid, 0.0)
         on_account = round(max(0.0, tot_pay - collected), 2)
         purchase_cost = po_map.get(cid, 0.0)
-        gross_margin = round(((revenue - purchase_cost) / revenue * 100), 1) if revenue > 0 else 0.0
-        total_sos, active_sos = so_map.get(cid, (0, 0))
         total_quotes = quote_map.get(cid, 0)
         total_customers = cust_map.get(cid, 0)
         total_employees = emp_map.get(cid, 0)

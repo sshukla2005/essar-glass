@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Form, Input, Select, Row, Col, Divider, DatePicker, Button, Table, Steps, Space, Tag, Checkbox, Card, Badge, App, Typography, InputNumber, Switch, Modal, Alert } from 'antd'
-import { PlusOutlined, DeleteOutlined, ToolOutlined, FireOutlined, FileTextOutlined, CheckCircleOutlined, PlayCircleOutlined, DownloadOutlined, SwapOutlined, LinkOutlined } from '@ant-design/icons'
+import { PlusOutlined, DeleteOutlined, ToolOutlined, FireOutlined, FileTextOutlined, CheckCircleOutlined, DownloadOutlined, SwapOutlined, LinkOutlined, PlayCircleOutlined } from '@ant-design/icons'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import dayjs from 'dayjs'
@@ -764,20 +764,8 @@ const WorkshopOrderForm = () => {
       }
     },
     {
-      title: 'Actions', width: 340, render: (_, row) => (
+      title: 'Actions', width: 280, render: (_, row) => (
         <Space wrap>
-          {!row.cut_started_at && (row.qty_cut || 0) === 0 && (
-            <Button
-              size="small"
-              type="dashed"
-              icon={<PlayCircleOutlined />}
-              style={{ color: '#0284c7', borderColor: '#38bdf8', fontSize: 11 }}
-              disabled={isCompletedOrCancelled}
-              onClick={() => updateLine(row.key, 'cut_started_at', new Date().toISOString())}
-            >
-              Start Cutting
-            </Button>
-          )}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
             <Checkbox
               checked={row.has_process}
@@ -865,6 +853,25 @@ const WorkshopOrderForm = () => {
     if (!mismatchState) return;
 
     if (mismatchState.type === 'completed_but_uncut') {
+      const pendingQty = lines.reduce((s, l) => {
+        const qty = Number(l.qty || l.quantity || 1)
+        return s + Math.max(0, qty - Number(l.qty_cut || 0))
+      }, 0)
+      const pendingLines = lines.filter(l => {
+        const qty = Number(l.qty || l.quantity || 1)
+        return Number(l.qty_cut || 0) < qty
+      }).length
+
+      const ok = await new Promise(res => Modal.confirm({
+        title: 'Mark all lines as cut?',
+        content: `${pendingLines} line(s) still have ${pendingQty} piece(s) pending. These will be recorded as fully cut.`,
+        okText: 'Yes, mark as cut',
+        cancelText: 'Cancel',
+        onOk: () => res(true),
+        onCancel: () => res(false),
+      }))
+      if (!ok) return
+
       const nowIso = new Date().toISOString();
       const updatedLines = lines.map(l => {
         const qty = Number(l.qty || l.quantity || 1);
@@ -879,8 +886,8 @@ const WorkshopOrderForm = () => {
 
       // Trigger saving to backend
       const values = form.getFieldsValue();
-      if (values.order_date) values.order_date = values.order_date.format('YYYY-MM-DD');
-      if (values.required_by) values.required_by = values.required_by.format('YYYY-MM-DD');
+      if (values.order_date?.format) values.order_date = values.order_date.format('YYYY-MM-DD');
+      if (values.required_by?.format) values.required_by = values.required_by.format('YYYY-MM-DD');
       const cust = customerList.find(c => c.id === values.customer_id);
       values.customer_name = cust?.name || '';
       const so = soList.find(s => s.id === values.so_id);
@@ -937,7 +944,7 @@ const WorkshopOrderForm = () => {
     })
   }
 
-  const handleStartProcessing = () => {
+  const handleStartProcessing = async () => {
     const missing = missingArtworkLines()
     if (missing.length > 0) {
       const nums = missing.map(({ i }) => i + 1).join(', ')
@@ -947,6 +954,40 @@ const WorkshopOrderForm = () => {
       })
       return
     }
+
+    if (!lines.length) {
+      message.warning('Add at least one glass line before starting processing.')
+      return
+    }
+
+    // Order-level cutting start: stamp every line that has not started yet
+    const nowIso = new Date().toISOString()
+    const needsStamp = lines.some(l => !l.cut_started_at)
+    if (needsStamp) {
+      const stamped = lines.map(l =>
+        l.cut_started_at ? l : { ...l, cut_started_at: nowIso }
+      )
+      setLines(stamped)
+      try {
+        const values = form.getFieldsValue()
+        if (values.order_date?.format) values.order_date = values.order_date.format('YYYY-MM-DD')
+        if (values.required_by?.format) values.required_by = values.required_by.format('YYYY-MM-DD')
+        const cust = customerList.find(c => c.id === values.customer_id)
+        values.customer_name = cust?.name || ''
+        const so = soList.find(s => s.id === values.so_id)
+        values.so_number = so?.so_number || ''
+        values.lines = stamped.map(({ key, ...rest }) => rest)
+        values.jobwork_vendor = selectedJobworkVendor || null
+        const cleanMaps = artworkMaps.filter(m => m.image || (m.panels || []).length > 0)
+        values.artwork_panels = cleanMaps
+        values.artwork_image = cleanMaps[0]?.image || null
+        await saveMutation.mutateAsync(values)
+      } catch (err) {
+        message.error('Could not start cutting: ' + (err?.message || ''))
+        return
+      }
+    }
+
     setExportWizard(true)
   }
 

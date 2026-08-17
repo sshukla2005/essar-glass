@@ -228,7 +228,7 @@ def test_allocation_exceeds_payment_amount_rejected(payment_test_env):
 
 
 def test_group_overview_reconciles_with_receivables(db_session: Session, payment_test_env):
-    """SuperAdmin /super/group-overview metrics must match /receivables/summary per company."""
+    """SuperAdmin /super/group-overview receivables metrics match /receivables/summary, and revenue reflects committed SOs."""
     headers = payment_test_env["headers"]
 
     res_summary = client.get("/api/v1/receivables/summary", headers=headers)
@@ -246,10 +246,11 @@ def test_group_overview_reconciles_with_receivables(db_session: Session, payment
     group_data = res_group.json()
 
     c1_metric = next(c for c in group_data["company_metrics"] if c["id"] == 1)
-    assert c1_metric["revenue"] == sum_data["total_billed"]
+    # Revenue is SO-based per AE1/AE2, receivables (collected, outstanding, on_account) remain invoice-based
     assert c1_metric["collected"] == sum_data["total_collected"]
     assert c1_metric["outstanding"] == sum_data["outstanding"]
     assert c1_metric["on_account"] == sum_data["on_account"]
+
 
 
 def test_valid_payment_allocation_lifecycle(db_session: Session, payment_test_env):

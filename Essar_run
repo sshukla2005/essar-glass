@@ -29,4 +29,16 @@ npm run develop
 git -id -- sshukla2005
 pass :- ss4386116@gmail.com
 
+saurabh@saurabh:~/workspace/essar-glass$ cd ~/workspace/essar-glass/backend && source venv/bin/activate
+(venv) saurabh@saurabh:~/workspace/essar-glass/backend$ uvicorn main:app --reload --port 8000
+INFO:     Will watch for changes in these directories: ['/home/saurabh/workspace/essar-glass/backend']
+ERROR:    [Errno 98] Address already in use
+(venv) saurabh@saurabh:~/workspace/essar-glass/backend$ lsof -ti:8000 | xargs kill -9
+uvicorn main:app --reload --port 8000
+INFO:     Will watch for changes in these directories: ['/home/saurabh/workspace/essar-glass/backend']
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [52478] using WatchFiles
+
+
+
 

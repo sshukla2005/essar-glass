@@ -5,12 +5,12 @@ import {
   customerApi, deliveryChallanApi, workshopOrderApi,
   companyApi
 } from '../api'
-import { Row, Col, Card, Typography, Space, Radio, Table, Tag, Button, DatePicker, Progress } from 'antd'
+import { Row, Col, Card, Typography, Space, Radio, Table, Tag, Button, DatePicker, Progress, Tooltip as AntTooltip } from 'antd'
 import {
   ArrowUpOutlined, ArrowDownOutlined,
   RiseOutlined, FallOutlined, FireFilled,
   SettingOutlined, ClockCircleOutlined, UserOutlined, CarOutlined,
-  PlusOutlined, FileTextOutlined, ShoppingCartOutlined
+  PlusOutlined, FileTextOutlined, ShoppingCartOutlined, InfoCircleOutlined
 } from '@ant-design/icons'
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
@@ -21,13 +21,24 @@ import { useAuth } from '../hooks/useAuth'
 
 const { Title, Text } = Typography
 
-const StatCard = ({ title, value, percentage, isUp, textUp, textDown, onClick }) => {
+const StatCard = ({ title, value, percentage, isUp, textUp, textDown, onClick, tooltip }) => {
   const handleKeyDown = (e) => {
     if (onClick && (e.key === 'Enter' || e.key === ' ')) {
       e.preventDefault()
       onClick(e)
     }
   }
+
+  const titleNode = (
+    <Text type="secondary" style={{ fontSize: 14, fontWeight: 500, color: '#8c8c8c' }}>
+      {title}
+      {tooltip && (
+        <AntTooltip title={tooltip}>
+          <InfoCircleOutlined style={{ marginLeft: 6, color: '#8c8c8c', cursor: 'pointer' }} />
+        </AntTooltip>
+      )}
+    </Text>
+  )
 
   return (
     <Card
@@ -47,7 +58,7 @@ const StatCard = ({ title, value, percentage, isUp, textUp, textDown, onClick })
       onKeyDown={onClick ? handleKeyDown : undefined}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
-        <Text type="secondary" style={{ fontSize: 14, fontWeight: 500, color: '#8c8c8c' }}>{title}</Text>
+        {titleNode}
         <Tag style={{ borderRadius: 10, padding: '2px 10px', border: '1px solid #f0f0f0', backgroundColor: '#fff', color: '#595959', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
           {isUp ? <RiseOutlined style={{ fontSize: 12 }} /> : <FallOutlined style={{ fontSize: 12 }} />} {percentage}
         </Tag>
@@ -187,9 +198,10 @@ const Dashboard = () => {
     const dispatchReady    = salesOrders.filter(s => s.status === 'ready').length
     const awaitingDispatch = deliveries.filter(d => d.status === 'draft').length
 
-    const totalRevenue = invoices
-      .filter(i => ['paid', 'sent'].includes(i.status))
-      .reduce((sum, i) => sum + (i.total_amount || 0), 0)
+    const committedSOStatuses = ['confirmed', 'in_production', 'ready', 'delivered']
+    const totalRevenue = salesOrders
+      .filter(s => committedSOStatuses.includes(s.status))
+      .reduce((sum, s) => sum + (s.total_amount || 0), 0)
     const pendingRevenue = invoices
       .filter(i => i.status === 'draft')
       .reduce((sum, i) => sum + (i.total_amount || 0), 0)
@@ -356,11 +368,12 @@ const Dashboard = () => {
           <StatCard
             title="Total Revenue"
             value={formatINR(stats.totalRevenue)}
-            percentage={stats.totalRevenue > 0 ? '+Active' : 'No invoices'}
+            percentage={stats.totalRevenue > 0 ? '+Active' : 'No SOs'}
             isUp={stats.totalRevenue > 0}
-            textUp={stats.totalRevenue > 0 ? "From paid invoices" : "No revenue yet"}
-            textDown={`${formatINR(stats.pendingRevenue)} pending collection`}
-            onClick={() => navigate('/invoices')}
+            textUp={stats.totalRevenue > 0 ? "From confirmed sales orders" : "No committed orders"}
+            textDown="Invoicing maintained in Tally"
+            tooltip="Based on confirmed sales orders. Invoicing is maintained in Tally."
+            onClick={() => navigate('/sales-orders')}
           />
         </Col>
       </Row>

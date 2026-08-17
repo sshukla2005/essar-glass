@@ -776,7 +776,14 @@ def _get_history_dataset(
 
         quotes_q = (
             apply_company_filter(
-                db.query(Quotation).filter(Quotation.is_active == True, Quotation.status != 'cancelled'),
+                db.query(Quotation).filter(
+                    Quotation.is_active == True,
+                    Quotation.status != 'cancelled',
+                    # A converted quotation is represented by its Sales Order.
+                    # Excluded from the Quotation branch so the same deal is not
+                    # counted twice. "All Documents" re-includes it below.
+                    *([Quotation.status != 'converted'] if doc_type_norm in ("quotation", "quote") else [])
+                ),
                 Quotation, cid
             )
             .outerjoin(CRMLead, Quotation.crm_lead_id == CRMLead.id)

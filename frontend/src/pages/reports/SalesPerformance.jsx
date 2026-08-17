@@ -1089,15 +1089,17 @@ const SalesPerformance = () => {
               allowClear
               style={{ width: 200, borderRadius: 8 }}
             />
-            <Select
-              value={historyDocType}
-              onChange={v => { setHistoryDocType(v || ''); setHistoryPage(1); }}
-              style={{ width: 190, borderRadius: 8 }}
-            >
-              <Option value="Sales Order">Sales Orders Only</Option>
-              <Option value="Quotation">Quotations Only</Option>
-              <Option value="">All Documents (SOs & Quotes)</Option>
-            </Select>
+            <Tooltip title="Draft, sent and confirmed quotations. Converted quotes appear under Sales Orders.">
+              <Select
+                value={historyDocType}
+                onChange={v => { setHistoryDocType(v || ''); setHistoryPage(1); }}
+                style={{ width: 190, borderRadius: 8 }}
+              >
+                <Option value="Sales Order">Sales Orders Only</Option>
+                <Option value="Quotation">Open Quotations</Option>
+                <Option value="">All Documents (SOs & Quotes)</Option>
+              </Select>
+            </Tooltip>
             <Select
               value={historySalesperson || undefined}
               onChange={v => { setHistorySalesperson(v || ''); setHistoryPage(1); }}

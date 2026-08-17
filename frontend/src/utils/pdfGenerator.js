@@ -2802,7 +2802,7 @@ export const generateTougheningChallanPDF = async (batch) => {
     },
     columnStyles: {
       0: { cellWidth: 15, halign: 'center' },
-      1: { cellWidth: 75, halign: 'left' },
+      1: { cellWidth: 75, halign: 'center' },
       2: { cellWidth: 25, halign: 'center' },
       3: { cellWidth: 25, halign: 'center' },
       4: { cellWidth: 15, halign: 'center' },

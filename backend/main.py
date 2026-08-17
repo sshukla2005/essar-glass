@@ -408,7 +408,7 @@ def get_cutting_register(
             comp_at = line.get("cut_completed_at")
             if comp_at:
                 try:
-                    c_date = datetime.fromisoformat(str(comp_at)).date()
+                    c_date = datetime.fromisoformat(str(comp_at).replace("Z", "+00:00")).date()
                     if start_d <= c_date <= end_d:
                         tile_data["cut_today"][cat] += unit_sqft * qty_cut
                 except Exception:
