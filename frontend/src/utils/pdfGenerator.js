@@ -3477,55 +3477,95 @@ export const generateWorkshopOrderPDF = async (wo) => {
       artworkMap.get(key).rows.push(l)
     })
 
-    for (const [, art] of artworkMap) {
-      if (validMaps.some(m => m.image === art.data)) continue
+    const artEntries = [...artworkMap.values()].filter(
+      a => !validMaps.some(m => m.image === a.data)
+    )
+    const imageArts = artEntries.filter(a => a.data?.startsWith('data:image/'))
+    const pdfArts   = artEntries.filter(a => a.data?.startsWith('data:application/pdf'))
 
-      if (art.data && art.data.startsWith('data:image/')) {
-        try {
-          const im = new Image()
-          await new Promise((res, rej) => { im.onload = res; im.onerror = rej; im.src = art.data })
+    for (let i = 0; i < imageArts.length; i += 3) {
+      const batch = imageArts.slice(i, i + 3)
+      doc.addPage()
+      drawSheetHeader(
+        `ARTWORK SHEETS (${i + 1}–${Math.min(i + 3, imageArts.length)} of ${imageArts.length})`,
+        `${wo.wo_number || 'WO'}`
+      )
 
-          doc.addPage()
-          drawSheetHeader(
-            `ARTWORK: ${String(art.name).toUpperCase().substring(0, 40)}`,
-            `${wo.wo_number || 'WO'}`
-          )
+      for (let c = 0; c < batch.length; c++) {
+        const art = batch[c]
+        const COL_W    = 89
+        const GUTTER   = 5
+        const HEADER_H = 20
+        const colX     = margin + c * (COL_W + GUTTER)
+        const IMG_MAX_H = 130
 
-          const tblH = 14 + art.rows.length * 7
-          const maxImgH = pageH - 16 - 12 - tblH - 14
-          const dims = fitDims(im.width, im.height, contentW, Math.max(100, maxImgH))
-          const fmt = art.data.includes('data:image/png') ? 'PNG' : 'JPEG'
-          doc.addImage(art.data, fmt, (pageW - dims.w) / 2, 20, dims.w, dims.h)
-
-          autoTable(doc, {
-            theme: 'grid',
-            startY: 20 + dims.h + 6,
-            head: [['#', 'Glass Line (uses this artwork)', 'Size', 'Qty', 'Tgh', 'Remark']],
-            body: art.rows.map((l, i) => [
-              String(i + 1),
-              l.description || '—',
-              `${l.act_w_in ? toFraction(l.act_w_in) : '?'}" × ${l.act_h_in ? toFraction(l.act_h_in) : '?'}"`,
-              String(l.qty || l.quantity || 1),
-              (l.toughened || l.is_toughened) ? 'YES' : '—',
-              l.remark || '—',
-            ]),
-            styles: { fontSize: 8.5, cellPadding: 2.5, lineWidth: 0.15, lineColor: [148, 163, 184] },
-            headStyles: { fillColor: [99, 102, 241], textColor: 255, fontStyle: 'bold', lineWidth: 0.15, lineColor: [99, 102, 241] },
-            alternateRowStyles: { fillColor: [238, 242, 255] },
-            margin: { left: margin, right: margin },
-          })
-        } catch (e) {
-          console.error('Artwork sheet failed:', e)
+        if (c > 0) {
+          doc.setDrawColor(226, 232, 240)
+          doc.setLineWidth(0.3)
+          doc.line(colX - GUTTER / 2, HEADER_H, colX - GUTTER / 2, pageH - 12)
         }
-      } else if (art.data && art.data.startsWith('data:application/pdf')) {
-        doc.addPage()
-        drawSheetHeader(
-          `ARTWORK: ${String(art.name).toUpperCase().substring(0, 40)}`,
-          `${wo.wo_number || 'WO'}`
-        )
-        doc.setFontSize(10); doc.setFont('helvetica', 'normal'); doc.setTextColor(80, 80, 80)
-        doc.text(`PDF artwork attached: "${art.name}" — print/open the PDF file separately.`, margin, 30)
+
+        doc.setFontSize(7.5)
+        doc.setFont('helvetica', 'bold')
+        doc.setTextColor(30, 41, 59)
+        const artTitle = String(art.name || 'Artwork').toUpperCase().substring(0, 28)
+        doc.text(`ARTWORK: ${artTitle}`, colX, HEADER_H + 4)
+
+        let imgH = 0
+        if (art.data) {
+          try {
+            const im = new Image()
+            await new Promise((res, rej) => { im.onload = res; im.onerror = rej; im.src = art.data })
+            const dims = fitDims(im.width, im.height, COL_W, IMG_MAX_H)
+            imgH = dims.h
+            const fmt = art.data.includes('data:image/png') ? 'PNG' : 'JPEG'
+            doc.addImage(art.data, fmt, colX + (COL_W - dims.w) / 2, HEADER_H + 8, dims.w, dims.h)
+          } catch (e) {
+            console.error('Artwork image render failed:', e)
+          }
+        }
+
+        let bodyRows = art.rows.map((l, idx) => [
+          String(idx + 1),
+          l.description || '—',
+          `${l.act_w_in ? toFraction(l.act_w_in) : '?'}" × ${l.act_h_in ? toFraction(l.act_h_in) : '?'}"`,
+          String(l.qty || l.quantity || 1),
+        ])
+
+        if (bodyRows.length > 6) {
+          const overflowCount = bodyRows.length - 5
+          bodyRows = bodyRows.slice(0, 5)
+          bodyRows.push(['', `+${overflowCount} more`, '', ''])
+        }
+
+        autoTable(doc, {
+          theme: 'grid',
+          startY: HEADER_H + 8 + imgH + 4,
+          head: [['#', 'Glass Line', 'Size', 'Qty']],
+          body: bodyRows,
+          styles: { fontSize: 6.5, cellPadding: 1.2, lineWidth: 0.15, lineColor: [148, 163, 184] },
+          headStyles: { fillColor: [99, 102, 241], textColor: 255, fontStyle: 'bold', lineWidth: 0.15, lineColor: [99, 102, 241] },
+          alternateRowStyles: { fillColor: [238, 242, 255] },
+          margin: { left: colX, right: pageW - colX - COL_W },
+          tableWidth: COL_W,
+          columnStyles: {
+            0: { cellWidth: 8, halign: 'center' },
+            1: { cellWidth: 'auto' },
+            2: { cellWidth: 32, halign: 'center' },
+            3: { cellWidth: 10, halign: 'center' },
+          },
+        })
       }
+    }
+
+    for (const art of pdfArts) {
+      doc.addPage()
+      drawSheetHeader(
+        `ARTWORK: ${String(art.name).toUpperCase().substring(0, 40)}`,
+        `${wo.wo_number || 'WO'}`
+      )
+      doc.setFontSize(10); doc.setFont('helvetica', 'normal'); doc.setTextColor(80, 80, 80)
+      doc.text(`PDF artwork attached: "${art.name}" — print/open the PDF file separately.`, margin, 30)
     }
 
     // Footers and Page Numbers

@@ -506,7 +506,7 @@ const TougheningForm = () => {
               Download Challan
             </Button>
 
-            {status === 'draft' && (
+            {isEdit && status === 'draft' && (
               <Button type="primary" icon={<SendOutlined />} onClick={() => changeStage('sent', () => statusMutation.mutate('sent'))} style={{ background: '#3b82f6' }}>
                 Send to Vendor
               </Button>
