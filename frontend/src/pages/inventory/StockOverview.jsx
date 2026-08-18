@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import {
   Card, Row, Col, Typography, Table, Tag, Button,
   Input, Modal, Form, InputNumber, Select, App,
@@ -19,8 +19,48 @@ import OpeningStockImportModal from './OpeningStockImportModal'
 
 const { Title, Text } = Typography
 
-const NewProductFields = ({ form, products }) => {
+const buildProductName = ({ glassType, brand, thicknessMm, widthMm, heightMm }) => {
+  const parts = []
+  const gt = Array.isArray(glassType) ? glassType[0] : glassType
+  if (gt && String(gt).trim()) parts.push(String(gt).trim().toUpperCase())
+  if (brand && String(brand).trim()) parts.push(String(brand).trim().toUpperCase())
+  if (thicknessMm !== undefined && thicknessMm !== null && thicknessMm !== '' && !isNaN(parseFloat(thicknessMm))) {
+    parts.push(String(parseFloat(thicknessMm)))
+  }
+  const wCm = widthMm && !isNaN(parseFloat(widthMm)) ? Math.round(parseFloat(widthMm) / 10) : null
+  const hCm = heightMm && !isNaN(parseFloat(heightMm)) ? Math.round(parseFloat(heightMm) / 10) : null
+  if (wCm && hCm) parts.push(`X ${wCm} X ${hCm}`)
+  return parts.join(' ').replace(/\s+/g, ' ').trim()
+}
+
+const NewProductFields = ({ form, products, section = 'all' }) => {
+  const [manualName, setManualName] = useState(false)
+
+  // Hooks must run unconditionally every render — never short-circuit them with ||
+  const gtA = Form.useWatch('glass_type', form)
+  const gtB = Form.useWatch('new_glass_type', form)
+  const brA = Form.useWatch('new_brand', form)
+  const brB = Form.useWatch('brand', form)
+  const thA = Form.useWatch('new_thickness_mm', form)
+  const thB = Form.useWatch('thickness_mm', form)
+  const wA  = Form.useWatch('sheet_width_mm', form)
+  const wB  = Form.useWatch('new_sheet_width_mm', form)
+  const hA  = Form.useWatch('sheet_height_mm', form)
+  const hB  = Form.useWatch('new_sheet_height_mm', form)
+  const glassType  = gtA || gtB
+  const brand      = brA || brB
+  const thicknessMm = thA || thB
+  const widthMm    = wA || wB
+  const heightMm   = hA || hB
   const newName = Form.useWatch('new_name', form)
+
+  useEffect(() => {
+    if (!manualName) {
+      const generated = buildProductName({ glassType, brand, thicknessMm, widthMm, heightMm })
+      form.setFieldsValue({ new_name: generated })
+    }
+  }, [glassType, brand, thicknessMm, widthMm, heightMm, manualName, form])
+
   const similarProducts = useMemo(() => {
     if (!newName || !newName.trim()) return []
     const normTyped = newName.trim().toLowerCase().replace(/\s+/g, ' ')
@@ -30,12 +70,38 @@ const NewProductFields = ({ form, products }) => {
     }).slice(0, 3)
   }, [newName, products])
 
-  return (
+  const renderDetails = () => (
     <div style={{ border: '1px dashed #3b82f6', borderRadius: 8, padding: 12, marginBottom: 16, background: '#eff6ff' }}>
       <Text strong style={{ display: 'block', marginBottom: 8, color: '#1d4ed8', fontSize: 13 }}>
         ✨ New Product Master Details
       </Text>
+      <Row gutter={12}>
+        <Col span={8}>
+          <Form.Item name="new_brand" label="Brand" style={{ marginBottom: 0 }}>
+            <Input placeholder="e.g. SG" />
+          </Form.Item>
+        </Col>
+        <Col span={8}>
+          <Form.Item
+            name="new_thickness_mm"
+            label="Thickness (mm)"
+            rules={[{ required: true, message: 'Required' }]}
+            style={{ marginBottom: 0 }}
+          >
+            <InputNumber min={0} style={{ width: '100%' }} placeholder="e.g. 4" />
+          </Form.Item>
+        </Col>
+        <Col span={8}>
+          <Form.Item name="new_cost_price" label="Cost Rate (₹/sqm)" style={{ marginBottom: 0 }}>
+            <InputNumber min={0} style={{ width: '100%' }} placeholder="e.g. 450" />
+          </Form.Item>
+        </Col>
+      </Row>
+    </div>
+  )
 
+  const renderName = () => (
+    <div style={{ border: '1px dashed #3b82f6', borderRadius: 8, padding: 12, marginBottom: 16, background: '#eff6ff' }}>
       {similarProducts.length > 0 && (
         <Alert
           type="warning"
@@ -56,36 +122,51 @@ const NewProductFields = ({ form, products }) => {
 
       <Form.Item
         name="new_name"
-        label="Product Name"
+        label={
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+            <span>Product Name</span>
+            <Button
+              type="link"
+              size="small"
+              style={{ padding: 0, fontSize: 12, height: 'auto', marginLeft: 8 }}
+              onClick={() => {
+                if (manualName) {
+                  setManualName(false)
+                  const generated = buildProductName({ glassType, brand, thicknessMm, widthMm, heightMm })
+                  form.setFieldsValue({ new_name: generated })
+                } else {
+                  setManualName(true)
+                }
+              }}
+            >
+              {manualName ? 'Use generated name' : 'Edit manually'}
+            </Button>
+          </div>
+        }
         rules={[{ required: true, message: 'Please enter product name' }]}
-        style={{ marginBottom: 12 }}
+        style={{ marginBottom: 0 }}
       >
-        <Input placeholder="e.g. CLEAR FLOAT IMP 12 X 214 X 366" />
+        <Input
+          readOnly={!manualName}
+          style={{
+            backgroundColor: manualName ? '#ffffff' : '#f5f5f5',
+            color: manualName ? 'inherit' : '#595959',
+            fontWeight: manualName ? 'normal' : '500'
+          }}
+          placeholder="e.g. CLEAR FLOAT IMP 12 X 214 X 366"
+        />
       </Form.Item>
-
-      <Row gutter={12}>
-        <Col span={8}>
-          <Form.Item name="new_brand" label="Brand" style={{ marginBottom: 12 }}>
-            <Input placeholder="e.g. Saint-Gobain" />
-          </Form.Item>
-        </Col>
-        <Col span={8}>
-          <Form.Item
-            name="new_thickness_mm"
-            label="Thickness (mm)"
-            rules={[{ required: true, message: 'Required' }]}
-            style={{ marginBottom: 12 }}
-          >
-            <InputNumber min={0} style={{ width: '100%' }} placeholder="e.g. 12" />
-          </Form.Item>
-        </Col>
-        <Col span={8}>
-          <Form.Item name="new_cost_price" label="Cost Rate (₹/sqm)" style={{ marginBottom: 12 }}>
-            <InputNumber min={0} style={{ width: '100%' }} placeholder="e.g. 450" />
-          </Form.Item>
-        </Col>
-      </Row>
     </div>
+  )
+
+  if (section === 'details') return renderDetails()
+  if (section === 'name') return renderName()
+
+  return (
+    <>
+      {renderDetails()}
+      {renderName()}
+    </>
   )
 }
 
@@ -185,6 +266,18 @@ const StockOverview = () => {
     return opts
   }, [products, adjSearchText])
 
+  const warehouseOptions = useMemo(() => {
+    const opts = (warehouses || []).map(w => ({
+      value: w.id,
+      label: w.name || w.label
+    }))
+    opts.unshift({
+      value: '__NEW__',
+      label: '+ Create new warehouse'
+    })
+    return opts
+  }, [warehouses])
+
   // Mutations
   const adjustMutation = useMutation({
     mutationFn: async (values) => {
@@ -243,7 +336,16 @@ const StockOverview = () => {
       if (qtySqm === null || isNaN(qtySqm)) qtySqm = 0
       if (qtySheets === null || isNaN(qtySheets)) qtySheets = 0
 
-      const warehouseId = values.warehouse_id || warehouses[0]?.id
+      let warehouseId = values.warehouse_id
+      if (warehouseId === '__NEW__' || values.new_warehouse_name) {
+        if (!values.new_warehouse_name || !values.new_warehouse_name.trim()) {
+          throw new Error('Warehouse name is required for creating a new warehouse')
+        }
+        const createdWh = await warehouseApi.create({ name: values.new_warehouse_name.trim() })
+        const newWh = createdWh?.data || createdWh
+        warehouseId = newWh.id
+      }
+      warehouseId = warehouseId || warehouses[0]?.id
       if (!warehouseId) {
         throw new Error('No valid warehouse available for the active company. Please select or create a warehouse first.')
       }
@@ -262,6 +364,7 @@ const StockOverview = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['products-all'] })
       queryClient.invalidateQueries({ queryKey: ['stock-movements-overview'] })
+      queryClient.invalidateQueries({ queryKey: ['warehouses-dd'] })
       message.success('Stock movement posted successfully')
       setAdjModalOpen(false)
       adjForm.resetFields()
@@ -331,7 +434,16 @@ const StockOverview = () => {
       if (qtySqm === null || isNaN(qtySqm)) qtySqm = 0
       if (qtySheets === null || isNaN(qtySheets)) qtySheets = 0
 
-      const warehouseId = values.warehouse_id || warehouses[0]?.id
+      let warehouseId = values.warehouse_id
+      if (warehouseId === '__NEW__' || values.new_warehouse_name) {
+        if (!values.new_warehouse_name || !values.new_warehouse_name.trim()) {
+          throw new Error('Warehouse name is required for creating a new warehouse')
+        }
+        const createdWh = await warehouseApi.create({ name: values.new_warehouse_name.trim() })
+        const newWh = createdWh?.data || createdWh
+        warehouseId = newWh.id
+      }
+      warehouseId = warehouseId || warehouses[0]?.id
       if (!warehouseId) {
         throw new Error('No valid warehouse available for the active company. Please select or create a warehouse first.')
       }
@@ -350,6 +462,7 @@ const StockOverview = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['products-all'] })
       queryClient.invalidateQueries({ queryKey: ['stock-movements-overview'] })
+      queryClient.invalidateQueries({ queryKey: ['warehouses-dd'] })
       message.success('Opening stock balance set successfully')
       setOpeningModalOpen(false)
       openingForm.resetFields()
@@ -862,10 +975,6 @@ const StockOverview = () => {
             />
           </Form.Item>
 
-          {adjIsNew && (
-            <NewProductFields form={adjForm} products={products} />
-          )}
-
           <Form.Item shouldUpdate noStyle>
             {() => {
               const pid = adjForm.getFieldValue('product_id')
@@ -875,55 +984,77 @@ const StockOverview = () => {
 
               return (
                 <>
-                  {/* 2. Glass Type */}
+                  {/* 1. Glass Type */}
                   <Form.Item
                     name="glass_type"
                     label="Glass Type"
-                    rules={adjIsNew ? [{ required: true, message: 'Please select or enter glass type' }] : []}
+                    rules={isNew ? [{ required: true, message: 'Please select or enter glass type' }] : []}
                     extra={isExisting ? <Text type="secondary" style={{ fontSize: 11 }}>From product master</Text> : null}
                   >
                     <Select
                       mode="tags"
                       maxCount={1}
-                      disabled={!adjIsNew}
+                      disabled={!isNew}
                       placeholder="Select or type glass type"
                       options={distinctGlassTypes}
                     />
                   </Form.Item>
 
-                  {/* 3. Company Warehouse */}
-                  <Form.Item name="warehouse_id" label="Company Warehouse" rules={[{ required: true, message: 'Please select a warehouse' }]}>
-                    <Select
-                      placeholder="Select warehouse"
-                      options={warehouses.map(w => ({ value: w.id, label: w.name }))}
-                    />
-                  </Form.Item>
+                  {/* 2. Brand, Thickness, Cost Rate (for new product) */}
+                  {isNew && <NewProductFields form={adjForm} products={products} section="details" />}
 
-                  {/* 4. Sheet Size */}
+                  {/* 3. Sheet Size */}
                   <Row gutter={12}>
                     <Col span={12}>
                       <Form.Item
                         name="sheet_width_mm"
                         label="Width (mm)"
-                        rules={adjIsNew ? [{ required: true, message: 'Width required' }] : []}
+                        rules={isNew ? [{ required: true, message: 'Width required' }] : []}
                         extra={isExisting ? <Text type="secondary" style={{ fontSize: 11 }}>From product master</Text> : null}
                       >
-                        <InputNumber disabled={!adjIsNew} style={{ width: '100%' }} placeholder="e.g. 2440" />
+                        <InputNumber disabled={!isNew} style={{ width: '100%' }} placeholder="e.g. 2440" />
                       </Form.Item>
                     </Col>
                     <Col span={12}>
                       <Form.Item
                         name="sheet_height_mm"
                         label="Height (mm)"
-                        rules={adjIsNew ? [{ required: true, message: 'Height required' }] : []}
+                        rules={isNew ? [{ required: true, message: 'Height required' }] : []}
                         extra={isExisting ? <Text type="secondary" style={{ fontSize: 11 }}>From product master</Text> : null}
                       >
-                        <InputNumber disabled={!adjIsNew} style={{ width: '100%' }} placeholder="e.g. 3660" />
+                        <InputNumber disabled={!isNew} style={{ width: '100%' }} placeholder="e.g. 3660" />
                       </Form.Item>
                     </Col>
                   </Row>
 
-                  {/* 5. QTY (sheets) & Balance (sqm) */}
+                  {/* 4. Generated Product Name & Duplicate Warning (for new product) */}
+                  {isNew && <NewProductFields form={adjForm} products={products} section="name" />}
+
+                  {/* 5. Company Warehouse */}
+                  <Form.Item name="warehouse_id" label="Company Warehouse" rules={[{ required: true, message: 'Please select a warehouse' }]}>
+                    <Select
+                      placeholder="Select warehouse"
+                      options={warehouseOptions}
+                    />
+                  </Form.Item>
+
+                  <Form.Item shouldUpdate={(prevValues, currentValues) => prevValues.warehouse_id !== currentValues.warehouse_id} noStyle>
+                    {({ getFieldValue }) => {
+                      const isNewWh = getFieldValue('warehouse_id') === '__NEW__'
+                      if (!isNewWh) return null
+                      return (
+                        <Form.Item
+                          name="new_warehouse_name"
+                          label="New Warehouse Name"
+                          rules={[{ required: true, message: 'Please enter warehouse name' }]}
+                        >
+                          <Input placeholder="e.g. Storage Yard B" />
+                        </Form.Item>
+                      )
+                    }}
+                  </Form.Item>
+
+                  {/* 6. QTY (sheets) & Balance (sqm) */}
                   <Row gutter={12}>
                     <Col span={12}>
                       <Form.Item
@@ -1055,10 +1186,6 @@ const StockOverview = () => {
             />
           </Form.Item>
 
-          {openingIsNew && (
-            <NewProductFields form={openingForm} products={products} />
-          )}
-
           <Form.Item shouldUpdate noStyle>
             {() => {
               const pid = openingForm.getFieldValue('product_id')
@@ -1068,55 +1195,77 @@ const StockOverview = () => {
 
               return (
                 <>
-                  {/* 2. Glass Type */}
+                  {/* 1. Glass Type */}
                   <Form.Item
                     name="glass_type"
                     label="Glass Type"
-                    rules={openingIsNew ? [{ required: true, message: 'Please select or enter glass type' }] : []}
+                    rules={isNew ? [{ required: true, message: 'Please select or enter glass type' }] : []}
                     extra={isExisting ? <Text type="secondary" style={{ fontSize: 11 }}>From product master</Text> : null}
                   >
                     <Select
                       mode="tags"
                       maxCount={1}
-                      disabled={!openingIsNew}
+                      disabled={!isNew}
                       placeholder="Select or type glass type"
                       options={distinctGlassTypes}
                     />
                   </Form.Item>
 
-                  {/* 3. Company Warehouse */}
-                  <Form.Item name="warehouse_id" label="Company Warehouse" rules={[{ required: true, message: 'Please select a warehouse' }]}>
-                    <Select
-                      placeholder="Select warehouse"
-                      options={warehouses.map(w => ({ value: w.id, label: w.name }))}
-                    />
-                  </Form.Item>
+                  {/* 2. Brand, Thickness, Cost Rate (for new product) */}
+                  {isNew && <NewProductFields form={openingForm} products={products} section="details" />}
 
-                  {/* 4. Sheet Size */}
+                  {/* 3. Sheet Size */}
                   <Row gutter={12}>
                     <Col span={12}>
                       <Form.Item
                         name="sheet_width_mm"
                         label="Width (mm)"
-                        rules={openingIsNew ? [{ required: true, message: 'Width required' }] : []}
+                        rules={isNew ? [{ required: true, message: 'Width required' }] : []}
                         extra={isExisting ? <Text type="secondary" style={{ fontSize: 11 }}>From product master</Text> : null}
                       >
-                        <InputNumber disabled={!openingIsNew} style={{ width: '100%' }} placeholder="e.g. 2440" />
+                        <InputNumber disabled={!isNew} style={{ width: '100%' }} placeholder="e.g. 2440" />
                       </Form.Item>
                     </Col>
                     <Col span={12}>
                       <Form.Item
                         name="sheet_height_mm"
                         label="Height (mm)"
-                        rules={openingIsNew ? [{ required: true, message: 'Height required' }] : []}
+                        rules={isNew ? [{ required: true, message: 'Height required' }] : []}
                         extra={isExisting ? <Text type="secondary" style={{ fontSize: 11 }}>From product master</Text> : null}
                       >
-                        <InputNumber disabled={!openingIsNew} style={{ width: '100%' }} placeholder="e.g. 3660" />
+                        <InputNumber disabled={!isNew} style={{ width: '100%' }} placeholder="e.g. 3660" />
                       </Form.Item>
                     </Col>
                   </Row>
 
-                  {/* 5. QTY (sheets) & Balance (sqm) */}
+                  {/* 4. Generated Product Name & Duplicate Warning (for new product) */}
+                  {isNew && <NewProductFields form={openingForm} products={products} section="name" />}
+
+                  {/* 5. Company Warehouse */}
+                  <Form.Item name="warehouse_id" label="Company Warehouse" rules={[{ required: true, message: 'Please select a warehouse' }]}>
+                    <Select
+                      placeholder="Select warehouse"
+                      options={warehouseOptions}
+                    />
+                  </Form.Item>
+
+                  <Form.Item shouldUpdate={(prevValues, currentValues) => prevValues.warehouse_id !== currentValues.warehouse_id} noStyle>
+                    {({ getFieldValue }) => {
+                      const isNewWh = getFieldValue('warehouse_id') === '__NEW__'
+                      if (!isNewWh) return null
+                      return (
+                        <Form.Item
+                          name="new_warehouse_name"
+                          label="New Warehouse Name"
+                          rules={[{ required: true, message: 'Please enter warehouse name' }]}
+                        >
+                          <Input placeholder="e.g. Storage Yard B" />
+                        </Form.Item>
+                      )
+                    }}
+                  </Form.Item>
+
+                  {/* 6. QTY (sheets) & Balance (sqm) */}
                   <Row gutter={12}>
                     <Col span={12}>
                       <Form.Item

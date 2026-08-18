@@ -45,6 +45,9 @@ const MasterList = ({
   activeTab,
   onTabChange,
   onDataLoad,
+  hideStatus = false,
+  hideActions = false,
+  hideCreate = false,
 }) => {
   const { message } = App.useApp()
   const navigate     = useNavigate()
@@ -99,7 +102,9 @@ const MasterList = ({
     onSuccess: (res) => {
       message.success('Record cloned successfully')
       queryClient.invalidateQueries({ queryKey: [queryKey] })
-      navigate(editPath(res.data))
+      if (editPath && typeof editPath === 'function') {
+        navigate(editPath(res.data))
+      }
     },
   })
 
@@ -128,15 +133,17 @@ const MasterList = ({
       return (
         <Space size={4}>
           {extraActions && extraActions(record)}
-          <Tooltip title="Edit">
-            <Button
-              type="text"
-              size="small"
-              icon={<EditOutlined />}
-              style={{ color: '#3b82f6' }}
-              onClick={() => navigate(editPath(record))}
-            />
-          </Tooltip>
+          {editPath && typeof editPath === 'function' && editPath(record) !== '#' && (
+            <Tooltip title="Edit">
+              <Button
+                type="text"
+                size="small"
+                icon={<EditOutlined />}
+                style={{ color: '#3b82f6' }}
+                onClick={() => navigate(editPath(record))}
+              />
+            </Tooltip>
+          )}
           <Dropdown menu={{ items: menuItems }} trigger={['click']}>
             <Button size="small" type="text" icon={<MoreOutlined />} />
           </Dropdown>
@@ -158,30 +165,38 @@ const MasterList = ({
     key: 'status',
     width: 90,
     render: (_, record) =>
-      record.is_active
-        ? <Badge status="success" text="Active" />
-        : <Badge status="default" text="Archived" />,
+      record.is_active === false
+        ? <Badge status="default" text="Archived" />
+        : <Badge status="success" text="Active" />,
   }
 
   // ── Make name column clickable ──────────────────────────────────────────────
   const enhancedColumns = columns.map((col, idx) => {
-    if (col.dataIndex === nameField || (idx === 0 && !nameField)) {
+    if (editPath && typeof editPath === 'function' && editPath({}) !== '#' && (col.dataIndex === nameField || (idx === 0 && !nameField))) {
+      const origRender = col.render
       return {
         ...col,
-        render: (val, record) => (
-          <a
-            onClick={() => navigate(editPath(record))}
-            style={{ color: '#1677ff', cursor: 'pointer', fontWeight: 500 }}
-          >
-            {val}
-          </a>
-        ),
+        render: (val, record, index) => {
+          const content = origRender ? origRender(val, record, index) : val
+          return (
+            <a
+              onClick={() => navigate(editPath(record))}
+              style={{ color: '#1677ff', cursor: 'pointer', fontWeight: 500 }}
+            >
+              {content}
+            </a>
+          )
+        },
       }
     }
     return col
   })
 
-  const allColumns = [...enhancedColumns, statusColumn, actionColumn]
+  const allColumns = [
+    ...enhancedColumns,
+    ...(!hideStatus ? [statusColumn] : []),
+    ...(!hideActions ? [actionColumn] : [])
+  ]
 
   return (
     <div style={{ padding: '16px 24px' }}>
@@ -195,9 +210,11 @@ const MasterList = ({
           <Col>
             <Space>
               {extraHeaderActions}
-              <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate(createPath)} style={{ background: 'white', color: '#1e3a8a', fontWeight: 'bold' }}>
-                New {title}
-              </Button>
+              {!hideCreate && createPath && (
+                <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate(createPath)} style={{ background: 'white', color: '#1e3a8a', fontWeight: 'bold' }}>
+                  New {title}
+                </Button>
+              )}
             </Space>
           </Col>
         </Row>
@@ -282,7 +299,7 @@ const MasterList = ({
           columns={allColumns}
           loading={isLoading || isFetching}
           scroll={{ x: 'max-content' }}
-          rowClassName={(r) => !r.is_active ? 'row-archived' : ''}
+          rowClassName={(r) => r.is_active === false ? 'row-archived' : ''}
           pagination={{
             current:   page,
             pageSize:  pageSize,

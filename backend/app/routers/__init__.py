@@ -164,8 +164,19 @@ def make_crud_router(
             else:
                 q = q.filter(model.status == status)
 
-        if search and hasattr(model, "name"):
-            q = q.filter(model.name.ilike(f"%{search}%"))
+        if search:
+            search_filters = []
+            if hasattr(model, "name"):
+                search_filters.append(model.name.ilike(f"%{search}%"))
+            if hasattr(model, "move_number"):
+                search_filters.append(model.move_number.ilike(f"%{search}%"))
+            if hasattr(model, "reference"):
+                search_filters.append(model.reference.ilike(f"%{search}%"))
+            if hasattr(model, "remarks"):
+                search_filters.append(model.remarks.ilike(f"%{search}%"))
+            if search_filters:
+                from sqlalchemy import or_
+                q = q.filter(or_(*search_filters))
 
         # Sort customers alphabetically by name, everything else by id desc
         if hasattr(model, 'name') and getattr(model, '__tablename__', None) == 'customers':

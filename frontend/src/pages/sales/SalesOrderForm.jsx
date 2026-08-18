@@ -1591,6 +1591,7 @@ const SalesOrderForm = () => {
       values.lines = getFlatLines()
       values.groups = groups
       values.unit_mode = soUnit
+      values.gst_mode = gstMode
       values.hardware_items = hardwareItems
       values.labor_items = laborItems
       values.wastage_items = wastageItems
