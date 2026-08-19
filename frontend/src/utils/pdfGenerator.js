@@ -3348,117 +3348,142 @@ export const generateWorkshopOrderPDF = async (wo) => {
     // 1) PANEL MAP SHEETS
     const artworkMaps = wo.artworkMaps || wo.artwork_maps || []
     const validMaps = (artworkMaps || []).filter(m => m.image && (m.panels || []).length > 0)
-    for (let mi = 0; mi < validMaps.length; mi++) {
-      const map = validMaps[mi]
-      try {
-        const oImg = new Image()
-        await new Promise((resolve, reject) => {
-          oImg.onload = resolve
-          oImg.onerror = reject
-          oImg.src = map.image
-        })
+    for (let mi = 0; mi < validMaps.length; mi += 2) {
+      const pair = validMaps.slice(mi, mi + 2)
+      doc.addPage()
+      drawSheetHeader(
+        `PANEL MAPS ${mi + 1}${pair.length > 1 ? `–${mi + 2}` : ''} of ${validMaps.length}`,
+        `${wo.wo_number || 'WO'}${cust.name ? ' | ' + cust.name : ''}`
+      )
 
-        const oCanvas = document.createElement('canvas')
-        const UPSCALE_TARGET = 1400
-        const up = Math.max(1, Math.min(3, UPSCALE_TARGET / Math.max(oImg.width, 1)))
-        oCanvas.width = Math.round(oImg.width * up)
-        oCanvas.height = Math.round(oImg.height * up)
-        const oCtx = oCanvas.getContext('2d')
-        oCtx.imageSmoothingEnabled = true
-        oCtx.imageSmoothingQuality = 'high'
-        oCtx.drawImage(oImg, 0, 0, oCanvas.width, oCanvas.height)
+      for (let h = 0; h < pair.length; h++) {
+        const map = pair[h]
+        const HALF_W   = 136
+        const GUTTER   = 5
+        const HEADER_H = 20
+        const halfX    = margin + h * (HALF_W + GUTTER)
 
-        const k = Math.max(oCanvas.width, oCanvas.height) / 800
+        if (h > 0) {
+          doc.setDrawColor(226, 232, 240)
+          doc.setLineWidth(0.3)
+          doc.line(halfX - GUTTER / 2, HEADER_H, halfX - GUTTER / 2, pageH - 12)
+        }
 
-        map.panels.forEach((p, i) => {
-          const color = PANEL_COLORS[i % PANEL_COLORS.length]
-          const line = (p.lineIndex != null) ? lines[p.lineIndex] : null
-          const px = (p.nx != null) ? p.nx * oCanvas.width : p.x * up
-          const py = (p.ny != null) ? p.ny * oCanvas.height : p.y * up
-          const pw = (p.nw != null) ? p.nw * oCanvas.width : p.w * up
-          const ph = (p.nh != null) ? p.nh * oCanvas.height : p.h * up
-          oCtx.strokeStyle = color
-          oCtx.lineWidth = 1.5 * k
-          oCtx.strokeRect(px, py, pw, ph)
-          oCtx.fillStyle = color + '14'
-          oCtx.fillRect(px, py, pw, ph)
-          const bs = 34 * k
-          oCtx.fillStyle = color
-          oCtx.fillRect(px + 3 * k, py + 3 * k, bs, bs)
-          oCtx.fillStyle = '#ffffff'
-          oCtx.font = `bold ${22 * k}px sans-serif`
-          oCtx.fillText(String(i + 1), px + 12 * k, py + 27 * k)
-          if (line) {
-            const label = `${line.description || 'Line ' + (p.lineIndex + 1)}  ${line.act_w_in ? toFraction(line.act_w_in) : '?'}"x${line.act_h_in ? toFraction(line.act_h_in) : '?'}" x${line.qty || 1}`
-            oCtx.font = `bold ${18 * k}px sans-serif`
-            const tw = oCtx.measureText(label).width + 14 * k
-            oCtx.fillStyle = 'rgba(255,255,255,0.96)'
-            oCtx.fillRect(px + 3 * k, py + ph - 26 * k, Math.min(tw, Math.max(pw - 6 * k, 40 * k)), 23 * k)
-            oCtx.fillStyle = '#111111'
-            oCtx.fillText(label, px + 8 * k, py + ph - 8 * k)
+        doc.setFontSize(8)
+        doc.setFont('helvetica', 'bold')
+        doc.setTextColor(30, 41, 59)
+        const mapTitle = String(map.name || 'ARTWORK').toUpperCase().substring(0, 32)
+        doc.text(`PANEL MAP: ${mapTitle}`, halfX, HEADER_H + 4)
+
+        try {
+          const oImg = new Image()
+          await new Promise((resolve, reject) => {
+            oImg.onload = resolve
+            oImg.onerror = reject
+            oImg.src = map.image
+          })
+
+          const oCanvas = document.createElement('canvas')
+          const UPSCALE_TARGET = 1400
+          const up = Math.max(1, Math.min(3, UPSCALE_TARGET / Math.max(oImg.width, 1)))
+          oCanvas.width = Math.round(oImg.width * up)
+          oCanvas.height = Math.round(oImg.height * up)
+          const oCtx = oCanvas.getContext('2d')
+          oCtx.imageSmoothingEnabled = true
+          oCtx.imageSmoothingQuality = 'high'
+          oCtx.drawImage(oImg, 0, 0, oCanvas.width, oCanvas.height)
+
+          const k = Math.max(oCanvas.width, oCanvas.height) / 800
+
+          map.panels.forEach((p, i) => {
+            const color = PANEL_COLORS[i % PANEL_COLORS.length]
+            const line = (p.lineIndex != null) ? lines[p.lineIndex] : null
+            const px = (p.nx != null) ? p.nx * oCanvas.width : p.x * up
+            const py = (p.ny != null) ? p.ny * oCanvas.height : p.y * up
+            const pw = (p.nw != null) ? p.nw * oCanvas.width : p.w * up
+            const ph = (p.nh != null) ? p.nh * oCanvas.height : p.h * up
+            oCtx.strokeStyle = color
+            oCtx.lineWidth = 1.5 * k
+            oCtx.strokeRect(px, py, pw, ph)
+            oCtx.fillStyle = color + '14'
+            oCtx.fillRect(px, py, pw, ph)
+            const bs = 34 * k
+            oCtx.fillStyle = color
+            oCtx.fillRect(px + 3 * k, py + 3 * k, bs, bs)
+            oCtx.fillStyle = '#ffffff'
+            oCtx.font = `bold ${22 * k}px sans-serif`
+            oCtx.fillText(String(i + 1), px + 12 * k, py + 27 * k)
+            if (line) {
+              const label = `${line.description || 'Line ' + (p.lineIndex + 1)}  ${line.act_w_in ? toFraction(line.act_w_in) : '?'}"x${line.act_h_in ? toFraction(line.act_h_in) : '?'}" x${line.qty || 1}`
+              oCtx.font = `bold ${18 * k}px sans-serif`
+              const tw = oCtx.measureText(label).width + 14 * k
+              oCtx.fillStyle = 'rgba(255,255,255,0.96)'
+              oCtx.fillRect(px + 3 * k, py + ph - 26 * k, Math.min(tw, Math.max(pw - 6 * k, 40 * k)), 23 * k)
+              oCtx.fillStyle = '#111111'
+              oCtx.fillText(label, px + 8 * k, py + ph - 8 * k)
+            }
+          })
+
+          const dims = fitDims(oCanvas.width, oCanvas.height, HALF_W, 120)
+          const imgData = oCanvas.toDataURL('image/png')
+          doc.addImage(imgData, 'PNG', halfX + (HALF_W - dims.w) / 2, HEADER_H + 10, dims.w, dims.h)
+
+          let pmTableRows = map.panels.map((p, i) => {
+            const line = (p.lineIndex != null) ? lines[p.lineIndex] : null
+            return [
+              String(i + 1),
+              line ? (line.description || `Line ${p.lineIndex + 1}`) : 'NOT ASSIGNED',
+              line ? `${line.act_w_in ? toFraction(line.act_w_in) : '?'}" × ${line.act_h_in ? toFraction(line.act_h_in) : '?'}"` : '—',
+              line ? String(line.qty || line.quantity || 1) : '—',
+              (line?.toughened || line?.is_toughened) ? 'YES' : '—',
+              p.note || '—',
+            ]
+          })
+
+          if (pmTableRows.length > 8) {
+            const overflowCount = pmTableRows.length - 7
+            pmTableRows = pmTableRows.slice(0, 7)
+            pmTableRows.push(['', `+${overflowCount} more panels`, '', '', '', ''])
           }
-        })
 
-        doc.addPage()
-        drawSheetHeader(
-          `PANEL MAP ${validMaps.length > 1 ? `${mi + 1}/${validMaps.length} — ` : '— '}${String(map.name || 'ARTWORK').toUpperCase().substring(0, 30)}`,
-          `${wo.wo_number || 'WO'}${cust.name ? ' | ' + cust.name : ''}`
-        )
-
-        const legendH = 12 + map.panels.length * 7
-        const maxImgH = pageH - 16 - 12 - legendH - 14
-        const dims = fitDims(oCanvas.width, oCanvas.height, contentW, Math.max(90, maxImgH))
-        const imgData = oCanvas.toDataURL('image/png')
-        doc.addImage(imgData, 'PNG', (pageW - dims.w) / 2, 20, dims.w, dims.h)
-
-        const pmTableRows = map.panels.map((p, i) => {
-          const line = (p.lineIndex != null) ? lines[p.lineIndex] : null
-          return [
-            String(i + 1),
-            line ? (line.description || `Line ${p.lineIndex + 1}`) : 'NOT ASSIGNED',
-            line ? `${line.act_w_in ? toFraction(line.act_w_in) : '?'}" × ${line.act_h_in ? toFraction(line.act_h_in) : '?'}"` : '—',
-            line ? String(line.qty || line.quantity || 1) : '—',
-            (line?.toughened || line?.is_toughened) ? 'YES' : '—',
-            p.note || '—',
-          ]
-        })
-
-        autoTable(doc, {
-          theme: 'grid',
-          startY: 20 + dims.h + 6,
-          head: [['Panel', 'Glass Line', 'Size', 'Qty', 'Tgh', 'Note']],
-          body: pmTableRows,
-          styles: { fontSize: 8.5, cellPadding: 2.5, lineWidth: 0.15, lineColor: [148, 163, 184] },
-          headStyles: { fillColor: [124, 58, 237], textColor: 255, fontStyle: 'bold', lineWidth: 0.15, lineColor: [99, 102, 241] },
-          alternateRowStyles: { fillColor: [245, 243, 255] },
-          columnStyles: {
-            0: { cellWidth: 14, halign: 'center' },
-            1: { cellWidth: 70, fontStyle: 'bold' },
-            2: { cellWidth: 35 },
-            3: { cellWidth: 12, halign: 'center' },
-            4: { cellWidth: 12, halign: 'center' },
-            5: { cellWidth: 'auto' },
-          },
-          margin: { left: margin, right: margin },
-          didParseCell: (data) => {
-            if (data.row.raw.length === 1) return
-            if (data.section === 'body' && data.column.index === 0) {
-              const c = PANEL_COLORS[data.row.index % PANEL_COLORS.length]
-              data.cell.styles.fillColor = [
-                parseInt(c.slice(1, 3), 16),
-                parseInt(c.slice(3, 5), 16),
-                parseInt(c.slice(5, 7), 16),
-              ]
-              data.cell.styles.textColor = 255
-              data.cell.styles.fontStyle = 'bold'
-            }
-            if (data.section === 'body' && data.column.index === 1) {
-              data.cell.styles.fontStyle = 'bold'
-            }
-          },
-        })
-      } catch (imgErr) {
-        console.error('Panel map sheet failed:', imgErr)
+          autoTable(doc, {
+            theme: 'grid',
+            startY: HEADER_H + 10 + dims.h + 5,
+            head: [['Panel', 'Glass Line', 'Size', 'Qty', 'Tgh', 'Note']],
+            body: pmTableRows,
+            styles: { fontSize: 6.5, cellPadding: 1.3, lineWidth: 0.15, lineColor: [148, 163, 184], overflow: 'linebreak' },
+            headStyles: { fillColor: [124, 58, 237], textColor: 255, fontStyle: 'bold', lineWidth: 0.15, lineColor: [99, 102, 241] },
+            alternateRowStyles: { fillColor: [245, 243, 255] },
+            columnStyles: {
+              0: { cellWidth: 12, halign: 'center' },
+              1: { cellWidth: 48, fontStyle: 'bold' },
+              2: { cellWidth: 30 },
+              3: { cellWidth: 10, halign: 'center' },
+              4: { cellWidth: 10, halign: 'center' },
+              5: { cellWidth: 'auto' },
+            },
+            margin: { left: halfX, right: pageW - halfX - HALF_W },
+            tableWidth: HALF_W,
+            didParseCell: (data) => {
+              if (data.row.raw.length === 1) return
+              if (data.section === 'body' && data.column.index === 0) {
+                const c = PANEL_COLORS[data.row.index % PANEL_COLORS.length]
+                data.cell.styles.fillColor = [
+                  parseInt(c.slice(1, 3), 16),
+                  parseInt(c.slice(3, 5), 16),
+                  parseInt(c.slice(5, 7), 16),
+                ]
+                data.cell.styles.textColor = 255
+                data.cell.styles.fontStyle = 'bold'
+              }
+              if (data.section === 'body' && data.column.index === 1) {
+                data.cell.styles.fontStyle = 'bold'
+              }
+            },
+          })
+        } catch (imgErr) {
+          console.error('Panel map sheet failed:', imgErr)
+        }
       }
     }
 
