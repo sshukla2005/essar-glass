@@ -35,3 +35,4 @@ class Company(Base, TimestampMixin, SoftDeleteMixin):
     state_code     = Column(String(10), nullable=True)
     state_name     = Column(String(100), nullable=True)
     address_line2  = Column(String(500), nullable=True)
+    jurisdiction   = Column(String(100), nullable=True)

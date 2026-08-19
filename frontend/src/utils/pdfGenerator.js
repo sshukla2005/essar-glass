@@ -299,8 +299,6 @@ const getCompany = (id) => {
       const c = all.find(x => x.id === id)
       if (c) return c
     }
-    const active = all.find(x => x.is_active) || all[0]
-    if (active) return active
   } catch { }
   return null
 }
@@ -437,7 +435,7 @@ const drawHeader = (doc, company, docTitle, pageW = PAGE_W) => {
   }
 
   // 1. Company Name
-  const nameText = (company.name || 'ESSAR GLASS').toUpperCase()
+  const nameText = (company.name || 'COMPANY').toUpperCase()
   let nameFontSize = 16
   const maxCenterTextW = contentW - 86
   setFont(doc, nameFontSize, 'bold', C.primary)
@@ -1557,12 +1555,13 @@ const drawDocumentFooterSection = (doc, company, y, pageNum, docData) => {
   
   ly += 4.5
 
+  const jurisdiction = cleanVal(company?.jurisdiction) || cleanVal(company?.city) || cleanVal(company?.state_name) || 'Palghar'
   const bullets = [
     '• Validity of Document is 8 Days from the date of issue.',
     '• Goods sold cannot be Exchanged or Returned.',
     '• Accepted Tolerance limits will be +/- 1mm in dimentions & =/- .01mm in thickness',
     '• Delivery is effected solely on buyer\'s risk n costs',
-    '• All disputes subject to Palghar jurisdiction'
+    `• All disputes subject to ${jurisdiction} jurisdiction`
   ]
 
   setFont(doc, 6.5, 'normal', C.text)
@@ -1577,7 +1576,7 @@ const drawDocumentFooterSection = (doc, company, y, pageNum, docData) => {
   ly += 1.5
 
   // Red Italic Disclaimer
-  const companyShort = (cleanVal(company.short_name) || cleanVal(company.name) || 'EXCEL').toUpperCase()
+  const companyShort = (cleanVal(company?.short_name) || cleanVal(company?.name) || 'COMPANY').toUpperCase()
   const disclaimerText = `At ${companyShort} we value the time of our clients very highly, but due to the brittle nature of our product, many a times we are unable to meet our commitments and the deadlines of our esteemed clients due to reasons beyond our control.`
   
   setFont(doc, 6.5, 'italic', [220, 38, 38])
@@ -1635,7 +1634,7 @@ const drawDocumentFooterSection = (doc, company, y, pageNum, docData) => {
   drawCard(doc, rightX, ry, rightW, sigBoxH, C.white, C.border, 1.5)
   
   setFont(doc, 7.5, 'bold', C.primary)
-  drawText(doc, `For:  ${(cleanVal(company.name) || 'ESSAR GLASS').toUpperCase()}`, rightX + 4, ry + 5)
+  drawText(doc, `For:  ${(cleanVal(company?.name) || 'COMPANY').toUpperCase()}`, rightX + 4, ry + 5)
   
   setFont(doc, 6.5, 'bold', C.textLight)
   drawText(doc, 'authorized Signatory', rightX + rightW - 4, ry + sigBoxH - 4, { align: 'right' })
@@ -1710,14 +1709,15 @@ const drawDocumentFooterSection = (doc, company, y, pageNum, docData) => {
   return noteY + addrBoxH
 }
 
-const drawTerms = (doc, y) => {
+const drawTerms = (doc, y, company) => {
+  const jurisdiction = cleanVal(company?.jurisdiction) || cleanVal(company?.city) || cleanVal(company?.state_name) || 'Palghar'
   const terms = [
     'Please double-check glass specifications, size, quantity, rates and taxes before confirming.',
     'Goods sold cannot be exchanged or returned after confirmation.',
     'Accepted tolerance: +/- 2mm in dimensions.',
     'Delivery, unloading & hauling charges are extra and payable by buyer.',
     'Delayed payment charges @ 2% per month after due date.',
-    'All disputes subject to Palghar jurisdiction.',
+    `All disputes subject to ${jurisdiction} jurisdiction.`,
   ]
   setFont(doc, 7.5, 'bold', C.primaryMid)
   drawText(doc, 'Terms & Conditions', MARGIN.l + 2, y)
@@ -1737,7 +1737,7 @@ const drawSignatureStrip = (doc, company, y) => {
   const blocks = [
     { label: 'Customer Acceptance', info: 'I/We accept specs & rates.', line: 'Signature & Stamp / Date' },
     { label: 'Prepared By', info: 'Sales & Estimations Desk', line: 'Account Executive Signature' },
-    { label: `For ${company.name || 'ESSAR SONS'}`, info: 'Office Seal Area', line: 'Authorised Signatory' }
+    { label: `For ${company?.name || 'COMPANY'}`, info: 'Office Seal Area', line: 'Authorised Signatory' }
   ]
   
   blocks.forEach((b, i) => {
@@ -1853,7 +1853,7 @@ const buildArtworkPageHTML = (group, gi, company) => {
       <div style="display:flex;align-items:center;gap:12px;">
         ${company.logo ? `<img src="${company.logo}" style="height:40px;object-fit:contain;background:#fff;border-radius:4px;padding:2px;"/>` : ''}
         <div>
-          <div style="font-size:14px;font-weight:700;">${(company.name || 'ESSAR SONS').toUpperCase()}</div>
+          <div style="font-size:14px;font-weight:700;">${(company?.name || 'COMPANY').toUpperCase()}</div>
           <div style="font-size:10px;color:#c5cae9;">${company.tagline || ''}</div>
         </div>
       </div>
@@ -2591,7 +2591,7 @@ export const generatePOPDF = async (po) => {
 
     y = drawFinalSummaryBlock(doc, totalsRows, toWords(Math.round(grand)), { payment_terms: po.payment_terms }, y) + SP_16
     y = drawSignatureStrip(doc, company, y) + SP_16
-    drawTerms(doc, y)
+    drawTerms(doc, y, company)
 
     addFootersAndPageNumbers(doc, po.po_number || 'PO')
     doc.save(makePdfFilename(po.po_number || 'PO', vend.name, 'Vendor'))
@@ -2838,7 +2838,7 @@ export const generateTougheningChallanPDF = async (batch) => {
   drawText(doc, "Received In Good Condition", boxX + 6, sigY + 24)
 
   // Signatory block (right side)
-  const compNameUpper = (company.name || 'ESSAR GLASS').toUpperCase()
+  const compNameUpper = (company?.name || 'COMPANY').toUpperCase()
   setFont(doc, 8.5, 'bold', C.text)
   drawText(doc, `FOR, ${compNameUpper}`, boxX + boxW - 6, sigY + 6, { align: 'right' })
 
@@ -2987,7 +2987,7 @@ export const generateDeliveryChallanPDF = async (dc) => {
 
         let ny = MARGIN.t + SP_8
         setFont(doc, 9, 'bold', C.primary)
-        drawText(doc, company.name || 'ESSAR GLASS', MARGIN.l + 2, ny + 4)
+        drawText(doc, company?.name || 'COMPANY', MARGIN.l + 2, ny + 4)
         setFont(doc, 7, 'normal', C.textLight)
         drawText(doc, `DC No: ${dc.dc_number || 'DC-DRAFT'}`, PAGE_W - MARGIN.r - 2, ny + 4, { align: 'right' })
         drawLine(doc, MARGIN.l, ny + 7, MARGIN.l + CONTENT_W, ny + 7, C.border, 0.3)
@@ -3139,7 +3139,7 @@ export const generateDeliveryChallanPDF = async (dc) => {
 
       // Right card: Authorised Signatory for Company
     const x2 = MARGIN.l + cardW + SP_8
-    const compNameUpper = (company.name || 'ESSAR GLASS').toUpperCase()
+    const compNameUpper = (company?.name || 'COMPANY').toUpperCase()
     drawCard(doc, x2, y, cardW, cardH, C.white, C.border, 1.5)
     setFont(doc, 7.5, 'bold', C.primaryMid)
     drawText(doc, `For ${compNameUpper}`, x2 + 4, y + 4.5)
@@ -3602,7 +3602,7 @@ export const generateWorkshopOrderPDF = async (wo) => {
       doc.setFont('helvetica', 'normal')
       doc.setTextColor(150, 150, 150)
       doc.text(
-        `Generated: ${dayjs().format('DD/MM/YYYY HH:mm')} | ${company.name || 'ESSAR GLASS'} Workshop Order`,
+        `Generated: ${dayjs().format('DD/MM/YYYY HH:mm')} | ${company?.name || 'COMPANY'} Workshop Order`,
         margin, footerY
       )
       doc.text(`Page ${p} of ${pageCount}`, pageW - margin, footerY, { align: 'right' })
@@ -3637,7 +3637,7 @@ export const generateDeliveryNotePDF = async (dn, companyObj = null) => {
         console.warn('Could not fetch company details:', e)
       }
     }
-    company = company || { name: 'ESSAR GLASS', address: 'Plot No. 12, Industrial Area', state: 'Gujarat', state_code: '24', gstin: '24AAAAA0000A1Z5', phone: '9876543210', email: 'info@essarglass.com' }
+    company = company || { name: 'COMPANY' }
 
     // Colors: Strict monochromatic Tally style
     const cBlack = [0, 0, 0]
@@ -3670,7 +3670,7 @@ export const generateDeliveryNotePDF = async (dn, companyObj = null) => {
     // 1. Company details
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(9)
-    doc.text(String(company.name || 'ESSAR GLASS').toUpperCase(), leftX, currY)
+    doc.text(String(company?.name || 'COMPANY').toUpperCase(), leftX, currY)
     currY += 3.5
 
     doc.setFont('helvetica', 'normal')
@@ -3981,7 +3981,7 @@ export const generateDeliveryNotePDF = async (dn, companyObj = null) => {
     // Right side: Company Signatory
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(8)
-    doc.text(`for ${String(company.name || 'ESSAR GLASS').toUpperCase()}`, margin + contentW - 3, finalY + 4.5, { align: 'right' })
+    doc.text(`for ${String(company?.name || 'COMPANY').toUpperCase()}`, margin + contentW - 3, finalY + 4.5, { align: 'right' })
 
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(7.5)
