@@ -170,6 +170,7 @@ from app.routers.super import router as super_router
 from app.routers.reports import router as reports_router
 from app.routers.inter_company import router as inter_company_router
 from app.routers.payments import router as payments_router
+from app.routers.delivery_notes import router as delivery_notes_router
 
 PREFIX = "/api/v1"
 
@@ -190,6 +191,9 @@ app.include_router(inter_company_router, prefix=f"{PREFIX}")
 
 # Payments (dedicated router with allocation support — replaces generic CRUD)
 app.include_router(payments_router)
+
+# Delivery Notes
+app.include_router(delivery_notes_router, prefix=f"{PREFIX}")
 
 
 # Auto CRUD routers

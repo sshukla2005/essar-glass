@@ -70,6 +70,7 @@ export const quotationApi = createApi('quotations', 'quote_number')
 export const salesOrderApi = createApi('sales-orders', 'so_number')
 export const purchaseOrderApi = createApi('purchase-orders', 'po_number')
 export const deliveryChallanApi = createApi('delivery', 'dc_number')
+export const deliveryNoteApi = createApi('delivery-notes', 'note_number')
 export const invoiceApi = createApi('invoices', 'invoice_number')
 export const stockMovementApi = createApi('inventory', 'move_number')
 export const workshopOrderApi = {

@@ -17,6 +17,7 @@ from app.models.warehouse import Warehouse
 from app.models.company_settings import CompanySetting
 from app.models.payment import Payment
 from app.models.payment_allocation import PaymentAllocation
+from app.models.delivery_note import DeliveryNote, DocumentSequence
 
 __all__ = [
     "Company", "User", "Customer", "Vendor", "Product",
@@ -25,4 +26,5 @@ __all__ = [
     "Invoice", "StockMovement", "WorkshopOrder",
     "TougheningBatch", "ProcessMaster", "Warehouse",
     "CompanySetting", "Payment", "PaymentAllocation",
+    "DeliveryNote", "DocumentSequence",
 ]

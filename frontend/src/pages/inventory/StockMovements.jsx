@@ -1,14 +1,18 @@
-import React from 'react'
-import { Tag } from 'antd'
+import React, { useState } from 'react'
+import { Tag, Button } from 'antd'
+import { FilePdfOutlined } from '@ant-design/icons'
 import { useSearchParams } from 'react-router-dom'
 import MasterList from '../../components/common/MasterList'
 import { stockMovementApi, productApi, warehouseApi } from '../../api'
 import { useQuery } from '@tanstack/react-query'
 import dayjs from 'dayjs'
+import CreateDeliveryNoteModal from './CreateDeliveryNoteModal'
 
 const StockMovements = () => {
   const [searchParams] = useSearchParams()
   const filterProductId = searchParams.get('product_id')
+  const [isDeliveryNoteModalOpen, setIsDeliveryNoteModalOpen] = useState(false)
+  const [selectedMovementsForNote, setSelectedMovementsForNote] = useState([])
 
   const { data: products = [] } = useQuery({
     queryKey: ['products-dd'],
@@ -79,18 +83,58 @@ const StockMovements = () => {
   const apiFilters = filterProductId ? { product_id: filterProductId } : undefined
 
   return (
-    <MasterList
-      title="Stock Movements"
-      queryKey="stock_movements"
-      api={stockMovementApi}
-      columns={columns}
-      createPath=""
-      hideCreate={true}
-      hideStatus={true}
-      hideActions={true}
-      searchPlaceholder="Search reference..."
-      apiFilters={apiFilters}
-    />
+    <>
+      <MasterList
+        title="Stock Movements"
+        queryKey="stock_movements"
+        api={stockMovementApi}
+        columns={columns}
+        createPath=""
+        hideCreate={true}
+        hideStatus={true}
+        hideActions={false}
+        searchPlaceholder="Search reference..."
+        apiFilters={apiFilters}
+        extraHeaderActions={
+          <Button
+            type="primary"
+            icon={<FilePdfOutlined />}
+            style={{ background: '#10b981', borderColor: '#10b981', fontWeight: 'bold' }}
+            onClick={() => {
+              setSelectedMovementsForNote([])
+              setIsDeliveryNoteModalOpen(true)
+            }}
+          >
+            Create Delivery Note
+          </Button>
+        }
+        extraActions={(record) => {
+          if (record.movement_type === 'out') {
+            return (
+              <Button
+                type="link"
+                size="small"
+                icon={<FilePdfOutlined />}
+                style={{ color: '#10b981', padding: 0 }}
+                onClick={() => {
+                  setSelectedMovementsForNote([record])
+                  setIsDeliveryNoteModalOpen(true)
+                }}
+              >
+                Delivery Note
+              </Button>
+            )
+          }
+          return null
+        }}
+      />
+
+      <CreateDeliveryNoteModal
+        open={isDeliveryNoteModalOpen}
+        onClose={() => setIsDeliveryNoteModalOpen(false)}
+        selectedMovements={selectedMovementsForNote}
+      />
+    </>
   )
 }
 

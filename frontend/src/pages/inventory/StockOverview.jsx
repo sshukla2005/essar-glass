@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react'
 import {
   Card, Row, Col, Typography, Table, Tag, Button,
   Input, Modal, Form, InputNumber, Select, App,
-  Statistic, Alert, Space, Badge
+  Statistic, Alert, Space, Badge, Popover, Checkbox
 } from 'antd'
 import {
   AppstoreOutlined, WarningOutlined, DollarOutlined,
@@ -14,7 +14,9 @@ import {
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import * as XLSX from 'xlsx'
-import { productApi, stockMovementApi, warehouseApi } from '../../api'
+import dayjs from 'dayjs'
+import { productApi, stockMovementApi, warehouseApi, deliveryNoteApi } from '../../api'
+import { generateDeliveryNotePDF } from '../../utils/pdfGenerator'
 import OpeningStockImportModal from './OpeningStockImportModal'
 
 const { Title, Text } = Typography
@@ -167,6 +169,201 @@ const NewProductFields = ({ form, products, section = 'all' }) => {
       {renderDetails()}
       {renderName()}
     </>
+  )
+}
+
+const QuickAdjustPopover = ({ product, actionType, warehouses, defaultWarehouseId, getProductStock, adjustMutation }) => {
+  const { message } = App.useApp()
+  const queryClient = useQueryClient()
+  const [open, setOpen] = useState(false)
+  const [sheetsInput, setSheetsInput] = useState(1)
+  const [warehouseId, setWarehouseId] = useState(defaultWarehouseId || warehouses[0]?.id)
+  const [remarks, setRemarks] = useState('')
+  const [errorMsg, setErrorMsg] = useState('')
+  const [createDeliveryNote, setCreateDeliveryNote] = useState(false)
+
+  const { sheets: availableSheets } = getProductStock(product)
+
+  useEffect(() => {
+    if (open) {
+      setSheetsInput(1)
+      setErrorMsg('')
+      setRemarks('')
+      setWarehouseId(defaultWarehouseId || warehouses[0]?.id)
+      setCreateDeliveryNote(false)
+    }
+  }, [open, defaultWarehouseId, warehouses])
+
+  const widthM = product?.sheet_width_mm ? product.sheet_width_mm / 1000.0 : 0
+  const heightM = product?.sheet_height_mm ? product.sheet_height_mm / 1000.0 : 0
+  const sheetArea = widthM * heightM
+  const numSheets = parseFloat(sheetsInput) || 0
+  const derivedSqm = sheetArea > 0 ? Math.round(numSheets * sheetArea * 10000) / 10000 : 0
+
+  const handleSave = () => {
+    setErrorMsg('')
+    if (!numSheets || numSheets <= 0) {
+      setErrorMsg('Please enter a valid sheet quantity')
+      return
+    }
+
+    if (actionType === 'sub' && numSheets > availableSheets) {
+      setErrorMsg(`Cannot reduce stock below zero. Available quantity: ${availableSheets} sheets.`)
+      return
+    }
+
+    const sign = actionType === 'sub' ? -1 : 1
+    const signedSheets = sign * numSheets
+    const signedSqm = sheetArea > 0 ? Math.round(sign * numSheets * sheetArea * 10000) / 10000 : 0
+
+    adjustMutation.mutate({
+      product_id: product.id,
+      quantity_sheets: signedSheets,
+      qty_change: signedSqm,
+      quantity_sqm: signedSqm,
+      quantity: signedSqm,
+      warehouse_id: warehouseId || warehouses[0]?.id,
+      is_quick_adj: true,
+      remarks: remarks ? remarks.trim() : `Quick adjustment (${actionType === 'sub' ? '-' : '+'}${numSheets} sheets)`
+    }, {
+      onSuccess: async () => {
+        if (actionType === 'sub' && createDeliveryNote) {
+          try {
+            const customerName = product?.last_customer || 'CASH SALES'
+            const payload = {
+              note_date: dayjs().format('YYYY-MM-DD'),
+              consignee_name: customerName,
+              buyer_name: customerName,
+              lines: [
+                {
+                  description: product.name,
+                  hsn_sac: product.hsn_code || product.hsn || '',
+                  quantity_sqm: derivedSqm,
+                  quantity_pcs: numSheets,
+                  rate: product.cost_price ? parseFloat(product.cost_price) : null,
+                  unit: 'Sqmt'
+                }
+              ]
+            }
+            const res = await deliveryNoteApi.create(payload)
+            message.success(`Delivery Note ${res.data.note_number} generated successfully!`)
+            queryClient.invalidateQueries(['delivery-notes'])
+            await generateDeliveryNotePDF(res.data)
+          } catch (dnErr) {
+            console.error('Failed to generate delivery note:', dnErr)
+            message.warning('Stock movement saved, but Delivery Note generation failed.')
+          }
+        }
+        setOpen(false)
+      }
+    })
+  }
+
+  const isSub = actionType === 'sub'
+
+  const popoverContent = (
+    <div style={{ width: 250, padding: '4px 0' }}>
+      <Text strong style={{ display: 'block', marginBottom: 8, fontSize: 13, color: isSub ? '#dc2626' : '#16a34a' }}>
+        {isSub ? '− Deduct Stock' : '+ Add Stock'}
+      </Text>
+      
+      {errorMsg && (
+        <Alert type="error" message={errorMsg} showIcon style={{ marginBottom: 8, fontSize: 12, padding: '4px 8px' }} />
+      )}
+
+      <div style={{ marginBottom: 8 }}>
+        <Text style={{ fontSize: 11, display: 'block', marginBottom: 2 }}>Quantity (sheets):</Text>
+        <InputNumber
+          min={1}
+          value={sheetsInput}
+          onChange={val => { setSheetsInput(val); setErrorMsg('') }}
+          style={{ width: '100%' }}
+          placeholder="Qty in sheets"
+          autoFocus
+        />
+      </div>
+
+      <div style={{ marginBottom: 8, background: '#f8fafc', padding: '6px 8px', borderRadius: 4, border: '1px solid #e2e8f0' }}>
+        <Text type="secondary" style={{ fontSize: 10, display: 'block' }}>Balance (sqm live):</Text>
+        <Text strong style={{ fontSize: 13, color: '#1e293b' }}>
+          {isSub ? '-' : '+'}{derivedSqm} sqm
+        </Text>
+      </div>
+
+      <div style={{ marginBottom: 8 }}>
+        <Text style={{ fontSize: 11, display: 'block', marginBottom: 2 }}>Warehouse:</Text>
+        <Select
+          value={warehouseId}
+          onChange={val => setWarehouseId(val)}
+          style={{ width: '100%' }}
+          options={(warehouses || []).map(w => ({ value: w.id, label: w.name || w.label }))}
+          placeholder="Select warehouse"
+        />
+      </div>
+
+      <div style={{ marginBottom: 12 }}>
+        <Text style={{ fontSize: 11, display: 'block', marginBottom: 2 }}>Optional Remark:</Text>
+        <Input
+          size="small"
+          value={remarks}
+          onChange={e => setRemarks(e.target.value)}
+          placeholder="e.g. Quick adjust"
+        />
+      </div>
+
+      {isSub && (
+        <div style={{ marginBottom: 12 }}>
+          <Checkbox
+            checked={createDeliveryNote}
+            onChange={e => setCreateDeliveryNote(e.target.checked)}
+            style={{ fontSize: 12 }}
+          >
+            Create delivery note
+          </Checkbox>
+        </div>
+      )}
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
+        <Button size="small" onClick={() => setOpen(false)}>Cancel</Button>
+        <Button
+          size="small"
+          type="primary"
+          danger={isSub}
+          style={!isSub ? { background: '#16a34a', borderColor: '#16a34a' } : undefined}
+          loading={adjustMutation.isPending}
+          onClick={handleSave}
+        >
+          Save
+        </Button>
+      </div>
+    </div>
+  )
+
+  return (
+    <Popover
+      content={popoverContent}
+      trigger="click"
+      open={open}
+      onOpenChange={visible => setOpen(visible)}
+      placement="top"
+    >
+      <Button
+        size="small"
+        style={{
+          padding: '0 5px',
+          height: 20,
+          minWidth: 20,
+          fontSize: 12,
+          fontWeight: 'bold',
+          lineHeight: '18px',
+          color: isSub ? '#dc2626' : '#16a34a',
+          borderColor: isSub ? '#fca5a5' : '#86efac',
+          background: isSub ? '#fef2f2' : '#f0fdf4'
+        }}
+      >
+        {isSub ? '−' : '+'}
+      </Button>
+    </Popover>
   )
 }
 
@@ -357,7 +554,7 @@ const StockOverview = () => {
         quantity_sqm: qtySqm,
         quantity_sheets: qtySheets,
         warehouse_id: warehouseId,
-        reference: 'MANUAL-ADJ',
+        reference: values.is_quick_adj ? 'QUICK-ADJ' : (values.reference || 'MANUAL-ADJ'),
         remarks: values.remarks || 'Stock adjustment'
       })
     },
@@ -493,6 +690,31 @@ const StockOverview = () => {
     return products.filter(p => !lastMoveMap[p.id]).length
   }, [products, lastMoveMap])
 
+  // Compute overall stock map across all warehouses from movements
+  const allStockMap = useMemo(() => {
+    const map = {}
+    movements.forEach(m => {
+      if (!m.product_id) return
+      const pid = m.product_id
+      if (!map[pid]) map[pid] = { sqm: 0, sheets: 0 }
+      const mtype = (m.movement_type || '').toLowerCase().trim()
+      const qSqm = m.quantity_sqm !== undefined && m.quantity_sqm !== null ? m.quantity_sqm : (m.quantity || 0)
+      const qSheets = m.quantity_sheets || 0
+
+      if (mtype === 'in') {
+        map[pid].sqm += qSqm
+        map[pid].sheets += qSheets
+      } else if (mtype === 'out') {
+        map[pid].sqm -= qSqm
+        map[pid].sheets -= qSheets
+      } else if (mtype === 'adjustment') {
+        map[pid].sqm += qSqm
+        map[pid].sheets += qSheets
+      }
+    })
+    return map
+  }, [movements])
+
   const [selectedWarehouseFilter, setSelectedWarehouseFilter] = useState(null)
 
   // Compute warehouse-specific stock map when a warehouse filter is active
@@ -514,8 +736,8 @@ const StockOverview = () => {
         map[pid].sqm -= qSqm
         map[pid].sheets -= qSheets
       } else if (mtype === 'adjustment') {
-        map[pid].sqm = qSqm
-        map[pid].sheets = qSheets
+        map[pid].sqm += qSqm
+        map[pid].sheets += qSheets
       }
     })
     return map
@@ -528,6 +750,13 @@ const StockOverview = () => {
       return {
         sqm: Math.round(wData.sqm * 10000) / 10000,
         sheets: Math.round(wData.sheets * 10000) / 10000
+      }
+    }
+    if (allStockMap && allStockMap[p.id] !== undefined) {
+      const aData = allStockMap[p.id]
+      return {
+        sqm: Math.round(aData.sqm * 10000) / 10000,
+        sheets: Math.round(aData.sheets * 10000) / 10000
       }
     }
     const sqm = p.on_hand_sqm !== undefined && p.on_hand_sqm !== null ? p.on_hand_sqm : (p.on_hand_qty || 0)
@@ -625,17 +854,38 @@ const StockOverview = () => {
         : <Text type="secondary">—</Text>
     },
     {
-      title: 'QTY', key: 'qty_sheets', width: 110, align: 'right',
+      title: 'QTY', key: 'qty_sheets', width: 145, align: 'right',
       render: (_, r) => {
         const status = getStockStatus(r)
         const { sheets } = getProductStock(r)
         const col = status.color === 'green' ? '#16a34a' : status.color === 'orange' ? '#ea580c' : '#dc2626'
+        const rowWhId = selectedWarehouseFilter || (movements || []).find(m => m.product_id === r.id && m.warehouse_id)?.warehouse_id || warehouses[0]?.id
         return (
-          <div>
-            <Text strong style={{ color: col, fontSize: 15 }}>
-              {sheets.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-            </Text>
-            <div><Text type="secondary" style={{ fontSize: 10 }}>sheets</Text></div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6 }}>
+            <div style={{ textAlign: 'right' }}>
+              <Text strong style={{ color: col, fontSize: 15 }}>
+                {sheets.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+              </Text>
+              <div><Text type="secondary" style={{ fontSize: 10 }}>sheets</Text></div>
+            </div>
+            <Space size={2}>
+              <QuickAdjustPopover
+                product={r}
+                actionType="sub"
+                warehouses={warehouses}
+                defaultWarehouseId={rowWhId}
+                getProductStock={getProductStock}
+                adjustMutation={adjustMutation}
+              />
+              <QuickAdjustPopover
+                product={r}
+                actionType="add"
+                warehouses={warehouses}
+                defaultWarehouseId={rowWhId}
+                getProductStock={getProductStock}
+                adjustMutation={adjustMutation}
+              />
+            </Space>
           </div>
         )
       }

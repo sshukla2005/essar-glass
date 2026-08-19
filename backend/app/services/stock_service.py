@@ -71,8 +71,8 @@ def recompute_stock(db: Session, product_id: int, company_id: Optional[int] = No
             running_sqm -= q_sqm
             running_sheets -= q_sheets_val
         elif mtype == "adjustment":
-            running_sqm = q_sqm
-            running_sheets = q_sheets_val
+            running_sqm += q_sqm
+            running_sheets += q_sheets_val
 
     running_sqm = round(running_sqm, 4)
     running_sheets = round(running_sheets, 4)

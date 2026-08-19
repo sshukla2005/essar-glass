@@ -3615,3 +3615,383 @@ export const generateWorkshopOrderPDF = async (wo) => {
     throw err
   }
 }
+
+// ── Delivery Note PDF Generator (Tally Landscape A4 Style) ───────────────────────
+export const generateDeliveryNotePDF = async (dn, companyObj = null) => {
+  if (!dn) return
+  try {
+    const doc = new jsPDF('l', 'mm', 'a4')
+    
+    // Page dimensions
+    const pageW = 297
+    const pageH = 210
+    const margin = 8
+    const contentW = pageW - margin * 2 // 281 mm
+
+    // Fetch company info if not provided
+    let company = companyObj
+    if (!company && dn.company_id) {
+      try {
+        company = await fetchCompany(dn.company_id)
+      } catch (e) {
+        console.warn('Could not fetch company details:', e)
+      }
+    }
+    company = company || { name: 'ESSAR GLASS', address: 'Plot No. 12, Industrial Area', state: 'Gujarat', state_code: '24', gstin: '24AAAAA0000A1Z5', phone: '9876543210', email: 'info@essarglass.com' }
+
+    // Colors: Strict monochromatic Tally style
+    const cBlack = [0, 0, 0]
+    const cGray  = [80, 80, 80]
+
+    // Set line width
+    doc.setLineWidth(0.2)
+    doc.setDrawColor(...cBlack)
+
+    // Title: DELIVERY NOTE (centred at top)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(12)
+    doc.setTextColor(...cBlack)
+    doc.text('DELIVERY NOTE', pageW / 2, margin + 4, { align: 'center' })
+
+    let startY = margin + 7
+    const boxH = 68 // Top info block height
+    const col1W = 145 // Left column width
+    const col2W = contentW - col1W // 136 mm
+
+    // Outer box for Top Info
+    doc.rect(margin, startY, contentW, boxH)
+    // Vertical line separating Left & Right columns
+    doc.line(margin + col1W, startY, margin + col1W, startY + boxH)
+
+    // ── LEFT COLUMN: Company, Consignee, Buyer ──
+    const leftX = margin + 2
+    let currY = startY + 4.5
+
+    // 1. Company details
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(9)
+    doc.text(String(company.name || 'ESSAR GLASS').toUpperCase(), leftX, currY)
+    currY += 3.5
+
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(7.5)
+    if (company.address) {
+      const addrLines = doc.splitTextToSize(company.address, col1W - 4)
+      doc.text(addrLines, leftX, currY)
+      currY += addrLines.length * 3
+    }
+    if (company.gstin) {
+      doc.text(`GSTIN/UIN: ${company.gstin}`, leftX, currY)
+      currY += 3
+    }
+    const stateStr = [company.state ? `State Name : ${company.state}` : '', company.state_code ? `Code : ${company.state_code}` : ''].filter(Boolean).join(', ')
+    if (stateStr) {
+      doc.text(stateStr, leftX, currY)
+      currY += 3
+    }
+    const contactStr = [company.phone ? `Contact : ${company.phone}` : '', company.email ? `E-Mail : ${company.email}` : ''].filter(Boolean).join(', ')
+    if (contactStr) {
+      doc.text(contactStr, leftX, currY)
+      currY += 3.5
+    }
+
+    // Horizontal Line 1 (Consignee)
+    const line1Y = startY + 23
+    doc.line(margin, line1Y, margin + col1W, line1Y)
+
+    // 2. Consignee (Ship to)
+    currY = line1Y + 3.5
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(7.5)
+    doc.text('Consignee (Ship to)', leftX, currY)
+    currY += 3.5
+
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(8.5)
+    const consName = dn.consignee_name || dn.buyer_name || 'CASH SALES'
+    doc.text(consName.toUpperCase(), leftX, currY)
+    currY += 3.5
+
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(7.5)
+    if (dn.consignee_address) {
+      const cAddr = doc.splitTextToSize(dn.consignee_address, col1W - 4)
+      doc.text(cAddr, leftX, currY)
+      currY += cAddr.length * 3
+    }
+    const consStateStr = [dn.consignee_state ? `State Name : ${dn.consignee_state}` : '', dn.consignee_state_code ? `Code : ${dn.consignee_state_code}` : ''].filter(Boolean).join(', ')
+    if (consStateStr) {
+      doc.text(consStateStr, leftX, currY)
+      currY += 3
+    }
+    if (dn.consignee_gstin) {
+      doc.text(`GSTIN/UIN: ${dn.consignee_gstin}`, leftX, currY)
+      currY += 3
+    }
+
+    // Horizontal Line 2 (Buyer)
+    const line2Y = startY + 45.5
+    doc.line(margin, line2Y, margin + col1W, line2Y)
+
+    // 3. Buyer (Bill to)
+    currY = line2Y + 3.5
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(7.5)
+    doc.text('Buyer (Bill to)', leftX, currY)
+    currY += 3.5
+
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(8.5)
+    const buyerName = dn.buyer_name || consName
+    doc.text(buyerName.toUpperCase(), leftX, currY)
+    currY += 3.5
+
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(7.5)
+    if (dn.buyer_address) {
+      const bAddr = doc.splitTextToSize(dn.buyer_address, col1W - 4)
+      doc.text(bAddr, leftX, currY)
+      currY += bAddr.length * 3
+    }
+    const buyerStateStr = [dn.buyer_state ? `State Name : ${dn.buyer_state}` : '', dn.buyer_state_code ? `Code : ${dn.buyer_state_code}` : ''].filter(Boolean).join(', ')
+    if (buyerStateStr) {
+      doc.text(buyerStateStr, leftX, currY)
+      currY += 3
+    }
+    if (dn.buyer_gstin) {
+      doc.text(`GSTIN/UIN: ${dn.buyer_gstin}`, leftX, currY)
+      currY += 3
+    }
+    if (dn.place_of_supply) {
+      doc.text(`Place of Supply : ${dn.place_of_supply}`, leftX, currY)
+    }
+
+    // ── RIGHT COLUMN: Grid details ──
+    const rightX = margin + col1W
+    const rCellW = col2W / 2 // 68 mm each subcolumn
+
+    const gridRows = [
+      [
+        { label: 'Delivery Note No.', val: dn.note_number || '—' },
+        { label: 'Mode/Terms of Payment', val: dn.payment_terms || '—' }
+      ],
+      [
+        { label: 'e-Way Bill No.', val: dn.eway_bill_no || '—' },
+        { label: 'Dated', val: formatDate(dn.note_date) }
+      ],
+      [
+        { label: 'Reference No. & Date.', val: dn.reference_no || '—' },
+        { label: 'Other References', val: dn.other_references || '—' }
+      ],
+      [
+        { label: "Buyer's Order No.", val: dn.buyers_order_no || '—' },
+        { label: 'Dated', val: dn.buyers_order_date ? formatDate(dn.buyers_order_date) : '—' }
+      ],
+      [
+        { label: 'Dispatch Doc No.', val: dn.dispatch_doc_no || '—' },
+        { label: 'Delivery Note Date', val: formatDate(dn.note_date) }
+      ],
+      [
+        { label: 'Dispatched through', val: dn.dispatched_through || '—' },
+        { label: 'Destination', val: dn.destination || '—' }
+      ],
+    ]
+
+    const rRowH = 8.5
+    gridRows.forEach((row, rIdx) => {
+      const ry = startY + rIdx * rRowH
+      doc.line(rightX, ry + rRowH, margin + contentW, ry + rRowH)
+      doc.line(rightX + rCellW, ry, rightX + rCellW, ry + rRowH)
+
+      row.forEach((cell, cIdx) => {
+        const cx = rightX + cIdx * rCellW + 2
+        doc.setFont('helvetica', 'normal')
+        doc.setFontSize(6.5)
+        doc.setTextColor(...cGray)
+        doc.text(cell.label, cx, ry + 2.5)
+
+        doc.setFont('helvetica', 'bold')
+        doc.setFontSize(7.5)
+        doc.setTextColor(...cBlack)
+        doc.text(String(cell.val || '—'), cx, ry + 6.2)
+      })
+    })
+
+    // Terms of Delivery box (bottom of right column)
+    const termsY = startY + gridRows.length * rRowH
+    const termsH = boxH - (gridRows.length * rRowH)
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(6.5)
+    doc.setTextColor(...cGray)
+    doc.text('Terms of Delivery', rightX + 2, termsY + 3)
+    if (dn.terms_of_delivery) {
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(7.5)
+      doc.setTextColor(...cBlack)
+      const tLines = doc.splitTextToSize(dn.terms_of_delivery, col2W - 4)
+      doc.text(tLines, rightX + 2, termsY + 6.5)
+    }
+
+    // ── ITEMS TABLE ──
+    const tableStartY = startY + boxH
+
+    const rawLines = dn.lines || []
+    let totalSqm = 0
+    let totalPcs = 0
+    let totalAmount = 0
+    let hasAnyRate = false
+
+    const tableRows = rawLines.map((line, idx) => {
+      const sqm = line.quantity_sqm ? parseFloat(line.quantity_sqm) : 0
+      const pcs = line.quantity_pcs ? parseFloat(line.quantity_pcs) : 0
+      totalSqm += sqm
+      totalPcs += pcs
+
+      const rateVal = (line.rate !== null && line.rate !== undefined && String(line.rate).trim() !== '') ? parseFloat(line.rate) : null
+      let amountVal = null
+      if (rateVal !== null && !isNaN(rateVal)) {
+        hasAnyRate = true
+        amountVal = (sqm > 0 ? sqm : pcs) * rateVal
+        totalAmount += amountVal
+      }
+
+      // Quantity dual-unit string: e.g. "137.3880 Sqmt\n(20.00 PCS)"
+      let qtyStr = ''
+      if (sqm > 0 && pcs > 0) {
+        qtyStr = `${sqm.toFixed(4)} ${line.unit || 'Sqmt'}\n(${pcs.toFixed(2)} PCS)`
+      } else if (sqm > 0) {
+        qtyStr = `${sqm.toFixed(4)} ${line.unit || 'Sqmt'}`
+      } else if (pcs > 0) {
+        qtyStr = `${pcs.toFixed(2)} PCS`
+      } else {
+        qtyStr = '—'
+      }
+
+      return [
+        String(idx + 1),
+        (line.description || '—').toUpperCase(),
+        line.hsn_sac || '—',
+        qtyStr,
+        rateVal !== null ? rateVal.toFixed(2) : '',
+        rateVal !== null ? (line.unit || 'Sqmt') : '',
+        amountVal !== null ? amountVal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''
+      ]
+    })
+
+    autoTable(doc, {
+      startY: tableStartY,
+      theme: 'plain',
+      margin: { left: margin, right: margin },
+      head: [['Sl\nNo.', 'Description of Goods', 'HSN/SAC', 'Quantity', 'Rate', 'per', 'Amount']],
+      body: tableRows,
+      styles: {
+        font: 'helvetica',
+        fontSize: 8,
+        cellPadding: 2,
+        lineWidth: 0.2,
+        lineColor: cBlack,
+        textColor: cBlack,
+        valign: 'top'
+      },
+      headStyles: {
+        fillColor: [240, 240, 240],
+        textColor: cBlack,
+        fontStyle: 'bold',
+        fontSize: 8,
+        halign: 'center',
+        valign: 'middle',
+        lineWidth: 0.2,
+        lineColor: cBlack
+      },
+      columnStyles: {
+        0: { cellWidth: 10, halign: 'center' },
+        1: { cellWidth: 145, fontStyle: 'bold' },
+        2: { cellWidth: 22, halign: 'center' },
+        3: { cellWidth: 35, halign: 'right' },
+        4: { cellWidth: 24, halign: 'right' },
+        5: { cellWidth: 15, halign: 'center' },
+        6: { cellWidth: 30, halign: 'right', fontStyle: 'bold' },
+      },
+      didParseCell: (data) => {
+        if (data.section === 'body' && data.column.index === 3) {
+          data.cell.styles.fontStyle = 'normal'
+        }
+      },
+      didDrawPage: () => {
+        doc.setLineWidth(0.2)
+        doc.setDrawColor(...cBlack)
+      }
+    })
+
+    let afterTableY = doc.lastAutoTable ? doc.lastAutoTable.finalY : tableStartY + 30
+
+    if (afterTableY + 35 > pageH - margin) {
+      doc.addPage()
+      afterTableY = margin + 10
+    }
+
+    // Total Row Box
+    let totalQtyStr = ''
+    if (totalSqm > 0 && totalPcs > 0) {
+      totalQtyStr = `${totalSqm.toFixed(4)} Sqmt / (${totalPcs.toFixed(2)} PCS)`
+    } else if (totalSqm > 0) {
+      totalQtyStr = `${totalSqm.toFixed(4)} Sqmt`
+    } else {
+      totalQtyStr = `${totalPcs.toFixed(2)} PCS`
+    }
+
+    const totRowH = 7
+    doc.rect(margin, afterTableY, contentW, totRowH)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(8.5)
+    doc.text('Total', margin + 100, afterTableY + 4.8)
+    doc.text(totalQtyStr, margin + 212, afterTableY + 4.8, { align: 'right' })
+    if (hasAnyRate) {
+      doc.text(totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), margin + contentW - 2, afterTableY + 4.8, { align: 'right' })
+    }
+
+    let finalY = afterTableY + totRowH
+
+    // Declarations & Signatures Block
+    const footerH = 28
+    if (finalY + footerH > pageH - margin) {
+      doc.addPage()
+      finalY = margin + 5
+    }
+
+    doc.rect(margin, finalY, contentW, footerH)
+    const sigColW = contentW / 2 // 140.5 mm each
+
+    doc.line(margin + sigColW, finalY, margin + sigColW, finalY + footerH)
+
+    // Left side: Declaration & Customer signature
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(6.5)
+    doc.setTextColor(...cGray)
+    doc.text('Declaration:', margin + 3, finalY + 3.5)
+    const declText = 'We declare that this delivery note shows the actual quantity of the goods described and that all particulars are true and correct.'
+    const declLines = doc.splitTextToSize(declText, sigColW - 6)
+    doc.text(declLines, margin + 3, finalY + 6.5)
+
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(7.5)
+    doc.setTextColor(...cBlack)
+    doc.text("Customer's Seal and Signature", margin + 3, finalY + footerH - 3)
+
+    // Right side: Company Signatory
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(8)
+    doc.text(`for ${String(company.name || 'ESSAR GLASS').toUpperCase()}`, margin + contentW - 3, finalY + 4.5, { align: 'right' })
+
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(7.5)
+    doc.text('Authorised Signatory', margin + contentW - 3, finalY + footerH - 3, { align: 'right' })
+
+    const filename = `${dn.note_number || 'DeliveryNote'}.pdf`
+    doc.save(filename)
+    return doc
+  } catch (err) {
+    console.error('Failed to generate Delivery Note PDF:', err)
+    throw err
+  }
+}
