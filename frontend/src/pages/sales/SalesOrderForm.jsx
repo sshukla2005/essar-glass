@@ -632,7 +632,14 @@ const SalesOrderForm = () => {
                   .find(x => x.id === value)
                 if (pm) {
                   updated.charge_type = pm.charge_type
-                  updated.qty_area = 0
+                  // Derive qty from THIS size only (mirrors updateGroupProcess
+                  // lines 1082-1092, but per-size rather than group totals).
+                  if (pm.charge_type === 'per_sqft') updated.qty_area = parseFloat((s.total_sqft || 0).toFixed(3))
+                  else if (pm.charge_type === 'per_rft') updated.qty_area = parseFloat((s.running_ft || 0).toFixed(3))
+                  else if (pm.charge_type === 'per_sqmt') updated.qty_area = parseFloat((s.tgh_sqmt || 0).toFixed(4))
+                  else if (pm.charge_type === 'per_piece') updated.qty_area = (s.quantity || 1)
+                  else if (pm.charge_type === 'fixed') updated.qty_area = 1
+                  else updated.qty_area = 0
                   updated.amount = 0
 
                   // ── Rate Card integration ──────────────────────────────
@@ -660,6 +667,10 @@ const SalesOrderForm = () => {
                     return prevCard
                   })
                   // ─────────────────────────────────────────────────────
+                  // Recompute using the RESOLVED rate (rate card value if
+                  // present, else master rate).
+                  updated.amount = parseFloat(((updated.qty_area || 0) * (updated.rate || 0)).toFixed(2))
+                  updated.cost_amount = parseFloat(((updated.qty_area || 0) * (updated.cost_rate || 0)).toFixed(2))
                 }
               }
               if (field === 'qty_area' || field === 'rate' || field === 'cost_rate') {

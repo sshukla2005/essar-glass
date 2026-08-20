@@ -816,7 +816,23 @@ const WorkshopOrderForm = () => {
 
   const statusMutation = useMutation({
     mutationFn: (newStatus) => workshopOrderApi.changeStatus(id, newStatus),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['workshop_orders', id] }),
+    onSuccess: (_res, newStatus) => {
+      queryClient.invalidateQueries({ queryKey: ['workshop_orders', id] })
+      if (newStatus === 'in_progress') {
+        setLines(prev => prev.map(l => {
+          const qty = Number(l.qty || l.quantity || 1)
+          return { ...l, qty_cut: qty }
+        }))
+        setIsDirty(true)
+        message.success('Processing started — all lines marked as fully cut. Review and Save.')
+      } else {
+        const label = String(newStatus).replace(/_/g, ' ').toUpperCase()
+        message.success(`Workshop Order moved to ${label}`)
+      }
+    },
+    onError: (err) => {
+      message.error(err?.response?.data?.detail || 'Could not change workshop order stage')
+    },
   })
 
   const isCompletedOrCancelled = record?.status === 'completed' || record?.status === 'cancelled';
@@ -835,14 +851,6 @@ const WorkshopOrderForm = () => {
         type: 'completed_but_uncut',
         message: 'This Workshop Order is marked COMPLETED, but some lines are still uncut.',
         actionText: 'Mark All Lines as Cut',
-      };
-    }
-
-    if (record.status !== 'completed' && record.status !== 'cancelled' && allCut) {
-      return {
-        type: 'cut_but_not_completed',
-        message: 'All lines are fully cut, but the Workshop Order status is not COMPLETED.',
-        actionText: 'Mark Order as Completed',
       };
     }
 
@@ -903,13 +911,6 @@ const WorkshopOrderForm = () => {
         message.success('Lines reconciled successfully!');
       } catch (err) {
         message.error('Failed to reconcile: ' + (err?.message || ''));
-      }
-    } else if (mismatchState.type === 'cut_but_not_completed') {
-      try {
-        await statusMutation.mutateAsync('completed');
-        message.success('Workshop Order marked as completed!');
-      } catch (err) {
-        message.error('Failed to reconcile status: ' + (err?.message || ''));
       }
     }
   };

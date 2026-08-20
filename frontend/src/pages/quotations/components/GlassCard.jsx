@@ -30,6 +30,10 @@ import {
 import FractionInput, { toFraction } from './FractionInput'
 import { calcGroupSize, getAutoChargedDim } from '../../../utils/quotationCalc'
 
+// Client request: Artwork / Design block hidden on Quotation & Sales
+// Order line items. Set to true to restore.
+const SHOW_ARTWORK_SECTION = false
+
 const { Text } = Typography
 
 // ── Reusable Component: Size Processes (Inline Size Processes List) ──────
@@ -491,7 +495,7 @@ const SizeTable = ({
           />
         ),
         rowExpandable: () => true,
-        defaultExpandAllRows: true, // Auto-expand all sizes to show assigned processes immediately below them
+        defaultExpandAllRows: false, // Client request: collapsed by default; user expands manually
         expandIcon: ({ expanded, onExpand, record }) => (
           <Button
             size="small"
@@ -995,8 +999,8 @@ const GlassCard = ({
             </Col>
           </Row>
 
-          {/* ── Artwork Section ── */}
-          {(() => {
+          {/* ── Artwork Section — hidden per client request (set to true to restore) ── */}
+          {SHOW_ARTWORK_SECTION && (() => {
             const artworkMaster = (() => {
               try { return JSON.parse(localStorage.getItem('artwork_master') || '[]') } catch { return [] }
             })()
