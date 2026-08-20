@@ -1187,7 +1187,7 @@ const drawGroupCard = (doc, group, groupNo, hasCep, cols, startY, pageNum, quota
   return { endY: ly, grpQty, grpSqft, grpCep, grpAmt }
 }
 
-const drawTotalSummaryGridRow = (doc, qty, sqft, amt, y) => {
+const drawTotalSummaryGridRow = (doc, qty, sqft, amt, y, weightKg = 0) => {
   const rowH = 8
   drawRect(doc, MARGIN.l + 0.3, y, CONTENT_W - 0.6, rowH, C.primaryLight)
   
@@ -1198,7 +1198,8 @@ const drawTotalSummaryGridRow = (doc, qty, sqft, amt, y) => {
   
   setFont(doc, 8, 'bold', C.primaryMid)
   const amtStr = fmtN(amt)
-  const text = `Total Summary           Qty: ${qty} pcs           Weight: —           Total Area: ${sqft.toFixed(3)} Sqft           Glass Total: Rs. ${amtStr}`
+  const wtStr = weightKg > 0 ? `${parseFloat(weightKg.toFixed(2))} kg` : '—'
+  const text = `Total Summary           Qty: ${qty} pcs           Weight: ${wtStr}           Total Area: ${sqft.toFixed(3)} Sqft           Glass Total: Rs. ${amtStr}`
   
   drawText(doc, text, MARGIN.l + 4, y + 5.2)
   return y + rowH
@@ -1988,7 +1989,7 @@ export const generateQuotationPDF = async (quotation) => {
     y = drawDocInfo(doc, quotation, y, 'PROFORMA INVOICE')
     y = drawCustomerCard(doc, cust, y)
 
-    let totalQty = 0, totalSqft = 0, totalCep = 0, grandGlass = 0
+    let totalQty = 0, totalSqft = 0, totalCep = 0, grandGlass = 0, totalWeightKg = 0
     let groupNo = 0
 
     groups.forEach((group) => {
@@ -1999,11 +2000,22 @@ export const generateQuotationPDF = async (quotation) => {
       totalCep += res.grpCep
       grandGlass += res.grpAmt
       y = res.endY + SP_16
+
+      ;(group.sizes || []).forEach((size) => {
+        totalWeightKg += computeLineWeightKg({
+          ...size,
+          act_w_in: size.act_w_in || size.width_inch || (size.width_mm ? size.width_mm * 0.03937 : 0),
+          act_h_in: size.act_h_in || size.height_inch || (size.height_mm ? size.height_mm * 0.03937 : 0),
+          qty: size.quantity || size.qty || 1,
+          glass_thickness: size.glass_thickness || group.glass_thickness || size.thickness || group.thickness,
+          description: size.description || group.description || group.product_name,
+        })
+      })
     })
 
     // Glass total bar
     y = checkPageBreak(doc, y, 8 + SP_16, pageNum, quotation)
-    y = drawTotalSummaryGridRow(doc, totalQty, totalSqft, grandGlass, y) + SP_16
+    y = drawTotalSummaryGridRow(doc, totalQty, totalSqft, grandGlass, y, totalWeightKg) + SP_16
 
     // Process Charges Card
     const isRealProc = (p) => (p.process_id != null || p.process_name || p.name) &&
@@ -2346,7 +2358,7 @@ export const generateSOPDF = async (so) => {
     y = drawCustomerCard(doc, cust, y)
     y = drawInfoStrips(doc, cust, y)
 
-    let totalQty = 0, totalSqft = 0, totalCep = 0, grandGlass = 0
+    let totalQty = 0, totalSqft = 0, totalCep = 0, grandGlass = 0, totalWeightKg = 0
 
     if (groups.length > 0) {
       let groupNo = 0
@@ -2358,6 +2370,17 @@ export const generateSOPDF = async (so) => {
         totalCep += res.grpCep
         grandGlass += res.grpAmt
         y = res.endY + SP_16
+
+        ;(group.sizes || []).forEach((size) => {
+          totalWeightKg += computeLineWeightKg({
+            ...size,
+            act_w_in: size.act_w_in || size.width_inch || (size.width_mm ? size.width_mm * 0.03937 : 0),
+            act_h_in: size.act_h_in || size.height_inch || (size.height_mm ? size.height_mm * 0.03937 : 0),
+            qty: size.quantity || size.qty || 1,
+            glass_thickness: size.glass_thickness || group.glass_thickness || size.thickness || group.thickness,
+            description: size.description || group.description || group.product_name,
+          })
+        })
       })
     } else {
       const res = drawSOItemsCard(doc, so.lines || [], hasCep, cols, y, pageNum, so, unitMode)
@@ -2365,11 +2388,22 @@ export const generateSOPDF = async (so) => {
       totalSqft = res.tArea
       grandGlass = res.tAmt
       y = res.endY + SP_16
+
+      ;(so.lines || []).forEach((line) => {
+        totalWeightKg += computeLineWeightKg({
+          ...line,
+          act_w_in: line.act_w_in || line.width_inch || (line.width_mm ? line.width_mm * 0.03937 : 0),
+          act_h_in: line.act_h_in || line.height_inch || (line.height_mm ? line.height_mm * 0.03937 : 0),
+          qty: line.quantity || line.qty || 1,
+          glass_thickness: line.glass_thickness || line.thickness,
+          description: line.description || line.product_name,
+        })
+      })
     }
 
     // Glass total bar
     y = checkPageBreak(doc, y, 8 + SP_16, pageNum, so)
-    y = drawTotalSummaryGridRow(doc, totalQty, totalSqft, grandGlass, y) + SP_16
+    y = drawTotalSummaryGridRow(doc, totalQty, totalSqft, grandGlass, y, totalWeightKg) + SP_16
 
     // Process Charges Card
     const isRealProc = (p) => (p.process_id != null || p.process_name || p.name) &&
@@ -2568,6 +2602,18 @@ export const generatePOPDF = async (po) => {
     }, y, 'PURCHASE ORDER')
     y = drawVendorCard(doc, vend, y)
 
+    let totalWeightKg = 0
+    ;(po.lines || []).forEach((line) => {
+      totalWeightKg += computeLineWeightKg({
+        ...line,
+        act_w_in: line.act_w_in || line.width_inch || (line.width_mm ? line.width_mm / 25.4 : 0),
+        act_h_in: line.act_h_in || line.height_inch || (line.height_mm ? line.height_mm / 25.4 : 0),
+        qty: line.quantity || line.qty || 1,
+        glass_thickness: line.glass_thickness || line.thickness,
+        description: line.description || line.product_name,
+      })
+    })
+
     // Render items card (using splits if needed)
     const res = drawPOItemsCard(doc, po.lines || [], cols, y, pageNum, po)
     const tQty = res.tQty
@@ -2576,7 +2622,7 @@ export const generatePOPDF = async (po) => {
     y = res.endY + SP_16
 
     y = checkPageBreak(doc, y, 8 + SP_16, pageNum, po)
-    y = drawTotalSummaryGridRow(doc, tQty, tArea, tAmt, y) + SP_16
+    y = drawTotalSummaryGridRow(doc, tQty, tArea, tAmt, y, totalWeightKg) + SP_16
 
     // Summary block
     const grand = po.total_amount || 0
@@ -3161,6 +3207,30 @@ export const generateDeliveryChallanPDF = async (dc) => {
   }
 }
 
+const drawWOBand = (doc, company, wo, pageW) => {
+  const H = 22
+  doc.setFillColor(30, 41, 59)          // slate-800
+  doc.rect(0, 0, pageW, H, 'F')
+
+  // Left — company, all from the record
+  setFont(doc, 15, 'bold', [255, 255, 255])
+  drawText(doc, (cleanVal(company?.name) || 'COMPANY').toUpperCase(), 10, 9)
+
+  const sub = []
+  if (cleanVal(company?.tagline))    sub.push(cleanVal(company.tagline))
+  if (cleanVal(company?.short_name)) sub.push(cleanVal(company.short_name).toUpperCase())
+  setFont(doc, 7.5, 'normal', [148, 163, 184])
+  sub.forEach((line, i) => drawText(doc, line, 10, 14 + i * 4))
+
+  // Right — document identity
+  setFont(doc, 13, 'bold', [255, 255, 255])
+  drawText(doc, wo.wo_number || 'WO-DRAFT', pageW - 10, 9, { align: 'right' })
+  setFont(doc, 7.5, 'normal', [148, 163, 184])
+  drawText(doc, 'WORKSHOP ORDER', pageW - 10, 14, { align: 'right' })
+
+  return H + 10
+}
+
 // ── Workshop Order PDF Generator ─────────────────────────────────────────────
 export const generateWorkshopOrderPDF = async (wo) => {
   if (!wo) return
@@ -3172,21 +3242,9 @@ export const generateWorkshopOrderPDF = async (wo) => {
     const pageH = doc.internal.pageSize.getHeight()
     const margin = 10
 
-    drawBorder(doc, pageW, pageH)
-    let y = drawHeader(doc, company, 'WORKSHOP ORDER', pageW)
+    let y = drawWOBand(doc, company, wo, pageW)
 
-    // Document Meta Info
-    const woDocInfoItems = [
-      { label: 'Document Type', value: 'WORKSHOP ORDER' },
-      { label: 'WO No', value: wo.wo_number || 'WO-DRAFT' },
-      { label: 'Date', value: formatDate(wo.order_date) },
-      { label: 'SO Ref', value: wo.so_number || (wo.so_id ? `SO #${wo.so_id}` : '—') },
-      { label: 'Required By', value: wo.required_by ? formatDate(wo.required_by) : '—' },
-      { label: 'Priority', value: (wo.priority || 'Normal').toUpperCase() },
-    ]
-    y = drawDocInfo(doc, wo, y, 'WORKSHOP ORDER', woDocInfoItems, pageW)
-
-    // Customer Card
+    // Customer info (needed for filename and panel map sheet subtitles)
     let cust = {
       name: wo.customer_name || wo.customer?.name || '',
       address: '', phone: '', gstin: ''
@@ -3203,7 +3261,53 @@ export const generateWorkshopOrderPDF = async (wo) => {
         }
       } catch { }
     }
-    y = drawCustomerCard(doc, cust, y, null, pageW)
+
+    // Compact Meta Block (Two-column)
+    const metaY = y
+    const leftX = 10
+    const rightX = pageW / 2
+    const labelOffset = 24
+
+    // Row 0
+    setFont(doc, 8, 'bold', [51, 65, 85])
+    drawText(doc, 'Customer:', leftX, metaY)
+    setFont(doc, 8, 'normal', [15, 23, 42])
+    drawText(doc, cust.name || wo.customer_name || '—', leftX + labelOffset, metaY)
+
+    setFont(doc, 8, 'bold', [51, 65, 85])
+    drawText(doc, 'Order Date:', rightX, metaY)
+    setFont(doc, 8, 'normal', [15, 23, 42])
+    drawText(doc, formatDate(wo.order_date), rightX + labelOffset, metaY)
+
+    // Row 1
+    setFont(doc, 8, 'bold', [51, 65, 85])
+    drawText(doc, 'Sales Order:', leftX, metaY + 5)
+    setFont(doc, 8, 'normal', [15, 23, 42])
+    drawText(doc, wo.so_number || (wo.so_id ? `SO #${wo.so_id}` : '—'), leftX + labelOffset, metaY + 5)
+
+    setFont(doc, 8, 'bold', [51, 65, 85])
+    drawText(doc, 'Required By:', rightX, metaY + 5)
+    setFont(doc, 8, 'normal', [15, 23, 42])
+    drawText(doc, wo.required_by ? formatDate(wo.required_by) : '—', rightX + labelOffset, metaY + 5)
+
+    // Row 2
+    setFont(doc, 8, 'bold', [51, 65, 85])
+    drawText(doc, 'Priority:', leftX, metaY + 10)
+    setFont(doc, 8, 'normal', [15, 23, 42])
+    drawText(doc, (wo.priority || 'Normal').toUpperCase(), leftX + labelOffset, metaY + 10)
+
+    setFont(doc, 8, 'bold', [51, 65, 85])
+    drawText(doc, 'WO Status:', rightX, metaY + 10)
+    setFont(doc, 8, 'normal', [15, 23, 42])
+    drawText(doc, (wo.status || 'Draft').toUpperCase(), rightX + labelOffset, metaY + 10)
+
+    // Hairline rule beneath meta block
+    const ruleY = metaY + 14
+    doc.setDrawColor(226, 232, 240)
+    doc.setLineWidth(0.3)
+    doc.line(10, ruleY, pageW - 10, ruleY)
+
+    y = ruleY
 
     // Job Cards Table
     const lines = wo.lines || []
@@ -3602,7 +3706,7 @@ export const generateWorkshopOrderPDF = async (wo) => {
       doc.setFont('helvetica', 'normal')
       doc.setTextColor(150, 150, 150)
       doc.text(
-        `Generated: ${dayjs().format('DD/MM/YYYY HH:mm')} | ${company?.name || 'COMPANY'} Workshop Order`,
+        `Generated: ${dayjs().format('DD/MM/YYYY HH:mm')} | For Internal Use Only`,
         margin, footerY
       )
       doc.text(`Page ${p} of ${pageCount}`, pageW - margin, footerY, { align: 'right' })

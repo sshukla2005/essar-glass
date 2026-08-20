@@ -185,10 +185,11 @@ def compute_profit_fields(obj):
     Returns (total_cost, profit_amount, profit_percent).
 
     Formula:
-      - total_cost = glass_proc_cost + hw_cost + lb_cost + wst_cost + dc_cost
+      - total_cost = glass_proc_cost + hw_cost + lb_cost + wst_cost  (DC cost EXCLUDED)
       - assessable_value = total_amount - tax_amount (for SO) or total_amount - (cgst + sgst + igst) (for Quotation)
-      - profit_amount = assessable_value - total_cost
-      - profit_percent = (profit_amount / assessable_value) * 100
+      - sellable_value = assessable_value - dc_charges
+      - profit_amount = sellable_value - total_cost
+      - profit_percent = (profit_amount / total_cost) * 100   (markup over cost)
 
     If cost rate/cost amount was not set / missing in JSON, or if total_cost evaluates to 0 while there are lines/groups or empty groups,
     returns (None, None, None) to avoid false 100% margin calculations.
@@ -224,6 +225,7 @@ def compute_profit_fields(obj):
             wastage_items = []
 
     dc_cost = float(getattr(obj, "dc_cost", 0) or 0)
+    dc_charges = float(getattr(obj, "dc_charges", 0) or 0)
 
     glass_proc_cost = 0.0
     has_any_cost_filled = False
@@ -314,7 +316,7 @@ def compute_profit_fields(obj):
     if dc_cost > 0:
         has_any_cost_filled = True
 
-    computed_total_cost = glass_proc_cost + hw_cost + lb_cost + wst_cost + dc_cost
+    computed_total_cost = glass_proc_cost + hw_cost + lb_cost + wst_cost
 
     if not has_any_cost_filled or computed_total_cost <= 0:
         return None, None, None
@@ -330,9 +332,12 @@ def compute_profit_fields(obj):
         igst = float(getattr(obj, "igst", 0) or 0)
         tax_amount = cgst + sgst + igst
 
+    # Mirrors the Cost Analysis modal in SalesOrderForm.jsx:
+    # DC excluded from BOTH sides; margin % is over COST, not revenue.
     assessable_value = total_amount - tax_amount
-    profit_amount = round(assessable_value - total_cost, 2)
-    profit_percent = round((profit_amount / assessable_value) * 100, 2) if assessable_value > 0 else 0.0
+    sellable_value = assessable_value - dc_charges
+    profit_amount = round(sellable_value - total_cost, 2)
+    profit_percent = round((profit_amount / total_cost) * 100, 2) if total_cost > 0 else 0.0
 
     return total_cost, profit_amount, profit_percent
 

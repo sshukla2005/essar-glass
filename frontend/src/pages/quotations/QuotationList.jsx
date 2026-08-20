@@ -68,8 +68,11 @@ const QuotationList = () => {
           { title: 'Salesperson', dataIndex: 'salesperson',  key: 'salesperson',  width: 140 },
           { title: 'Subtotal',   dataIndex: 'subtotal',     key: 'subtotal',     width: 120,
             render: v => v != null ? `₹ ${Number(v).toLocaleString('en-IN')}` : '—' },
-          { title: 'Tax',        dataIndex: 'tax_amount',   key: 'tax_amount',   width: 100,
-            render: v => v != null ? `₹ ${Number(v).toLocaleString('en-IN')}` : '—' },
+          { title: 'Tax',        dataIndex: 'totals',       key: 'tax_amount',   width: 100,
+            render: (_, r) => {
+              const t = r.totals || {}
+              const tax = (t.cgst || 0) + (t.sgst || 0) + (t.igst || 0)
+              return tax > 0 ? `₹ ${Number(tax.toFixed(2)).toLocaleString('en-IN')}` : '—' } },
           { title: 'Total',      dataIndex: 'total_amount', key: 'total_amount', width: 130,
             render: v => v != null ? <b>₹ {Number(v).toLocaleString('en-IN')}</b> : '—' },
           { title: 'Status',     dataIndex: 'status',       key: 'status',       width: 200,
