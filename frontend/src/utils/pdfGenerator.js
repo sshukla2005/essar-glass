@@ -3509,8 +3509,7 @@ export const generateWorkshopOrderPDF = async (wo) => {
             oCtx.strokeStyle = color
             oCtx.lineWidth = 1.5 * k
             oCtx.strokeRect(px, py, pw, ph)
-            oCtx.fillStyle = color + '14'
-            oCtx.fillRect(px, py, pw, ph)
+            // Client request: no colour fill inside panels — outline only.
             const bs = 34 * k
             oCtx.fillStyle = color
             oCtx.fillRect(px + 3 * k, py + 3 * k, bs, bs)
