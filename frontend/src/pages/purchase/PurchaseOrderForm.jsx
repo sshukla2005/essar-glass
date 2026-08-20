@@ -35,6 +35,7 @@ import { purchaseOrderApi, vendorApi, productApi, stockMovementApi, salesOrderAp
 import { generatePOPDF } from '../../utils/pdfGenerator'
 import CompanySelector from '../../components/common/CompanySelector'
 import FractionInput from '../quotations/components/FractionInput'
+import { notBefore } from '../../utils/dateRules'
 
 const { Text } = Typography
 
@@ -102,6 +103,7 @@ const PurchaseOrderForm = () => {
   const { id } = useParams()
   const isEdit = Boolean(id)
   const [form] = Form.useForm()
+  const watchedPoDate = Form.useWatch('po_date', form)
   const navigate = useNavigate()
   const queryClient = useQueryClient()
 
@@ -1078,7 +1080,7 @@ const PurchaseOrderForm = () => {
                 </Col>
                 <Col xs={12} sm={6} md={5}>
                   <Form.Item name="expected_delivery" label={<span style={{ fontWeight: 600, fontSize: 12, color: '#475569' }}>Expected Delivery</span>}>
-                    <DatePicker style={{ width: '100%', borderRadius: 6 }} />
+                    <DatePicker style={{ width: '100%', borderRadius: 6 }} disabledDate={notBefore(watchedPoDate)} />
                   </Form.Item>
                 </Col>
                 <Col xs={24} sm={12} md={6}>

@@ -19,6 +19,7 @@ import {
 import CompanySelector from '../../components/common/CompanySelector'
 import { settingsApi } from '../../api/settingsApi'
 import RecordPaymentModal from './RecordPaymentModal'
+import { notBefore } from '../../utils/dateRules'
 
 const { TextArea } = Input
 const { Text } = Typography
@@ -63,6 +64,7 @@ const InvoiceForm = () => {
   const [searchParams] = useSearchParams()
   const isEdit      = Boolean(id)
   const [form]      = Form.useForm()
+  const watchedInvoiceDate = Form.useWatch('invoice_date', form)
   const [payForm]   = Form.useForm()
   const navigate    = useNavigate()
   const qc          = useQueryClient()
@@ -713,7 +715,7 @@ const InvoiceForm = () => {
           </Col>
           <Col span={4}>
             <Form.Item name="due_date" label="Due Date">
-              <DatePicker style={{ width: '100%' }} format="DD/MM/YYYY" />
+              <DatePicker style={{ width: '100%' }} format="DD/MM/YYYY" disabledDate={notBefore(watchedInvoiceDate)} />
             </Form.Item>
           </Col>
           <Col span={4}>

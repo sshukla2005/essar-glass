@@ -8,6 +8,7 @@ import MasterForm from '../../components/common/MasterForm'
 import { tougheningBatchApi, workshopOrderApi, vendorApi, stockMovementApi } from '../../api'
 import { getSettings } from '../../utils/glassCalc'
 import { generateTougheningChallanPDF } from '../../utils/pdfGenerator'
+import { notBefore } from '../../utils/dateRules'
 
 const { TextArea } = Input
 const { Text } = Typography
@@ -29,6 +30,7 @@ const TougheningForm = () => {
   const [searchParams] = useSearchParams()
   const isEdit = Boolean(id)
   const [form] = Form.useForm()
+  const watchedSentDate = Form.useWatch('sent_date', form)
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [items, setItems] = useState([])
@@ -576,7 +578,7 @@ const TougheningForm = () => {
             )}
           </Col>
           <Col span={3}><Form.Item name="sent_date" label="Sent Date"><DatePicker style={{ width: '100%' }} format="DD/MM/YYYY" /></Form.Item></Col>
-          <Col span={3}><Form.Item name="expected_return" label="Expected Return"><DatePicker style={{ width: '100%' }} format="DD/MM/YYYY" /></Form.Item></Col>
+          <Col span={3}><Form.Item name="expected_return" label="Expected Return"><DatePicker style={{ width: '100%' }} format="DD/MM/YYYY" disabledDate={notBefore(watchedSentDate)} /></Form.Item></Col>
           <Col span={4}><Form.Item name="vehicle_number" label="Vehicle Number"><Input placeholder="MH04-XX-1234" /></Form.Item></Col>
           <Col span={4}><Form.Item name="wo_number" label="WO Ref"><Input disabled /></Form.Item></Col>
           <Col span={4}><Form.Item name="tb_number" label="Batch #"><Input disabled placeholder="Auto" /></Form.Item></Col>

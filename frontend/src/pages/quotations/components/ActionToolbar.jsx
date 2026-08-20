@@ -15,6 +15,15 @@ import {
 const QUOTE_STATUS_STEPS = ['draft', 'sent', 'confirmed', 'converted']
 const QUOTE_STATUS_IDX = { draft: 0, sent: 1, confirmed: 2, converted: 3, cancelled: 0 }
 
+// Client rename — DISPLAY ONLY. Stored values stay 'confirmed'/'converted'.
+// Applies to QUOTATIONS ONLY; the SO stepper keeps its own labels.
+const QUOTE_STATUS_LABELS = {
+  draft: 'DRAFT',
+  sent: 'SENT',
+  confirmed: 'SUBMITTED',
+  converted: 'CONFIRMED',
+}
+
 const SO_STATUS_STEPS = ['draft', 'confirmed', 'in_production', 'ready', 'delivered']
 const SO_STATUS_IDX = { draft: 0, confirmed: 1, in_production: 2, ready: 3, delivered: 4, cancelled: 0 }
 
@@ -67,7 +76,7 @@ const ActionToolbar = ({
           size="small" 
           current={currentIdx} 
           items={steps.map(s => ({ 
-            title: s.replace('_', ' ').toUpperCase()
+            title: isSO ? s.replace('_', ' ').toUpperCase() : (QUOTE_STATUS_LABELS[s] || s.replace('_', ' ').toUpperCase())
           }))} 
           style={{ padding: '4px 0' }}
         />

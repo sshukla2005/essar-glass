@@ -18,6 +18,7 @@ import { saveAs } from 'file-saver'
 import FractionInput, { toFraction } from '../quotations/components/FractionInput'
 import { computeLineWeightKg } from '../../utils/glassCalc'
 import { makePdfFilename, generateWorkshopOrderPDF } from '../../utils/pdfGenerator'
+import { notBefore } from '../../utils/dateRules'
 
 const { TextArea } = Input
 const { Text } = Typography
@@ -45,6 +46,7 @@ const WorkshopOrderForm = () => {
   const [searchParams] = useSearchParams()
   const isEdit = Boolean(id)
   const [form] = Form.useForm()
+  const watchedWoOrderDate = Form.useWatch('order_date', form)
   const navigate = useNavigate()
   const queryClient = useQueryClient()
 
@@ -1478,7 +1480,7 @@ const WorkshopOrderForm = () => {
             </Form.Item>
           </Col>
           <Col span={3}><Form.Item name="order_date" label="Order Date"><DatePicker style={{ width: '100%' }} format="DD/MM/YYYY" /></Form.Item></Col>
-          <Col span={3}><Form.Item name="required_by" label="Required By"><DatePicker style={{ width: '100%' }} format="DD/MM/YYYY" /></Form.Item></Col>
+          <Col span={3}><Form.Item name="required_by" label="Required By"><DatePicker style={{ width: '100%' }} format="DD/MM/YYYY" disabledDate={notBefore(watchedWoOrderDate)} /></Form.Item></Col>
           <Col span={3}>
             <Form.Item name="priority" label="Priority">
               <Select options={[{ value: 'normal', label: 'Normal' }, { value: 'high', label: 'High' }, { value: 'urgent', label: 'Urgent' }]} />

@@ -2072,7 +2072,7 @@ const QuotationForm = () => {
         onConvertToSO={() => {
           Modal.confirm({
             title: 'Convert to Sales Order?',
-            content: 'This will create a Sales Order and move this quotation to CONVERTED. Do you want to continue?',
+            content: 'This will create a Sales Order and move this quotation to CONFIRMED. Do you want to continue?',
             okText: 'Yes, convert',
             cancelText: 'Cancel',
             onOk: () => convertMutation.mutate(),
@@ -2093,7 +2093,7 @@ const QuotationForm = () => {
           }
           Modal.confirm({
             title: 'Confirm this quotation?',
-            content: 'This will move the quotation to CONFIRMED. Do you want to continue?',
+            content: 'This will move the quotation to SUBMITTED. Do you want to continue?',
             okText: 'Yes, confirm',
             cancelText: 'Cancel',
             onOk: () => confirmMutation.mutate(),

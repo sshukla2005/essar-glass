@@ -3,6 +3,7 @@ import { Form, Select, DatePicker, Row, Col, Space, Radio, Typography, Button, M
 import { PlusOutlined } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
 import { userApi } from '../../../api'
+import { notBefore } from '../../../utils/dateRules'
 
 const { Text } = Typography
 
@@ -25,6 +26,9 @@ const QuotationDetailsCard = forwardRef(({
   handleQuotationChange
 }, ref) => {
   const isSO = type === 'sales_order'
+
+  const watchedQuoteDate = Form.useWatch('quote_date', form)
+  const watchedOrderDate = Form.useWatch('order_date', form)
 
   const lbl = (text) => (
     <span style={{ 
@@ -283,7 +287,7 @@ const QuotationDetailsCard = forwardRef(({
               </Col>
               <Col xs={12} md={4}>
                 <Form.Item name="delivery_date" label={lbl('Delivery Date')} style={{ marginBottom: 0 }}>
-                  <DatePicker style={{ width: '100%', borderRadius: 8 }} format="DD/MM/YYYY" size="large" />
+                  <DatePicker style={{ width: '100%', borderRadius: 8 }} format="DD/MM/YYYY" size="large" disabledDate={notBefore(watchedOrderDate)} />
                 </Form.Item>
               </Col>
               <Col xs={12} md={4}>
@@ -318,7 +322,7 @@ const QuotationDetailsCard = forwardRef(({
               </Col>
               <Col xs={12} md={4}>
                 <Form.Item name="valid_until" label={lbl('Valid Until')} style={{ marginBottom: 0 }}>
-                  <DatePicker style={{ width: '100%', borderRadius: 8 }} format="DD/MM/YYYY" size="large" />
+                  <DatePicker style={{ width: '100%', borderRadius: 8 }} format="DD/MM/YYYY" size="large" disabledDate={notBefore(watchedQuoteDate)} />
                 </Form.Item>
               </Col>
             </>

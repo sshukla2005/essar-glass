@@ -20,7 +20,7 @@ const QuotationList = () => {
 
   const tabs = [
     { key: 'active', label: 'Active', count: counts?.active },
-    { key: 'converted', label: 'Converted', count: counts?.converted },
+    { key: 'converted', label: 'Confirmed', count: counts?.converted },
     { key: 'all', label: 'All', count: counts?.all },
   ]
 
@@ -78,7 +78,7 @@ const QuotationList = () => {
           { title: 'Status',     dataIndex: 'status',       key: 'status',       width: 200,
             render: (v, r) => v === 'converted' ? (
               <Space size={4} wrap>
-                <Tag color="purple">🔄 Converted</Tag>
+                <Tag color="purple">🔄 Confirmed</Tag>
                 {r.so_id && (
                   <Tag
                     color="blue"
