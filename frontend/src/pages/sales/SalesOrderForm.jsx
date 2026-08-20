@@ -1176,12 +1176,19 @@ const SalesOrderForm = () => {
     const grandTotal = subIII + cgst + sgst + igst
     const balance = grandTotal - (advanceRec || 0)
 
-    let glassCostTotal = allSizes.reduce((s, x) => s + (x.cost_amount || 0), 0)
-    // Group processes removed from UI — procCostTotal is size-processes only via cost_amount
-    let procCostTotal = 0
+    let glassCost = 0
+    groups.forEach(g => {
+      g.sizes.forEach(s => {
+        glassCost += s.cost_amount || 0
+      })
+    })
 
-    const sellableCost = glassCostTotal + procCostTotal + hwCostTotal + lbCostTotal + wstCostTotal + (dcCost || 0)
-    const sellableTotal = subIII - (dcCharges || 0)
+    const totalCost = glassCost + hwCostTotal + lbCostTotal + wstCostTotal + (dcCost || 0)
+
+    // Margin calculation: exclude GST and DC charges, use Gross Margin formula
+    // Mirrors QuotationForm.jsx:1165-1172 exactly. Do not diverge.
+    const sellableTotal = subI + procTotal + hwTotal + lbTotal + wstTotal
+    const sellableCost = glassCost + hwCostTotal + lbCostTotal + wstCostTotal
     const marginAmt = sellableTotal - sellableCost
     const marginPct = sellableCost > 0 ? (marginAmt / sellableCost) * 100 : 100
 
@@ -1189,7 +1196,7 @@ const SalesOrderForm = () => {
       subI, procTotal, hwTotal, lbTotal, wstTotal, dcCharges, dcCost, subII,
       discountAmt, subIII, cgst, sgst, igst,
       grandTotal, advanceRec, balance,
-      totalCost: sellableCost, marginAmt, marginPct,
+      totalCost, glassCost, marginAmt, marginPct,
       hwCostTotal, lbCostTotal, wstCostTotal
     }
   }, [groups, hardwareItems, laborItems, wastageItems, dcCharges, dcCost, discountAmt, advanceRec, gstMode, products])
