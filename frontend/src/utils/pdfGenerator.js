@@ -1557,8 +1557,20 @@ const drawDocumentFooterSection = (doc, company, y, pageNum, docData) => {
   ly += 4.5
 
   const jurisdiction = cleanVal(company?.jurisdiction) || cleanVal(company?.city) || cleanVal(company?.state_name) || 'Palghar'
+  // Validity = valid_until − quote_date. Falls back to the fixed 8-day
+  // wording when either date is absent (e.g. Sales Orders).
+  const validityDays = (() => {
+    const qd = docData?.quote_date
+    const vu = docData?.valid_until
+    if (!qd || !vu) return null
+    const d = dayjs(vu).diff(dayjs(qd), 'day')
+    return (Number.isFinite(d) && d > 0) ? d : null
+  })()
+  const validityText = validityDays
+    ? `• Validity of Document is ${validityDays} Day${validityDays === 1 ? '' : 's'} from the date of issue.`
+    : '• Validity of Document is 8 Days from the date of issue.'
   const bullets = [
-    '• Validity of Document is 8 Days from the date of issue.',
+    validityText,
     '• Goods sold cannot be Exchanged or Returned.',
     '• Accepted Tolerance limits will be +/- 1mm in dimentions & =/- .01mm in thickness',
     '• Delivery is effected solely on buyer\'s risk n costs',
