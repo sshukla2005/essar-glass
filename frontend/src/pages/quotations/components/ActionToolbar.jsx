@@ -17,7 +17,7 @@ const QUOTE_STATUS_IDX = { draft: 0, sent: 1, confirmed: 2, converted: 3, cancel
 
 // Client rename — DISPLAY ONLY. Stored values stay 'confirmed'/'converted'.
 // Applies to QUOTATIONS ONLY; the SO stepper keeps its own labels.
-const QUOTE_STATUS_LABELS = {
+export const QUOTE_STATUS_LABELS = {
   draft: 'DRAFT',
   sent: 'SENT',
   confirmed: 'SUBMITTED',

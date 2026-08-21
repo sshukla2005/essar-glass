@@ -5,6 +5,7 @@ import { ArrowLeftOutlined, DownloadOutlined } from '@ant-design/icons'
 import MasterList from '../../components/common/MasterList'
 import { quotationApi } from '../../api'
 import { generateQuotationPDF } from '../../utils/pdfGenerator'
+import { QUOTE_STATUS_LABELS } from './components/ActionToolbar'
 
 const { Text } = Typography
 
@@ -92,7 +93,7 @@ const QuotationList = () => {
                   </Tag>
                 )}
               </Space>
-            ) : <Tag color={STATUS_COLORS[v] || 'default'}>{v?.toUpperCase()}</Tag> },
+            ) : <Tag color={STATUS_COLORS[v] || 'default'}>{QUOTE_STATUS_LABELS[v] || v?.toUpperCase()}</Tag> },
         ]}
         createPath={leadId ? `/quotations/new?lead_id=${leadId}` : '/quotations/new'}
         editPath={(r) => `/quotations/${r.id}/edit`}
