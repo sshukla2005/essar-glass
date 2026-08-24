@@ -1425,7 +1425,12 @@ const calculateSummaryHeight = (totalsRows) => {
 }
 
 const drawFinalSummaryBlock = (doc, totalsRows, amtWords, quotation, y) => {
-  const h = calculateSummaryHeight(totalsRows)
+  // Left column has fixed content: 3 fields (9.5mm each, first starts at
+  // SP_8 + 2) plus a 14mm Amount in Words box with SP_8 padding below.
+  // Without this floor, a short right column (GST = None) pulls the
+  // Amount in Words box up over the HSN field.
+  const LEFT_MIN_H = SP_8 + 2 + (9.5 * 3) + 14 + SP_8 + 2
+  const h = Math.max(calculateSummaryHeight(totalsRows), LEFT_MIN_H)
   const mid = PAGE_W / 2
   const colW = CONTENT_W / 2 - 2
   
@@ -1442,7 +1447,13 @@ const drawFinalSummaryBlock = (doc, totalsRows, amtWords, quotation, y) => {
   setFont(doc, 6.5, 'bold', C.textLight)
   drawText(doc, 'VALIDITY PERIOD', MARGIN.l + 5, ly)
   setFont(doc, 7.5, 'normal', C.text)
-  drawText(doc, '8 days from date of issue', MARGIN.l + 5, ly + 4)
+  const validityDays = (() => {
+    const qd = quotation?.quote_date, vu = quotation?.valid_until
+    if (!qd || !vu) return null
+    const d = dayjs(vu).diff(dayjs(qd), 'day')
+    return (Number.isFinite(d) && d > 0) ? d : null
+  })()
+  drawText(doc, validityDays ? `${validityDays} day${validityDays === 1 ? '' : 's'} from date of issue` : '8 days from date of issue', MARGIN.l + 5, ly + 4)
   
   ly += 9.5
   setFont(doc, 6.5, 'bold', C.textLight)
