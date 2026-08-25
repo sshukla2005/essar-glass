@@ -18,6 +18,7 @@ import dayjs from 'dayjs'
 import { productApi, stockMovementApi, warehouseApi, deliveryNoteApi } from '../../api'
 import { generateDeliveryNotePDF } from '../../utils/pdfGenerator'
 import OpeningStockImportModal from './OpeningStockImportModal'
+import QuickDeliveryNoteModal from './QuickDeliveryNoteModal'
 
 const { Title, Text } = Typography
 
@@ -381,6 +382,8 @@ const StockOverview = () => {
   const [openingIsNew, setOpeningIsNew] = useState(false)
   const [adjSearchText, setAdjSearchText] = useState('')
   const [adjIsNew, setAdjIsNew] = useState(false)
+  const [selectedRowKeys, setSelectedRowKeys] = useState([])
+  const [bulkDnOpen, setBulkDnOpen] = useState(false)
 
   const { data: productsData, isLoading: isProductsLoading } = useQuery({
     queryKey: ['products-all'],
@@ -1121,11 +1124,30 @@ const StockOverview = () => {
             </Button>
           </Space>
         </div>
+
+        {!selectedWarehouseFilter && (
+          <Alert type="info" showIcon style={{ margin: '16px 24px 12px 24px', marginBottom: 12 }}
+            message="Select a specific warehouse to enable multi-product Delivery Notes." />
+        )}
+
+        {selectedRowKeys.length > 0 && (
+          <div style={{ margin: '16px 24px 12px 24px', marginBottom: 12, padding: '8px 12px', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span style={{ fontWeight: 600 }}>{selectedRowKeys.length} product(s) selected</span>
+            <Button type="primary" onClick={() => setBulkDnOpen(true)}>Create Delivery Note</Button>
+            <Button size="small" onClick={() => setSelectedRowKeys([])}>Clear</Button>
+          </div>
+        )}
+
         <Table
           rowKey="id"
           dataSource={filteredProducts}
           columns={columns}
           loading={isProductsLoading}
+          rowSelection={{
+            selectedRowKeys,
+            onChange: keys => setSelectedRowKeys(keys),
+            getCheckboxProps: () => ({ disabled: !selectedWarehouseFilter }),
+          }}
           scroll={{ x: 'max-content' }}
           pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (t, r) => `${r[0]}-${r[1]} of ${t}` }}
           rowClassName={r => {
@@ -1563,6 +1585,17 @@ const StockOverview = () => {
           queryClient.invalidateQueries({ queryKey: ['stock-movements-overview'] })
           queryClient.invalidateQueries({ queryKey: ['warehouses-dd'] })
         }}
+      />
+
+      <QuickDeliveryNoteModal
+        open={bulkDnOpen}
+        onClose={() => { setBulkDnOpen(false); setSelectedRowKeys([]) }}
+        warehouseId={selectedWarehouseFilter}
+        warehouseName={(warehouses.find(w => w.id === selectedWarehouseFilter) || {}).name || ''}
+        products={filteredProducts.filter(p => selectedRowKeys.includes(p.id)).map(p => ({
+          ...p,
+          on_hand_sheets: getProductStock(p).sheets
+        }))}
       />
 
 
