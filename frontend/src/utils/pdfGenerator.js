@@ -60,12 +60,12 @@ const loadBrandLogo = (entry) => {
 export const preloadBrandLogos = () =>
   Promise.all(BRAND_LOGOS.map(loadBrandLogo))
 
-export const makePdfFilename = (docNumber, name, fallback = 'Customer') => {
+export const makePdfFilename = (docNumber, name, fallback = 'Customer', ext = 'pdf') => {
   const num = docNumber || 'DOC'
   const safeName = String(name || fallback)
     .replace(/[^a-zA-Z0-9]+/g, '_')
     .replace(/^_|_$/g, '') || fallback
-  return `${num}_${safeName}.pdf`
+  return `${num}_${safeName}.${ext}`
 }
 
 // ── Date formatter ──────────────────────

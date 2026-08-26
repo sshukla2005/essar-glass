@@ -1009,6 +1009,31 @@ const StockOverview = () => {
     XLSX.writeFile(wb, 'Tally_Opening_Stock_Template.xlsx')
   }
 
+  const handleDownloadStockReport = () => {
+    if (!filteredProducts || filteredProducts.length === 0) {
+      message.warning('No products to export')
+      return
+    }
+    const whName = (warehouses.find(w => w.id === selectedWarehouseFilter) || {}).name || 'All Warehouses'
+    const rows = filteredProducts.map(p => {
+      const { sqm, sheets } = getProductStock(p)
+      return {
+        'PARTICULARS': p.name,
+        'Alt. Units': `${Number(sheets) || 0} PCS`,
+        'Balance (Sqm)': Number(sqm) || 0,
+        'Sheet Size': (p.sheet_width_mm && p.sheet_height_mm) ? `${p.sheet_width_mm} x ${p.sheet_height_mm} mm` : '',
+        'Warehouse': whName,
+      }
+    })
+    const wb = XLSX.utils.book_new()
+    const ws = XLSX.utils.json_to_sheet(rows)
+    ws['!cols'] = [{ wch: 45 }, { wch: 14 }, { wch: 14 }, { wch: 20 }, { wch: 20 }]
+    XLSX.utils.book_append_sheet(wb, ws, 'Stock Summary')
+    const stamp = dayjs().format('DD-MM-YYYY')
+    XLSX.writeFile(wb, `Stock_Summary_${whName.replace(/[^a-zA-Z0-9]/g, '_')}_${stamp}.xlsx`)
+    message.success(`Exported ${rows.length} products`)
+  }
+
   return (
     <div style={{ padding: 24 }}>
       {/* Header */}
@@ -1097,6 +1122,12 @@ const StockOverview = () => {
             )}
           </Space>
           <Space wrap>
+            <Button
+              icon={<DownloadOutlined />}
+              onClick={handleDownloadStockReport}
+            >
+              Download Stock Report
+            </Button>
             <Button
               icon={<DownloadOutlined />}
               onClick={handleDownloadTemplate}

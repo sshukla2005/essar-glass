@@ -84,6 +84,7 @@ const WorkshopOrderForm = () => {
   }
   const [expandedRowKeys, setExpandedRowKeys] = useState([])
   const [exportWizard, setExportWizard] = useState(false)
+  const [downloadPickerOpen, setDownloadPickerOpen] = useState(false)
   const [exportLoading, setExportLoading] = useState(null)
   const [waLink, setWaLink] = useState(null)
   // Multi-artwork panel maps — har artwork ki APNI mapping sheet:
@@ -1043,7 +1044,7 @@ const WorkshopOrderForm = () => {
         pageSetup: { paperSize: 9, orientation: 'landscape' }
       })
 
-      const customerName = customerList.find(c => c.id === record?.customer_id)?.name || '—'
+      const customerName = record?.customer_name || record?.customer?.name || customerList.find(c => c.id === record?.customer_id)?.name || 'Customer'
 
       // ── HEADER ROWS ─────────────────────────────────
       ws.mergeCells('A1:L1')
@@ -1093,8 +1094,8 @@ const WorkshopOrderForm = () => {
           i + 1,
           line.description || '',
           line.serial_no || '',
-          line.act_w_in ? parseFloat(line.act_w_in.toFixed(4)) : '',
-          line.act_h_in ? parseFloat(line.act_h_in.toFixed(4)) : '',
+          line.act_w_in ? toFraction(line.act_w_in) : '',
+          line.act_h_in ? toFraction(line.act_h_in) : '',
           line.act_w_mm || '',
           line.act_h_mm || '',
           line.qty || 1,
@@ -1362,7 +1363,7 @@ const WorkshopOrderForm = () => {
       const blob = new Blob([buffer], {
         type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
       })
-      saveAs(blob, `${record?.wo_number || 'WorkshopOrder'}_${dayjs().format('YYYYMMDD')}.xlsx`)
+      saveAs(blob, makePdfFilename(record?.wo_number || 'WorkshopOrder', customerName, 'Customer', 'xlsx'))
 
     } catch (err) {
       console.error('Excel generation error:', err)
@@ -1427,20 +1428,10 @@ const WorkshopOrderForm = () => {
             <Button
               icon={<DownloadOutlined />}
               disabled={!isEdit}
-              loading={exportLoading === 'pdf'}
-              onClick={async () => {
-                const hide = message.loading('Generating Workshop Order PDF...', 0)
-                try {
-                  await generateWOPdf()
-                } catch (err) {
-                  message.error('PDF generation failed: ' + (err?.message || 'Unknown error'))
-                } finally {
-                  hide()
-                }
-              }}
+              onClick={() => setDownloadPickerOpen(true)}
               style={{ borderColor: '#6366f1', color: '#6366f1' }}
             >
-              Download PDF
+              Download
             </Button>
             {status === 'draft' && (
               <Button
@@ -2024,6 +2015,84 @@ const WorkshopOrderForm = () => {
           <p style={{ textAlign: 'center', fontSize: 11, color: '#94a3b8', marginTop: 8, marginBottom: 0 }}>
             You can download again any time after starting.
           </p>
+        </div>
+      </Modal>
+
+      {/* ── Download Format Picker Modal ── */}
+      <Modal
+        title={
+          <Space>
+            <DownloadOutlined style={{ color: '#6366f1' }} />
+            <span style={{ fontWeight: 700 }}>Download Workshop Order</span>
+          </Space>
+        }
+        open={downloadPickerOpen}
+        onCancel={() => setDownloadPickerOpen(false)}
+        footer={null}
+        width={480}
+      >
+        <div style={{ padding: '8px 0' }}>
+          <p style={{ color: '#64748b', fontSize: 13, marginBottom: 20 }}>
+            Choose your preferred download format:
+          </p>
+
+          <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
+            {/* PDF Card */}
+            <div
+              onClick={async () => {
+                setDownloadPickerOpen(false)
+                const hide = message.loading('Generating Workshop Order PDF...', 0)
+                try {
+                  await generateWOPdf()
+                } catch (err) {
+                  message.error('PDF generation failed: ' + (err?.message || 'Unknown error'))
+                } finally {
+                  hide()
+                }
+              }}
+              style={{
+                flex: 1, border: '2px solid #e2e8f0', borderRadius: 10,
+                padding: '20px 16px', cursor: 'pointer', textAlign: 'center',
+                transition: 'all 0.2s',
+                background: '#fff',
+                borderColor: '#e2e8f0',
+              }}
+            >
+              <div style={{ fontSize: 32, marginBottom: 8 }}>📄</div>
+              <div style={{ fontWeight: 700, fontSize: 14, color: '#0f172a' }}>PDF</div>
+              <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>
+                With artwork images inline
+              </div>
+            </div>
+
+            {/* Excel Card */}
+            <div
+              onClick={async () => {
+                setDownloadPickerOpen(false)
+                const hide = message.loading('Generating Workshop Order Excel...', 0)
+                try {
+                  await generateWOExcel()
+                } catch (err) {
+                  message.error('Excel generation failed: ' + (err?.message || 'Unknown error'))
+                } finally {
+                  hide()
+                }
+              }}
+              style={{
+                flex: 1, border: '2px solid #e2e8f0', borderRadius: 10,
+                padding: '20px 16px', cursor: 'pointer', textAlign: 'center',
+                transition: 'all 0.2s',
+                background: '#fff',
+                borderColor: '#e2e8f0',
+              }}
+            >
+              <div style={{ fontSize: 32, marginBottom: 8 }}>📊</div>
+              <div style={{ fontWeight: 700, fontSize: 14, color: '#0f172a' }}>Excel</div>
+              <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>
+                Tabular format, artwork names only
+              </div>
+            </div>
+          </div>
         </div>
       </Modal>
 
