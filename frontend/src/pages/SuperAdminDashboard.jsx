@@ -122,13 +122,18 @@ const SuperAdminDashboard = () => {
 
       {/* Company Cards */}
       <Row gutter={[16,16]} style={{ marginBottom: 24 }}>
-        {companyMetrics.map(company => (
+        {companyMetrics.map(company => {
+          // Essar Sons (id=1) trades through the external wholesale app.
+          // Hide ERP-derived tiles for that card; show only the wholesale block.
+          const wholesaleOnly = company.id === 1
+          return (
           <Col key={company.id} xs={24} sm={12} xl={6}>
             <Card hoverable style={{ borderRadius: 16, border: `2px solid ${company.color}`, background: 'rgba(255,255,255,0.03)', cursor: 'pointer' }}
               onClick={() => {
                 setActiveCompany(company.id)
                 navigate('/', { state: { company_id: company.id } })
               }}>
+              {/* Company header — always visible */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
                 <div style={{ width: 42, height: 42, borderRadius: 10, background: company.color, display: 'flex', alignItems: 'center', justifyContent: 'center', color: company.accent, fontWeight: 900, fontSize: 14 }}>
                   {company.short_name.slice(0,2)}
@@ -138,45 +143,88 @@ const SuperAdminDashboard = () => {
                   <Tag color={company.color} style={{ marginTop: 2 }}>{company.short_name}</Tag>
                 </div>
               </div>
-              <div style={{ marginBottom: 12 }}>
-                <AntTooltip title="Based on confirmed sales orders. Invoicing is maintained in Tally.">
-                  <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, cursor: 'help' }}>
-                    Revenue <InfoCircleOutlined style={{ fontSize: 10, marginLeft: 2 }} />
-                  </Text>
-                </AntTooltip>
-                <div style={{ fontSize: 26, fontWeight: 800, color: company.accent || '#fff' }}>{fmt(company.revenue)}</div>
-              </div>
-              <div style={{ marginBottom: 12 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>Gross Margin</Text>
-                  <Text style={{ color: company.grossMargin == null ? 'rgba(255,255,255,0.4)' : company.grossMargin >= 20 ? '#34d399' : company.grossMargin >= 10 ? '#fbbf24' : '#f87171', fontWeight: 700 }}>
-                    {company.grossMargin != null ? `${company.grossMargin}%` : '—'}
-                  </Text>
-                </div>
-                <Progress percent={company.grossMargin != null ? Math.min(company.grossMargin, 100) : 0} showInfo={false}
-                  strokeColor={company.grossMargin >= 20 ? '#34d399' : company.grossMargin >= 10 ? '#fbbf24' : '#f87171'}
-                  trailColor="rgba(255,255,255,0.1)" size="small" />
-              </div>
-              <Row gutter={8}>
-                {[['Quotes', company.totalQuotes], ['Active Orders', company.activeSOs], ['Customers', company.totalCustomers]].map(([label, val]) => (
-                  <Col span={8} style={{ textAlign: 'center' }} key={label}>
-                    <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 10 }}>{label}</Text>
-                    <div style={{ color: '#fff', fontWeight: 700 }}>{val}</div>
-                  </Col>
-                ))}
-              </Row>
-              {company.outstanding > 0 ? (
-                <div style={{ marginTop: 12, padding: '6px 10px', background: 'rgba(248,113,113,0.15)', borderRadius: 6, border: '1px solid rgba(248,113,113,0.3)' }}>
-                  <Text style={{ color: '#f87171', fontSize: 12 }}>⚠️ Outstanding: {fmt(company.outstanding)}</Text>
-                </div>
-              ) : (
-                <div style={{ marginTop: 12, padding: '4px 8px', background: 'rgba(255,255,255,0.03)', borderRadius: 6, border: '1px solid rgba(255,255,255,0.08)' }}>
-                  <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11 }}>Outstanding: ₹0 (Billed in Tally)</Text>
+              {/* ERP-derived tiles — hidden for wholesale-only cards */}
+              {!wholesaleOnly && (
+                <div style={{ marginBottom: 12 }}>
+                  <AntTooltip title="Based on confirmed sales orders. Invoicing is maintained in Tally.">
+                    <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, cursor: 'help' }}>
+                      Revenue <InfoCircleOutlined style={{ fontSize: 10, marginLeft: 2 }} />
+                    </Text>
+                  </AntTooltip>
+                  <div style={{ fontSize: 26, fontWeight: 800, color: company.accent || '#fff' }}>{fmt(company.revenue)}</div>
                 </div>
               )}
+              {!wholesaleOnly && (
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>Gross Margin</Text>
+                    <Text style={{ color: company.grossMargin == null ? 'rgba(255,255,255,0.4)' : company.grossMargin >= 20 ? '#34d399' : company.grossMargin >= 10 ? '#fbbf24' : '#f87171', fontWeight: 700 }}>
+                      {company.grossMargin != null ? `${company.grossMargin}%` : '—'}
+                    </Text>
+                  </div>
+                  <Progress percent={company.grossMargin != null ? Math.min(company.grossMargin, 100) : 0} showInfo={false}
+                    strokeColor={company.grossMargin >= 20 ? '#34d399' : company.grossMargin >= 10 ? '#fbbf24' : '#f87171'}
+                    trailColor="rgba(255,255,255,0.1)" size="small" />
+                </div>
+              )}
+              {!wholesaleOnly && (
+                <Row gutter={8}>
+                  {[['Quotes', company.totalQuotes], ['Active Orders', company.activeSOs], ['Customers', company.totalCustomers]].map(([label, val]) => (
+                    <Col span={8} style={{ textAlign: 'center' }} key={label}>
+                      <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 10 }}>{label}</Text>
+                      <div style={{ color: '#fff', fontWeight: 700 }}>{val}</div>
+                    </Col>
+                  ))}
+                </Row>
+              )}
+              {!wholesaleOnly && (
+                company.outstanding > 0 ? (
+                  <div style={{ marginTop: 12, padding: '6px 10px', background: 'rgba(248,113,113,0.15)', borderRadius: 6, border: '1px solid rgba(248,113,113,0.3)' }}>
+                    <Text style={{ color: '#f87171', fontSize: 12 }}>⚠️ Outstanding: {fmt(company.outstanding)}</Text>
+                  </div>
+                ) : (
+                  <div style={{ marginTop: 12, padding: '4px 8px', background: 'rgba(255,255,255,0.03)', borderRadius: 6, border: '1px solid rgba(255,255,255,0.08)' }}>
+                    <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11 }}>Outstanding: ₹0 (Billed in Tally)</Text>
+                  </div>
+                )
+              )}
+              {/* Wholesale block — Essar Sons only */}
+              {company.id === 1 && overviewRes?.wholesale && (() => {
+                const w = overviewRes.wholesale
+                const ts = w.synced_at
+                  ? (() => {
+                      const d = new Date(w.synced_at)
+                      const dd = String(d.getDate()).padStart(2, '0')
+                      const mm = String(d.getMonth() + 1).padStart(2, '0')
+                      const hh = String(d.getHours()).padStart(2, '0')
+                      const mi = String(d.getMinutes()).padStart(2, '0')
+                      return `${dd}-${mm} ${hh}:${mi}`
+                    })()
+                  : null
+                return (
+                  <div style={{ marginTop: wholesaleOnly ? 0 : 12, padding: '8px 10px', background: 'rgba(99,102,241,0.12)', borderRadius: 6, border: '1px solid rgba(99,102,241,0.3)' }}>
+                    <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: 6 }}>🏭 Wholesale</Text>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 8px' }}>
+                      {[
+                        ['Revenue (Month)', fmt(w.month_revenue)],
+                        ['Profit (Month)',  fmt(w.month_profit)],
+                        ['Stock Value',     fmt(w.stock_value)],
+                        ['Open Orders',     w.open_orders],
+                      ].map(([label, val]) => (
+                        <div key={label}>
+                          <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 10, display: 'block' }}>{label}</Text>
+                          <Text style={{ color: '#a5b4fc', fontWeight: 700, fontSize: 12 }}>{val}</Text>
+                        </div>
+                      ))}
+                    </div>
+                    {ts && <Text style={{ color: 'rgba(255,255,255,0.3)', fontSize: 10, display: 'block', marginTop: 5 }}>as of {ts}</Text>}
+                  </div>
+                )
+              })()}
             </Card>
           </Col>
-        ))}
+          )
+        })}
       </Row>
 
       {/* Charts */}

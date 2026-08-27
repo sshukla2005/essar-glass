@@ -16,6 +16,7 @@ from app.models.employee import Employee
 from app.models.crm import CRMLead
 from app.models.payment import Payment
 from app.models.payment_allocation import PaymentAllocation
+from app.models.wholesale_snapshot import WholesaleSnapshot
 
 router = APIRouter(prefix="/super", tags=["SuperAdmin"])
 
@@ -245,6 +246,21 @@ def get_group_overview(
             entry[c['short_name']] = c['monthlyRevenue'][idx]['revenue']
         group_revenue_data.append(entry)
 
+    latest = db.query(WholesaleSnapshot).order_by(WholesaleSnapshot.synced_at.desc()).first()
+    wholesale = None
+    if latest:
+        wholesale = {
+            "stock_value":   latest.stock_value,
+            "month_revenue": latest.month_revenue,
+            "month_profit":  latest.month_profit,
+            "open_orders":   latest.open_orders,
+            "total_sheets":  latest.total_sheets,
+            "total_tonnage": latest.total_tonnage,
+            "low_stock":     latest.low_stock,
+            "trucks_active": latest.trucks_active,
+            "synced_at":     latest.synced_at.isoformat() if latest.synced_at else None,
+        }
+
     return {
         'company_metrics': company_metrics,
         'companies': company_metrics,
@@ -257,4 +273,5 @@ def get_group_overview(
             'on_account': total_group_on_account,
         },
         'group_revenue_data': group_revenue_data,
+        'wholesale': wholesale,
     }

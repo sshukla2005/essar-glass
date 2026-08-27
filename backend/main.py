@@ -1,4 +1,5 @@
-from fastapi import FastAPI, Depends, Request, Response, Query
+import hmac
+from fastapi import FastAPI, Depends, Request, Response, Query, Body, HTTPException
 from fastapi.responses import JSONResponse
 from typing import Optional, List
 from sqlalchemy.orm import Session
@@ -44,6 +45,7 @@ WRITE_WHITELIST = {
     "/api/v1/auth/refresh",
     "/api/v1/auth/switch-company",
     "/api/v1/inter-company/link",
+    "/api/v1/wholesale-sync",      # Push-only; token-auth, no JWT
 }
 
 class ReadOnlyMiddleware(BaseHTTPMiddleware):
@@ -1192,6 +1194,40 @@ def api_import_opening_stock(
     }
 
 
+# ── Wholesale App Snapshot Push ───────────────────────────────────────────────
+
+@app.post("/api/v1/wholesale-sync")
+def wholesale_sync(payload: dict = Body(...), db: Session = Depends(get_db)):
+    """Receive a snapshot pushed by the external wholesale app.
+    Token-authenticated; no JWT. Push-only — this ERP cannot call out
+    to that app because its host blocks server-to-server requests."""
+    from app.models.wholesale_snapshot import WholesaleSnapshot
+    expected = settings.WHOLESALE_SYNC_TOKEN
+    if not expected:
+        raise HTTPException(status_code=503, detail="Wholesale sync not configured")
+    supplied = str(payload.get("token") or "")
+    if not hmac.compare_digest(supplied, expected):
+        raise HTTPException(status_code=401, detail="Invalid sync token")
+
+    def _f(k):
+        try: return float(payload.get(k) or 0)
+        except (TypeError, ValueError): return 0.0
+    def _i(k):
+        try: return int(float(payload.get(k) or 0))
+        except (TypeError, ValueError): return 0
+
+    snap = WholesaleSnapshot(
+        source=str(payload.get("source") or "essar_wholesale")[:50],
+        stock_value=_f("stock_value"),   total_sheets=_i("total_sheets"),
+        total_sqm=_f("total_sqm"),       total_tonnage=_f("total_tonnage"),
+        total_skus=_i("total_skus"),     low_stock=_i("low_stock"),
+        month_revenue=_f("month_revenue"), month_orders=_i("month_orders"),
+        month_profit=_f("month_profit"), open_orders=_i("open_orders"),
+        trucks_active=_i("trucks_active"),
+    )
+    db.add(snap)
+    db.commit()
+    return {"ok": True}
 
 
 @app.get("/")

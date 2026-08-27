@@ -18,6 +18,7 @@ from app.models.company_settings import CompanySetting
 from app.models.payment import Payment
 from app.models.payment_allocation import PaymentAllocation
 from app.models.delivery_note import DeliveryNote, DocumentSequence
+from app.models.wholesale_snapshot import WholesaleSnapshot
 
 __all__ = [
     "Company", "User", "Customer", "Vendor", "Product",
@@ -27,4 +28,5 @@ __all__ = [
     "TougheningBatch", "ProcessMaster", "Warehouse",
     "CompanySetting", "Payment", "PaymentAllocation",
     "DeliveryNote", "DocumentSequence",
+    "WholesaleSnapshot",
 ]

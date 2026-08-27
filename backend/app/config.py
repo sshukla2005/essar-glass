@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     MAX_UPLOAD_SIZE: int = 5242880
     AUTO_CREATE_TABLES: bool = False
 
+    # Shared secret for the wholesale app's push endpoint.
+    # Empty string disables the endpoint (returns 503).
+    WHOLESALE_SYNC_TOKEN: str = ""
+
     # ── Company isolation flags ──────────────────────────────────────────
     # ASSUMPTION 1: Read-only-on-switch applies to ALL roles including
     # Super Admin.  Set to True to allow superadmin to edit cross-company.
