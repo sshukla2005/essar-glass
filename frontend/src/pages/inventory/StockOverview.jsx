@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react'
 import {
   Card, Row, Col, Typography, Table, Tag, Button,
   Input, Modal, Form, InputNumber, Select, App,
-  Statistic, Alert, Space, Badge, Popover, Checkbox
+  Statistic, Alert, Space, Badge, Popover, Checkbox, DatePicker
 } from 'antd'
 import {
   AppstoreOutlined, WarningOutlined, DollarOutlined,
@@ -182,6 +182,7 @@ const QuickAdjustPopover = ({ product, actionType, warehouses, defaultWarehouseI
   const [remarks, setRemarks] = useState('')
   const [errorMsg, setErrorMsg] = useState('')
   const [createDeliveryNote, setCreateDeliveryNote] = useState(false)
+  const [ratePerSqm, setRatePerSqm] = useState(null)
 
   const { sheets: availableSheets } = getProductStock(product)
 
@@ -192,6 +193,7 @@ const QuickAdjustPopover = ({ product, actionType, warehouses, defaultWarehouseI
       setRemarks('')
       setWarehouseId(defaultWarehouseId || warehouses[0]?.id)
       setCreateDeliveryNote(false)
+      setRatePerSqm(null)
     }
   }, [open, defaultWarehouseId, warehouses])
 
@@ -225,7 +227,11 @@ const QuickAdjustPopover = ({ product, actionType, warehouses, defaultWarehouseI
       quantity: signedSqm,
       warehouse_id: warehouseId || warehouses[0]?.id,
       is_quick_adj: true,
-      remarks: remarks ? remarks.trim() : `Quick adjustment (${actionType === 'sub' ? '-' : '+'}${numSheets} sheets)`
+      remarks: remarks ? remarks.trim() : `Quick adjustment (${actionType === 'sub' ? '-' : '+'}${numSheets} sheets)`,
+      unit_rate: ratePerSqm || null,
+      total_value: (ratePerSqm > 0 && derivedSqm > 0)
+        ? Math.round(ratePerSqm * derivedSqm * 100) / 100
+        : null,
     }, {
       onSuccess: async () => {
         if (actionType === 'sub' && createDeliveryNote) {
@@ -290,6 +296,20 @@ const QuickAdjustPopover = ({ product, actionType, warehouses, defaultWarehouseI
           {isSub ? '-' : '+'}{derivedSqm} sqm
         </Text>
       </div>
+
+      {!isSub && (
+        <div style={{ marginBottom: 8 }}>
+          <Text style={{ fontSize: 11, display: 'block', marginBottom: 2 }}>Rate per SQM (₹):</Text>
+          <InputNumber
+            min={0}
+            step={0.01}
+            value={ratePerSqm}
+            onChange={val => setRatePerSqm(val)}
+            style={{ width: '100%' }}
+            placeholder="e.g. 517.24"
+          />
+        </div>
+      )}
 
       <div style={{ marginBottom: 8 }}>
         <Text style={{ fontSize: 11, display: 'block', marginBottom: 2 }}>Warehouse:</Text>
@@ -557,8 +577,13 @@ const StockOverview = () => {
         quantity_sqm: qtySqm,
         quantity_sheets: qtySheets,
         warehouse_id: warehouseId,
-        reference: values.is_quick_adj ? 'QUICK-ADJ' : (values.reference || 'MANUAL-ADJ'),
-        remarks: values.remarks || 'Stock adjustment'
+        reference: values.is_quick_adj ? 'QUICK-ADJ' : (values.supplier_invoice_no || values.reference || 'MANUAL-ADJ'),
+        remarks: values.supplier_name
+          ? `${values.remarks || 'Stock addition'} | Supplier: ${values.supplier_name}`
+          : (values.remarks || 'Stock adjustment'),
+        unit_rate: values.unit_rate ?? null,
+        total_value: values.total_value ?? null,
+        date: values.invoice_date ? values.invoice_date.format('YYYY-MM-DD') : null,
       })
     },
     onSuccess: () => {
@@ -1196,7 +1221,7 @@ const StockOverview = () => {
         open={adjModalOpen}
         onCancel={() => setAdjModalOpen(false)}
         footer={null}
-        width={520}
+        width={620}
       >
         <Form
           form={adjForm}
@@ -1223,6 +1248,14 @@ const StockOverview = () => {
                 adjForm.setFieldsValue({ quantity_sheets: Math.round((q / area) * 10000) / 10000 })
               } else if (q === undefined || q === null || q === '') {
                 adjForm.setFieldsValue({ quantity_sheets: undefined })
+              }
+            }
+
+            if ('unit_rate' in changedValues || 'qty_change' in changedValues || 'quantity_sheets' in changedValues) {
+              const rate = adjForm.getFieldValue('unit_rate')
+              const sqm = adjForm.getFieldValue('qty_change')
+              if (rate > 0 && sqm > 0) {
+                adjForm.setFieldsValue({ total_value: Math.round(rate * sqm * 100) / 100 })
               }
             }
           }}
@@ -1382,7 +1415,39 @@ const StockOverview = () => {
             }}
           </Form.Item>
 
-          {/* 6. Reason / Remarks */}
+          {/* 7. Purchase Details (optional) */}
+          <div style={{ border: '1px dashed #d9d9d9', borderRadius: 8, padding: '12px 16px', marginBottom: 16, background: '#fafafa' }}>
+            <Text strong style={{ display: 'block', marginBottom: 12, color: '#374151', fontSize: 13 }}>Purchase Details <Text type="secondary" style={{ fontWeight: 400, fontSize: 12 }}>(optional)</Text></Text>
+            <Row gutter={12}>
+              <Col span={14}>
+                <Form.Item name="supplier_invoice_no" label="Supplier Invoice No." style={{ marginBottom: 12 }}>
+                  <Input placeholder="e.g. SR-139-26-27" />
+                </Form.Item>
+              </Col>
+              <Col span={10}>
+                <Form.Item name="invoice_date" label="Invoice Date" style={{ marginBottom: 12 }}>
+                  <DatePicker style={{ width: '100%' }} format="DD/MM/YYYY" placeholder="DD/MM/YYYY" />
+                </Form.Item>
+              </Col>
+            </Row>
+            <Form.Item name="supplier_name" label="Supplier" style={{ marginBottom: 12 }}>
+              <Input placeholder="e.g. ESSAR" />
+            </Form.Item>
+            <Row gutter={12}>
+              <Col span={12}>
+                <Form.Item name="unit_rate" label="Rate per SQM (₹)" style={{ marginBottom: 0 }}>
+                  <InputNumber min={0} step={0.01} style={{ width: '100%' }} placeholder="e.g. 517.24" />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item name="total_value" label="Total Amount (₹)" style={{ marginBottom: 0 }} extra={<Text type="secondary" style={{ fontSize: 11 }}>Auto-computed · editable</Text>}>
+                  <InputNumber min={0} step={0.01} style={{ width: '100%' }} placeholder="e.g. 46123.00" />
+                </Form.Item>
+              </Col>
+            </Row>
+          </div>
+
+          {/* 8. Reason / Remarks */}
           <Form.Item name="remarks" label="Reason / Remarks">
             <Input.TextArea rows={2} placeholder="e.g., Physical count, damaged goods, etc." />
           </Form.Item>
