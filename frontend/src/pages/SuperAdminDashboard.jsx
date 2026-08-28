@@ -31,6 +31,18 @@ const SuperAdminDashboard = () => {
 
   const companyMetrics = overviewRes?.company_metrics || []
   const groupRevenueData = overviewRes?.group_revenue_data || []
+
+  // Essar Sons revenue comes from the wholesale app, not the ERP, so the
+  // backend series has no ESSAR value. Inject the current month's figure.
+  // To revert: set this to `groupRevenueData`.
+  const chartData = (() => {
+    const w = overviewRes?.wholesale
+    if (!w || !groupRevenueData.length) return groupRevenueData
+    const last = groupRevenueData.length - 1
+    return groupRevenueData.map((row, i) =>
+      i === last ? { ...row, ESSAR: w.month_revenue || 0 } : row
+    )
+  })()
   const totalGroupRevenue = overviewRes?.totals?.group_revenue || 0
   const totalGroupCustomers = overviewRes?.totals?.total_customers || 0
   const totalGroupActiveSOs = overviewRes?.totals?.active_orders || 0
@@ -121,15 +133,23 @@ const SuperAdminDashboard = () => {
       </Row>
 
       {/* Company Cards */}
-      <Row gutter={[16,16]} style={{ marginBottom: 24 }}>
-        {companyMetrics.map(company => {
+      <Row gutter={[16,16]} align="stretch" style={{ marginBottom: 24 }}>
+        {[...companyMetrics].sort((a, b) => {
+          const order = ['EXCEL', 'ALFA-L', 'ALFA-E', 'ESSAR']
+          const ai = order.indexOf(a.short_name), bi = order.indexOf(b.short_name)
+          return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi)
+        }).map(company => {
           // Essar Sons (id=1) trades through the external wholesale app.
           // Hide ERP-derived tiles for that card; show only the wholesale block.
           const wholesaleOnly = company.id === 1
           return (
-          <Col key={company.id} xs={24} sm={12} xl={6}>
-            <Card hoverable style={{ borderRadius: 16, border: `2px solid ${company.color}`, background: 'rgba(255,255,255,0.03)', cursor: 'pointer' }}
+          <Col key={company.id} xs={24} sm={12} xl={6} style={{ display: 'flex' }}>
+            <Card hoverable style={{ borderRadius: 16, border: `2px solid ${company.color}`, background: 'rgba(255,255,255,0.03)', cursor: 'pointer', height: '100%', display: 'flex', flexDirection: 'column', width: '100%' }}
               onClick={() => {
+                if (wholesaleOnly) {
+                  window.open('http://essarwholesale.xo.je/', '_blank', 'noopener')
+                  return
+                }
                 setActiveCompany(company.id)
                 navigate('/', { state: { company_id: company.id } })
               }}>
@@ -191,6 +211,10 @@ const SuperAdminDashboard = () => {
               {/* Wholesale block — Essar Sons only */}
               {company.id === 1 && overviewRes?.wholesale && (() => {
                 const w = overviewRes.wholesale
+                // Profit Margin — mirrors Gross Margin logic at lines 178-188
+                const wMarginPct = w.month_revenue > 0
+                  ? Math.round((w.month_profit / w.month_revenue) * 100 * 10) / 10
+                  : null
                 const ts = w.synced_at
                   ? (() => {
                       const d = new Date(w.synced_at)
@@ -202,22 +226,39 @@ const SuperAdminDashboard = () => {
                     })()
                   : null
                 return (
-                  <div style={{ marginTop: wholesaleOnly ? 0 : 12, padding: '8px 10px', background: 'rgba(99,102,241,0.12)', borderRadius: 6, border: '1px solid rgba(99,102,241,0.3)' }}>
-                    <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: 6 }}>🏭 Wholesale</Text>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 8px' }}>
-                      {[
-                        ['Revenue (Month)', fmt(w.month_revenue)],
-                        ['Profit (Month)',  fmt(w.month_profit)],
-                        ['Stock Value',     fmt(w.stock_value)],
-                        ['Open Orders',     w.open_orders],
-                      ].map(([label, val]) => (
-                        <div key={label}>
-                          <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 10, display: 'block' }}>{label}</Text>
-                          <Text style={{ color: '#a5b4fc', fontWeight: 700, fontSize: 12 }}>{val}</Text>
-                        </div>
-                      ))}
+                  <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+                    {/* 1 — Revenue headline: copied from lines 168-175 */}
+                    <div style={{ marginBottom: 12 }}>
+                      <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>Revenue (Month)</Text>
+                      <div style={{ fontSize: 26, fontWeight: 800, color: company.accent || '#fff' }}>{fmt(w.month_revenue)}</div>
                     </div>
-                    {ts && <Text style={{ color: 'rgba(255,255,255,0.3)', fontSize: 10, display: 'block', marginTop: 5 }}>as of {ts}</Text>}
+                    {/* 2 — Profit Margin bar: copied from lines 178-188 */}
+                    <div style={{ marginBottom: 12 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                        <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>Profit Margin</Text>
+                        <Text style={{ color: wMarginPct == null ? 'rgba(255,255,255,0.4)' : wMarginPct >= 20 ? '#34d399' : wMarginPct >= 10 ? '#fbbf24' : '#f87171', fontWeight: 700 }}>
+                          {wMarginPct != null ? `${wMarginPct}%` : '—'}
+                        </Text>
+                      </div>
+                      <Progress percent={wMarginPct != null ? Math.min(wMarginPct, 100) : 0} showInfo={false}
+                        strokeColor={wMarginPct >= 20 ? '#34d399' : wMarginPct >= 10 ? '#fbbf24' : '#f87171'}
+                        trailColor="rgba(255,255,255,0.1)" size="small" />
+                    </div>
+                    {/* 3 — 3-column stat row: copied from lines 191-199 */}
+                    <Row gutter={8}>
+                      {[['Profit', fmt(w.month_profit)], ['Stock Value', fmt(w.stock_value)], ['Open Orders', w.open_orders]].map(([label, val]) => (
+                        <Col span={8} style={{ textAlign: 'center' }} key={label}>
+                          <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 10 }}>{label}</Text>
+                          <div style={{ color: '#fff', fontWeight: 700 }}>{val}</div>
+                        </Col>
+                      ))}
+                    </Row>
+                    {/* 4 — Bottom strip pinned to card bottom: copied from lines 206-208 */}
+                    <div style={{ marginTop: 'auto', padding: '4px 8px', background: 'rgba(255,255,255,0.03)', borderRadius: 6, border: '1px solid rgba(255,255,255,0.08)' }}>
+                      <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11 }}>
+                        Synced from wholesale{ts ? ` · as of ${ts}` : ''}
+                      </Text>
+                    </div>
                   </div>
                 )
               })()}
@@ -233,7 +274,7 @@ const SuperAdminDashboard = () => {
           <Card style={{ borderRadius: 16, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.1)' }}>
             <Title level={5} style={{ color: '#fff', marginBottom: 20 }}>Revenue Trend — All Companies (Last 6 Months)</Title>
             <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={groupRevenueData}>
+              <BarChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
                 <XAxis dataKey="month" tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 12 }} />
                 <YAxis tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 12 }} tickFormatter={v => v >= 1000 ? `₹${(v/1000).toFixed(0)}K` : `₹${v}`} />
@@ -251,20 +292,32 @@ const SuperAdminDashboard = () => {
             <Title level={5} style={{ color: '#fff', marginBottom: 20 }}>Revenue Share</Title>
             <ResponsiveContainer width="100%" height={200}>
               <PieChart>
-                <Pie data={companyMetrics.map(c => ({ name: c.short_name, value: c.revenue || 0 }))} cx="50%" cy="50%" outerRadius={80} dataKey="value"
+                <Pie data={[...companyMetrics].sort((a, b) => {
+                  const order = ['EXCEL', 'ALFA-L', 'ALFA-E', 'ESSAR']
+                  const ai = order.indexOf(a.short_name), bi = order.indexOf(b.short_name)
+                  return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi)
+                }).map(c => ({ name: c.short_name, value: c.id === 1 ? (overviewRes?.wholesale?.month_revenue || 0) : (c.revenue || 0) }))} cx="50%" cy="50%" outerRadius={80} dataKey="value"
                   label={({ name, percent }) => `${name} ${(percent*100).toFixed(0)}%`} labelLine={false}>
-                  {companyMetrics.map((c, i) => (<Cell key={i} fill={c.color} />))}
+                  {[...companyMetrics].sort((a, b) => {
+                    const order = ['EXCEL', 'ALFA-L', 'ALFA-E', 'ESSAR']
+                    const ai = order.indexOf(a.short_name), bi = order.indexOf(b.short_name)
+                    return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi)
+                  }).map((c, i) => (<Cell key={i} fill={c.color} />))}
                 </Pie>
                 <RechartsTooltip formatter={v => [`₹${(v || 0).toLocaleString('en-IN')}`, 'Revenue']} contentStyle={{ background: '#1e293b' }} />
               </PieChart>
             </ResponsiveContainer>
-            {companyMetrics.map(c => (
+            {[...companyMetrics].sort((a, b) => {
+              const order = ['EXCEL', 'ALFA-L', 'ALFA-E', 'ESSAR']
+              const ai = order.indexOf(a.short_name), bi = order.indexOf(b.short_name)
+              return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi)
+            }).map(c => (
               <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                 <Space>
                   <div style={{ width: 10, height: 10, borderRadius: 2, background: c.color }} />
                   <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12 }}>{c.short_name}</Text>
                 </Space>
-                <Text style={{ color: '#fff', fontWeight: 700, fontSize: 12 }}>{fmt(c.revenue)}</Text>
+                <Text style={{ color: '#fff', fontWeight: 700, fontSize: 12 }}>{fmt(c.id === 1 ? (overviewRes?.wholesale?.month_revenue || 0) : (c.revenue || 0))}</Text>
               </div>
             ))}
           </Card>
@@ -275,7 +328,11 @@ const SuperAdminDashboard = () => {
       <Card style={{ borderRadius: 16, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.1)' }}>
         <Title level={5} style={{ color: '#fff', marginBottom: 16 }}>Company Performance Comparison</Title>
         <div className="super-admin-table-wrap">
-          <Table dataSource={companyMetrics} rowKey="id" pagination={false} size="small" style={{ background: 'transparent' }}
+          <Table dataSource={[...companyMetrics].sort((a, b) => {
+            const order = ['EXCEL', 'ALFA-L', 'ALFA-E', 'ESSAR']
+            const ai = order.indexOf(a.short_name), bi = order.indexOf(b.short_name)
+            return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi)
+          })} rowKey="id" pagination={false} size="small" style={{ background: 'transparent' }}
             columns={[
               { title: 'Company', dataIndex: 'name', width: 180, render: (v, r) => (<Space align="center"><div style={{ width: 10, height: 10, borderRadius: '50%', background: r.color, flexShrink: 0, boxShadow: `0 0 6px ${r.color}88` }} /><span style={{ color: '#e2e8f0', fontWeight: 600, fontSize: 13 }}>{v}</span></Space>) },
               { title: 'Revenue', dataIndex: 'revenue', align: 'right', render: v => <span style={{ color: '#ffd700', fontWeight: 700 }}>{fmt(v)}</span> },
