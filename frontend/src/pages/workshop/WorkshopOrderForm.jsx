@@ -921,6 +921,14 @@ const WorkshopOrderForm = () => {
   const lineHasArtwork = (l) =>
     !!(l.artwork_file_data || l.artwork_id || l.artwork_master_id || l.artwork_image || l.artwork_name || l.artwork_file || l.artwork_file_name)
 
+  // Panel mapping only makes sense when at least one job card has a
+  // process. Existing maps stay editable so mapped WOs aren't stranded.
+  const anyLineHasProcess = (lines || []).some(l => l.has_process || l.hasProcess)
+
+  // Disabled only when there is no process AND no existing map, so a WO
+  // that already has artwork never becomes uneditable.
+  const mapperDisabled = !anyLineHasProcess && artworkMaps.length === 0
+
   const missingArtworkLines = () =>
     lines
       .map((l, i) => ({ l, i }))
@@ -1670,10 +1678,18 @@ const WorkshopOrderForm = () => {
           title={
             <span style={{ color: '#7c3aed', fontWeight: 600 }}>
               🎨 Artwork Panel Mapper
+              {mapperDisabled && (
+                <span style={{ fontSize: 11, color: '#94a3b8', fontWeight: 400, marginLeft: 8 }}>(disabled)</span>
+              )}
             </span>
           }
           size="small"
-          style={{ marginBottom: 16, borderColor: '#e0e7ff' }}
+          style={{
+            marginBottom: 16,
+            borderColor: '#e0e7ff',
+            opacity: mapperDisabled ? 0.55 : 1,
+            pointerEvents: mapperDisabled ? 'none' : 'auto',
+          }}
           styles={{ header: { background: '#f5f3ff', borderBottom: '1px solid #e0e7ff' } }}
         >
           <Space style={{ marginBottom: 10 }} wrap>
@@ -1685,6 +1701,10 @@ const WorkshopOrderForm = () => {
               onChange={setActiveMap}
             />
             <Button onClick={() => {
+              if (!anyLineHasProcess) {
+                message.warning('Add a process to at least one job card before creating an artwork map.')
+                return
+              }
               setArtworkMaps(p => [...p, { name: `Map ${p.length + 1}`, image: null, panels: [] }])
               setActiveMap(artworkMaps.length)
             }}>+ New Map</Button>
@@ -1703,11 +1723,20 @@ const WorkshopOrderForm = () => {
               </>
             )}
           </Space>
+          {mapperDisabled ? (
+            <div style={{ textAlign: 'center', padding: '24px 0', fontSize: 12, color: '#94a3b8' }}>
+              Add a process to a job card to enable artwork mapping.
+            </div>
+          ) : (
           <ArtworkPanelMapper
             lines={lines}
             value={artworkMaps[activeMap]?.panels || []}
             onChange={(pnls) => updateActiveMap({ panels: pnls })}
             onImageChange={(img) => {
+              if (!anyLineHasProcess) {
+                message.warning('Add a process to at least one job card before creating an artwork map.')
+                return
+              }
               if (artworkMaps.length === 0) {
                 setArtworkMaps([{ name: 'Map 1', image: img, panels: [] }])
                 setActiveMap(0)
@@ -1734,6 +1763,7 @@ const WorkshopOrderForm = () => {
               return srcs
             })()}
           />
+          )}
         </Card>
 
         <Modal

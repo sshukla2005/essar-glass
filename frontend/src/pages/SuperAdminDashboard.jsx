@@ -135,7 +135,7 @@ const SuperAdminDashboard = () => {
       {/* Company Cards */}
       <Row gutter={[16,16]} align="stretch" style={{ marginBottom: 24 }}>
         {[...companyMetrics].sort((a, b) => {
-          const order = ['EXCEL', 'ALFA-L', 'ALFA-E', 'ESSAR']
+          const order = ['EXCEL', 'ALFA-E', 'ALFA-L', 'ESSAR']
           const ai = order.indexOf(a.short_name), bi = order.indexOf(b.short_name)
           return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi)
         }).map(company => {
@@ -293,13 +293,13 @@ const SuperAdminDashboard = () => {
             <ResponsiveContainer width="100%" height={200}>
               <PieChart>
                 <Pie data={[...companyMetrics].sort((a, b) => {
-                  const order = ['EXCEL', 'ALFA-L', 'ALFA-E', 'ESSAR']
+                  const order = ['EXCEL', 'ALFA-E', 'ALFA-L', 'ESSAR']
                   const ai = order.indexOf(a.short_name), bi = order.indexOf(b.short_name)
                   return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi)
                 }).map(c => ({ name: c.short_name, value: c.id === 1 ? (overviewRes?.wholesale?.month_revenue || 0) : (c.revenue || 0) }))} cx="50%" cy="50%" outerRadius={80} dataKey="value"
                   label={({ name, percent }) => `${name} ${(percent*100).toFixed(0)}%`} labelLine={false}>
                   {[...companyMetrics].sort((a, b) => {
-                    const order = ['EXCEL', 'ALFA-L', 'ALFA-E', 'ESSAR']
+                    const order = ['EXCEL', 'ALFA-E', 'ALFA-L', 'ESSAR']
                     const ai = order.indexOf(a.short_name), bi = order.indexOf(b.short_name)
                     return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi)
                   }).map((c, i) => (<Cell key={i} fill={c.color} />))}
@@ -308,7 +308,7 @@ const SuperAdminDashboard = () => {
               </PieChart>
             </ResponsiveContainer>
             {[...companyMetrics].sort((a, b) => {
-              const order = ['EXCEL', 'ALFA-L', 'ALFA-E', 'ESSAR']
+              const order = ['EXCEL', 'ALFA-E', 'ALFA-L', 'ESSAR']
               const ai = order.indexOf(a.short_name), bi = order.indexOf(b.short_name)
               return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi)
             }).map(c => (
@@ -329,7 +329,7 @@ const SuperAdminDashboard = () => {
         <Title level={5} style={{ color: '#fff', marginBottom: 16 }}>Company Performance Comparison</Title>
         <div className="super-admin-table-wrap">
           <Table dataSource={[...companyMetrics].sort((a, b) => {
-            const order = ['EXCEL', 'ALFA-L', 'ALFA-E', 'ESSAR']
+            const order = ['EXCEL', 'ALFA-E', 'ALFA-L', 'ESSAR']
             const ai = order.indexOf(a.short_name), bi = order.indexOf(b.short_name)
             return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi)
           })} rowKey="id" pagination={false} size="small" style={{ background: 'transparent' }}
