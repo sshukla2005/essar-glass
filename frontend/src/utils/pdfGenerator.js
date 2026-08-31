@@ -724,63 +724,80 @@ const drawDocInfo = (doc, quotation, y, docTitle, items = null, pageW = PAGE_W) 
 
 const drawCustomerCard = (doc, cust, y, shipCust = null, pageW = PAGE_W) => {
   const contentW = pageW - MARGIN.l - MARGIN.r
-  const cardH = 40
   const mid = pageW / 2
   const cardW = contentW / 2 - 2
   const actualShipCust = shipCust || cust
-  
+
+  // Compute the rendered height for one side so both boxes stay the same size.
+  // Mirrors drawSide exactly: 11.5 header space + 4.5 name + lines×3.5 + 4 bottom pad.
+  const sideHeight = (data) => {
+    const addr = cleanVal(data.address)
+    const addrLines = addr ? doc.splitTextToSize(addr, cardW - 8).slice(0, 3) : []
+    const pan      = cleanVal(data.pan || data.pan_number)
+    const gstin    = cleanVal(data.gstin)
+    const stateStr = cleanVal(getStateStr(gstin, cleanVal(data.state)))
+    return 11.5 + 4.5
+      + addrLines.length * 3.5
+      + 3.5                            // Tel / Email — always drawn
+      + (pan      ? 3.5 : 0)
+      + (gstin    ? 3.5 : 0)
+      + (stateStr ? 3.5 : 0)
+      + 4                              // bottom padding
+  }
+
+  const billH = sideHeight(cust)
+  const shipH = sideHeight(actualShipCust)
+  const cardH = Math.max(24, billH, shipH)
+
   // Bill To
   drawCard(doc, MARGIN.l, y, cardW, cardH, C.white, C.border, 2.0)
   drawRect(doc, MARGIN.l + 0.3, y + 0.3, cardW - 0.6, 7, C.glassHeaderBg)
   setFont(doc, 7.5, 'bold', C.glassHeader)
   drawText(doc, 'BILL TO', MARGIN.l + 4, y + 5)
-  
+
   // Ship To
   drawCard(doc, mid + 2, y, cardW, cardH, C.white, C.border, 2.0)
   drawRect(doc, mid + 2.3, y + 0.3, cardW - 0.6, 7, C.glassHeaderBg)
   setFont(doc, 7.5, 'bold', C.glassHeader)
   drawText(doc, 'SHIP TO', mid + 6, y + 5)
-  
+
   const drawSide = (data, startX) => {
     let ly = y + 11.5
     setFont(doc, 8.5, 'bold', C.primaryMid)
     drawText(doc, cleanVal(data.name).substring(0, 50), startX + 4, ly)
     ly += 4.5
     setFont(doc, 7.5, 'normal', C.textMid)
-    
-    // Address up to 3 wrapped lines
+
+    // Address — only advance for lines that actually exist
     const addr = cleanVal(data.address)
-    const lines = doc.splitTextToSize(addr, cardW - 8)
-    const addrLines = lines.slice(0, 3)
-    for (let k = 0; k < 3; k++) {
-      drawText(doc, cleanVal(addrLines[k]) || '', startX + 4, ly)
+    const addrLines = addr ? doc.splitTextToSize(addr, cardW - 8).slice(0, 3) : []
+    addrLines.forEach(line => {
+      drawText(doc, cleanVal(line) || '', startX + 4, ly)
       ly += 3.5
-    }
-    
-    // Tel / Email
-    const tel = cleanVal(data.phone || data.mobile)
+    })
+
+    // Tel / Email — unconditional
+    const tel   = cleanVal(data.phone || data.mobile)
     const email = cleanVal(data.email)
     drawText(doc, `Tel : ${tel}    E-Mail : ${email}`, startX + 4, ly)
     ly += 3.5
-    
-    // PAN
+
+    // PAN — only when present
     const pan = cleanVal(data.pan || data.pan_number)
-    drawText(doc, `PAN No: ${pan}`, startX + 4, ly)
-    ly += 3.5
-    
-    // GSTIN
+    if (pan) { drawText(doc, `PAN No: ${pan}`, startX + 4, ly); ly += 3.5 }
+
+    // GSTIN — only when present
     const gstin = cleanVal(data.gstin)
-    drawText(doc, `GSTIN: ${gstin}`, startX + 4, ly)
-    ly += 3.5
-    
-    // Code / State
+    if (gstin) { drawText(doc, `GSTIN: ${gstin}`, startX + 4, ly); ly += 3.5 }
+
+    // Code / State — only when derivable from GSTIN or state field
     const stateStr = cleanVal(getStateStr(gstin, cleanVal(data.state)))
-    drawText(doc, `Code / State : ${stateStr}`, startX + 4, ly)
+    if (stateStr) { drawText(doc, `Code / State : ${stateStr}`, startX + 4, ly) }
   }
-  
+
   drawSide(cust, MARGIN.l)
   drawSide(actualShipCust, mid + 2)
-  
+
   return y + cardH + SP_16
 }
 
@@ -1413,6 +1430,11 @@ const drawWastageCard = (doc, items, y) => {
   return y + h
 }
 
+// LEFT_MIN_H: left-column content = SP_8+2 padding + 3 × 9.5 mm fields + 14 mm
+// Amount-in-Words box + SP_8+2 bottom padding. This floor prevents the
+// Amount-in-Words box from overlapping the HSN field on GST-None documents.
+const LEFT_MIN_H = SP_8 + 2 + (9.5 * 3) + 14 + SP_8 + 2
+
 // ── Financial Summary & Amount in Words Card (Perfect Side-by-Side) ──
 const calculateSummaryHeight = (totalsRows) => {
   let h = SP_16 // top and bottom padding
@@ -1421,16 +1443,13 @@ const calculateSummaryHeight = (totalsRows) => {
     else if (r.grand) h += 9
     else h += 7
   })
-  return h
+  return Math.max(h, LEFT_MIN_H)
 }
 
 const drawFinalSummaryBlock = (doc, totalsRows, amtWords, quotation, y) => {
   // Left column has fixed content: 3 fields (9.5mm each, first starts at
   // SP_8 + 2) plus a 14mm Amount in Words box with SP_8 padding below.
-  // Without this floor, a short right column (GST = None) pulls the
-  // Amount in Words box up over the HSN field.
-  const LEFT_MIN_H = SP_8 + 2 + (9.5 * 3) + 14 + SP_8 + 2
-  const h = Math.max(calculateSummaryHeight(totalsRows), LEFT_MIN_H)
+  const h = calculateSummaryHeight(totalsRows)
   const mid = PAGE_W / 2
   const colW = CONTENT_W / 2 - 2
   
@@ -2119,7 +2138,7 @@ export const generateQuotationPDF = async (quotation) => {
     const footerSectionH = calculateDocumentFooterHeight(company)
     
     // Check page break for summary block + footer section
-    y = checkPageBreak(doc, y, summaryHeight + footerSectionH, pageNum, quotation)
+    y = checkPageBreak(doc, y, summaryHeight + footerSectionH, pageNum, quotation, company)
     
     y = drawFinalSummaryBlock(doc, totalsRows, toWords(Math.round(grand)), quotation, y) + SP_16
 
@@ -2522,7 +2541,7 @@ export const generateSOPDF = async (so) => {
     const summaryHeight = calculateSummaryHeight(totalsRows)
     const footerSectionH = calculateDocumentFooterHeight(company)
     
-    y = checkPageBreak(doc, y, summaryHeight + footerSectionH, pageNum, so)
+    y = checkPageBreak(doc, y, summaryHeight + footerSectionH, pageNum, so, company)
     y = drawFinalSummaryBlock(doc, totalsRows, toWords(Math.round(grand)), { payment_terms: so.payment_terms }, y) + SP_16
     
     drawDocumentFooterSection(doc, company, y, pageNum, so)
@@ -2656,7 +2675,7 @@ export const generatePOPDF = async (po) => {
     ].filter(Boolean)
 
     const summaryHeight = calculateSummaryHeight(totalsRows)
-    y = checkPageBreak(doc, y, summaryHeight + 22 + 28, pageNum, po)
+    y = checkPageBreak(doc, y, summaryHeight + 22 + 28, pageNum, po, company)
 
     y = drawFinalSummaryBlock(doc, totalsRows, toWords(Math.round(grand)), { payment_terms: po.payment_terms }, y) + SP_16
     y = drawSignatureStrip(doc, company, y) + SP_16
