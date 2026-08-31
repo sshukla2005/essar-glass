@@ -19,6 +19,7 @@ import { productApi, stockMovementApi, warehouseApi, deliveryNoteApi } from '../
 import { generateDeliveryNotePDF } from '../../utils/pdfGenerator'
 import OpeningStockImportModal from './OpeningStockImportModal'
 import QuickDeliveryNoteModal from './QuickDeliveryNoteModal'
+import BulkAddStockModal from './BulkAddStockModal'
 
 const { Title, Text } = Typography
 
@@ -404,6 +405,7 @@ const StockOverview = () => {
   const [adjIsNew, setAdjIsNew] = useState(false)
   const [selectedRowKeys, setSelectedRowKeys] = useState([])
   const [bulkDnOpen, setBulkDnOpen] = useState(false)
+  const [bulkAddOpen, setBulkAddOpen] = useState(false)
 
   const { data: productsData, isLoading: isProductsLoading } = useQuery({
     queryKey: ['products-all'],
@@ -905,14 +907,39 @@ const StockOverview = () => {
                 getProductStock={getProductStock}
                 adjustMutation={adjustMutation}
               />
-              <QuickAdjustPopover
-                product={r}
-                actionType="add"
-                warehouses={warehouses}
-                defaultWarehouseId={rowWhId}
-                getProductStock={getProductStock}
-                adjustMutation={adjustMutation}
-              />
+              <Button
+                size="small"
+                style={{
+                  padding: '0 5px',
+                  height: 20,
+                  minWidth: 20,
+                  fontSize: 12,
+                  fontWeight: 'bold',
+                  lineHeight: '18px',
+                  color: '#16a34a',
+                  borderColor: '#86efac',
+                  background: '#f0fdf4'
+                }}
+                onClick={() => {
+                  const gt = r.glass_type ? (Array.isArray(r.glass_type) ? r.glass_type : [r.glass_type]) : []
+                  adjForm.resetFields()
+                  adjForm.setFieldsValue({
+                    product_id: r.id,
+                    is_new_product: false,
+                    glass_type: gt,
+                    sheet_width_mm: r.sheet_width_mm,
+                    sheet_height_mm: r.sheet_height_mm,
+                    quantity_sheets: undefined,
+                    qty_change: undefined,
+                    warehouse_id: rowWhId || warehouses[0]?.id,
+                  })
+                  setAdjIsNew(false)
+                  setAdjSearchText('')
+                  setAdjModalOpen(true)
+                }}
+              >
+                +
+              </Button>
             </Space>
           </div>
         )
@@ -958,32 +985,9 @@ const StockOverview = () => {
       }
     },
     {
-      title: 'Actions', key: 'action', width: 170, fixed: 'right',
+      title: 'Actions', key: 'action', width: 100, fixed: 'right',
       render: (_, r) => (
         <Space size="small">
-          <Button
-            size="small"
-            icon={<ToolOutlined />}
-            onClick={() => {
-              const gt = r.glass_type ? (Array.isArray(r.glass_type) ? r.glass_type : [r.glass_type]) : []
-              adjForm.resetFields()
-              adjForm.setFieldsValue({
-                product_id: r.id,
-                is_new_product: false,
-                glass_type: gt,
-                sheet_width_mm: r.sheet_width_mm,
-                sheet_height_mm: r.sheet_height_mm,
-                quantity_sheets: undefined,
-                qty_change: undefined,
-                warehouse_id: warehouses[0]?.id
-              })
-              setAdjIsNew(false)
-              setAdjSearchText('')
-              setAdjModalOpen(true)
-            }}
-          >
-            Adjust
-          </Button>
           <Button
             size="small"
             icon={<HistoryOutlined />}
@@ -1190,6 +1194,14 @@ const StockOverview = () => {
           <div style={{ margin: '16px 24px 12px 24px', marginBottom: 12, padding: '8px 12px', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 12 }}>
             <span style={{ fontWeight: 600 }}>{selectedRowKeys.length} product(s) selected</span>
             <Button type="primary" onClick={() => setBulkDnOpen(true)}>Create Delivery Note</Button>
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              style={{ background: '#16a34a', borderColor: '#16a34a' }}
+              onClick={() => setBulkAddOpen(true)}
+            >
+              Add Stock
+            </Button>
             <Button size="small" onClick={() => setSelectedRowKeys([])}>Clear</Button>
           </div>
         )}
@@ -1691,6 +1703,22 @@ const StockOverview = () => {
         products={filteredProducts.filter(p => selectedRowKeys.includes(p.id)).map(p => ({
           ...p,
           on_hand_sheets: getProductStock(p).sheets
+        }))}
+      />
+
+      <BulkAddStockModal
+        open={bulkAddOpen}
+        onClose={() => {
+          setBulkAddOpen(false)
+          setSelectedRowKeys([])
+          queryClient.invalidateQueries({ queryKey: ['products-all'] })
+          queryClient.invalidateQueries({ queryKey: ['stock-movements-overview'] })
+        }}
+        warehouseId={selectedWarehouseFilter}
+        warehouseName={(warehouses.find(w => w.id === selectedWarehouseFilter) || {}).name || ''}
+        products={filteredProducts.filter(p => selectedRowKeys.includes(p.id)).map(p => ({
+          ...p,
+          on_hand_sheets: getProductStock(p).sheets,
         }))}
       />
 

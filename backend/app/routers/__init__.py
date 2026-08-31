@@ -70,6 +70,7 @@ def make_crud_router(
         stage_id:     Optional[int] = Query(None),
         crm_lead_id:  Optional[int] = Query(None),
         status:       Optional[str] = Query(None),
+        product_id:   Optional[int] = Query(None),
         db:    Session = Depends(get_db),
         user         = Depends(_require_permissions(read_roles, module)),
     ):
@@ -155,6 +156,9 @@ def make_crud_router(
 
         if crm_lead_id is not None and hasattr(model, 'crm_lead_id'):
             q = q.filter(model.crm_lead_id == crm_lead_id)
+
+        if product_id is not None and hasattr(model, 'product_id'):
+            q = q.filter(model.product_id == product_id)
 
         if status is not None and hasattr(model, 'status'):
             if status.lower() == 'active':

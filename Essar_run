@@ -40,5 +40,11 @@ INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
 INFO:     Started reloader process [52478] using WatchFiles
 
 
+saurabh@saurabh:~/workspace/essar-glass$ openssl rand -hex 24
+f396ca1e8b44302a665cbaf332347946af076f3b3fa11a16
+saurabh@saurabh:~/workspace/essar-glass$ 
+
+
+
 
 

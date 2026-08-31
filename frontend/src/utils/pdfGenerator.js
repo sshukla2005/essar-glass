@@ -2137,10 +2137,15 @@ export const generateQuotationPDF = async (quotation) => {
     const summaryHeight = calculateSummaryHeight(totalsRows)
     const footerSectionH = calculateDocumentFooterHeight(company)
     
-    // Check page break for summary block + footer section
-    y = checkPageBreak(doc, y, summaryHeight + footerSectionH, pageNum, quotation, company)
-    
+    // Break for the summary block only — it is much shorter than the terms
+    // section, so checking them together needlessly pushed BOTH to a new
+    // page and left a large blank gap on page 1.
+    y = checkPageBreak(doc, y, summaryHeight, pageNum, quotation, company)
+
     y = drawFinalSummaryBlock(doc, totalsRows, toWords(Math.round(grand)), quotation, y) + SP_16
+
+    // Terms/signature section gets its own break check.
+    y = checkPageBreak(doc, y, footerSectionH, pageNum, quotation, company)
 
     drawDocumentFooterSection(doc, company, y, pageNum, quotation)
 
@@ -2541,9 +2546,10 @@ export const generateSOPDF = async (so) => {
     const summaryHeight = calculateSummaryHeight(totalsRows)
     const footerSectionH = calculateDocumentFooterHeight(company)
     
-    y = checkPageBreak(doc, y, summaryHeight + footerSectionH, pageNum, so, company)
+    y = checkPageBreak(doc, y, summaryHeight, pageNum, so, company)
     y = drawFinalSummaryBlock(doc, totalsRows, toWords(Math.round(grand)), { payment_terms: so.payment_terms }, y) + SP_16
-    
+
+    y = checkPageBreak(doc, y, footerSectionH, pageNum, so, company)
     drawDocumentFooterSection(doc, company, y, pageNum, so)
 
     addFootersAndPageNumbers(doc, so.so_number || 'SO')
@@ -2675,9 +2681,10 @@ export const generatePOPDF = async (po) => {
     ].filter(Boolean)
 
     const summaryHeight = calculateSummaryHeight(totalsRows)
-    y = checkPageBreak(doc, y, summaryHeight + 22 + 28, pageNum, po, company)
+    y = checkPageBreak(doc, y, summaryHeight, pageNum, po, company)
 
     y = drawFinalSummaryBlock(doc, totalsRows, toWords(Math.round(grand)), { payment_terms: po.payment_terms }, y) + SP_16
+    y = checkPageBreak(doc, y, 22 + 28, pageNum, po, company)
     y = drawSignatureStrip(doc, company, y) + SP_16
     drawTerms(doc, y, company)
 
