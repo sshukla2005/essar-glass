@@ -17,6 +17,7 @@ def create_access_token(
     company_id: int = None,
     home_company_id: int = None,
     active_company_id: int = None,
+    session_id: str = None,
 ) -> str:
     """Create a JWT access token.
 
@@ -38,6 +39,7 @@ def create_access_token(
         "company_id":        company_id,        # kept for backward compat
         "home_company_id":   _home,
         "active_company_id": _active,
+        "sid":               session_id,
         "exp":               expire,
     }
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)

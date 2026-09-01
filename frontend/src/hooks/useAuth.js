@@ -85,7 +85,12 @@ const useAuth = () => {
     return user.permissions?.includes(module) || false
   }
 
-  const logout = () => {
+  const logout = async () => {
+    try {
+      await authApi.logout()
+    } catch (err) {
+      // Clear local state even if network call fails
+    }
     localStorage.removeItem('auth_token')
     localStorage.removeItem('auth_user')
     localStorage.removeItem('active_company_id')

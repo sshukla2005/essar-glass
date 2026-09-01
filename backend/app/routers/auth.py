@@ -6,7 +6,10 @@ from app.database import get_db
 from app.models.user import User
 from app.models.company import Company
 from app.services.auth_service import verify_password, create_access_token
+from app.config import settings
 from app.deps import get_current_user
+from datetime import datetime, timedelta, timezone
+import uuid
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -28,6 +31,22 @@ def login(
             detail="Invalid username or password",
         )
 
+    if user.current_session_id and user.session_started_at:
+        started = user.session_started_at
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=timezone.utc)
+        age = datetime.now(timezone.utc) - started
+        if age < timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This account is already logged in on another device. Log out there first, or ask an administrator to reset the session.",
+            )
+
+    session_id = uuid.uuid4().hex
+    user.current_session_id = session_id
+    user.session_started_at = datetime.now(timezone.utc)
+    db.commit()
+
     # At login: home == active == the user's own company
     token = create_access_token(
         user_id=user.id,
@@ -35,6 +54,7 @@ def login(
         company_id=user.company_id,
         home_company_id=user.company_id,
         active_company_id=user.company_id,
+        session_id=session_id,
     )
 
     # Fetch company data including logo
@@ -126,6 +146,7 @@ def switch_company(
         company_id=current_user.company_id,        # legacy claim unchanged
         home_company_id=current_user.home_company_id,
         active_company_id=new_active,
+        session_id=getattr(current_user, "session_id", None),
     )
 
     # Fetch active company details for the response
@@ -153,3 +174,15 @@ def switch_company(
         "home_company_id": current_user.home_company_id,
         "active_company_id": new_active,
     }
+
+
+# ── Logout ────────────────────────────────────────────────────────────────────
+@router.post("/logout")
+def logout(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    user = db.query(User).filter(User.id == current_user.id).first()
+    if user:
+        user.current_session_id = None
+        user.session_started_at = None
+        db.commit()
+    return {"ok": True}
+

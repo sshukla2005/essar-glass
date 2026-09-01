@@ -828,6 +828,7 @@ const WorkshopOrderForm = () => {
         }))
         setIsDirty(true)
         message.success('Processing started — all lines marked as fully cut. Review and Save.')
+        handleShareWOExcelToWhatsApp(id, record)
       } else {
         const label = String(newStatus).replace(/_/g, ' ').toUpperCase()
         message.success(`Workshop Order moved to ${label}`)
@@ -1000,7 +1001,7 @@ const WorkshopOrderForm = () => {
       }
     }
 
-    setExportWizard(true)
+    statusMutation.mutate('in_progress')
   }
 
   const handleSave = async (andNew = false) => {
@@ -1042,9 +1043,8 @@ const WorkshopOrderForm = () => {
     }
   }
 
-  const generateWOExcel = async () => {
-    try {
-      const wb = new ExcelJS.Workbook()
+  const buildWOExcelBlob = async () => {
+    const wb = new ExcelJS.Workbook()
       wb.creator = 'Essar Glass ERP'
       wb.created = new Date()
 
@@ -1371,11 +1371,50 @@ const WorkshopOrderForm = () => {
       const blob = new Blob([buffer], {
         type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
       })
-      saveAs(blob, makePdfFilename(record?.wo_number || 'WorkshopOrder', customerName, 'Customer', 'xlsx'))
+      const filename = makePdfFilename(record?.wo_number || 'WorkshopOrder', customerName, 'Customer', 'xlsx')
+      return { blob, filename, customerName }
+  }
 
+  const generateWOExcel = async () => {
+    try {
+      const { blob, filename } = await buildWOExcelBlob()
+      saveAs(blob, filename)
     } catch (err) {
       console.error('Excel generation error:', err)
       message.error('Excel generation failed: ' + (err?.message || 'Unknown error'))
+    }
+  }
+
+  const handleShareWOExcelToWhatsApp = async (targetWoId, targetRecord) => {
+    const woId = targetWoId || id
+    const woRec = targetRecord || record
+    let blob, filename, customerName
+    try {
+      const resBlob = await buildWOExcelBlob()
+      blob = resBlob.blob
+      filename = resBlob.filename
+      customerName = resBlob.customerName
+    } catch (err) {
+      console.error('Error generating Excel for share:', err)
+      return
+    }
+
+    try {
+      const formData = new FormData()
+      formData.append('file', blob, filename)
+      const res = await workshopOrderApi.shareFile(woId, formData)
+      const base = window.location.origin
+      const text = `*${woRec?.wo_number || ('WO-' + woId)}* — ${customerName}\n` +
+        `${lines.length} job card(s)\n` +
+        `Download cutting list:\n${base}${res.data.url}`
+      window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank')
+    } catch (err) {
+      console.warn('Share upload failed, falling back to local download', err)
+      message.warning('Could not upload cutting list for sharing. File downloaded locally — please attach manually.')
+      if (blob && filename) saveAs(blob, filename)
+      const text = `*${woRec?.wo_number || ('WO-' + woId)}* — ${customerName}\n` +
+        `${lines.length} job card(s)`
+      window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank')
     }
   }
 

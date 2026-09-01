@@ -6,7 +6,7 @@ import {
 } from 'antd'
 import {
   PlusOutlined, EditOutlined, DeleteOutlined,
-  UserOutlined, LockOutlined, ArrowLeftOutlined
+  UserOutlined, LockOutlined, ArrowLeftOutlined, DisconnectOutlined
 } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -95,6 +95,19 @@ const UserManagement = () => {
     },
     onError: (err) => message.error(err?.response?.data?.detail || 'Failed to change user status')
   })
+
+  const forceLogoutMutation = useMutation({
+    mutationFn: (id) => userApi.forceLogout(id),
+    onSuccess: () => {
+      message.success('Session reset successfully')
+      queryClient.invalidateQueries({ queryKey: ['users-list'] })
+    },
+    onError: (err) => message.error(err?.response?.data?.detail || 'Failed to reset session')
+  })
+
+  const handleForceLogout = (id) => {
+    forceLogoutMutation.mutate(id)
+  }
 
   const handleOpenAdd = () => {
     setEditingUser(null)
@@ -248,6 +261,16 @@ const UserManagement = () => {
     },
     { title: 'Actions', key: 'actions', align: 'right', render: (_, r) => (
       <Space>
+        <Popconfirm
+          title="Reset active session for this user?"
+          description="This will log the user out on all devices."
+          onConfirm={() => handleForceLogout(r.id)}
+          okText="Reset Session"
+        >
+          <Tooltip title="Reset Active Session">
+            <Button size="small" icon={<DisconnectOutlined />}>Reset Session</Button>
+          </Tooltip>
+        </Popconfirm>
         <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(r)} type="primary" ghost />
         <Popconfirm title="Delete this user?" description="This action cannot be undone." onConfirm={() => handleDelete(r.id)} okText="Delete" okButtonProps={{ danger: true }}>
           <Button size="small" icon={<DeleteOutlined />} danger />

@@ -52,6 +52,14 @@ def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    token_sid = payload.get("sid")
+    if not token_sid or token_sid != user.current_session_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session ended — logged in elsewhere or signed out",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     # Attach derived fields directly to the ORM instance (not persisted).
     # Fall back to the legacy company_id claim if the new claims are absent
     # (handles tokens issued before this change was deployed).
@@ -61,6 +69,7 @@ def get_current_user(
 
     user.home_company_id   = home_cid
     user.active_company_id = active_cid
+    user.session_id        = token_sid
 
     # Compute read-only flag
     if home_cid is None or active_cid is None:

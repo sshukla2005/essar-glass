@@ -79,9 +79,21 @@ export const workshopOrderApi = {
     const res = await api.get('/api/v1/workshop/cutting-register', { params })
     return { data: res.data }
   },
+  shareFile: async (woId, formData) => {
+    const res = await api.post(`/api/v1/workshop/${woId}/share-file`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+    return { data: res.data }
+  },
 }
 export const tougheningBatchApi = createApi('toughening', 'tb_number')
-export const userApi = createApi('users')
+export const userApi = {
+  ...createApi('users'),
+  forceLogout: async (id) => {
+    const res = await api.post(`/api/v1/users/${id}/force-logout`)
+    return { data: res.data }
+  },
+}
 
 // ── Now pointing to BACKEND (not localStorage) ────
 export const warehouseApi = createApi('warehouses')
@@ -169,6 +181,8 @@ export const authApi = {
   // Returns { access_token, active_company_id, active_company, is_read_only, home_company_id, ... }
   switchCompany: (company_id) =>
     api.post('/api/v1/auth/switch-company', { company_id }),
+  logout: () =>
+    api.post('/api/v1/auth/logout'),
 }
 
 // ── Inter-Company Linking API ───────────────────────

@@ -1,17 +1,18 @@
 import hmac
-from fastapi import FastAPI, Depends, Request, Response, Query, Body, HTTPException
+import os
+import secrets
+import glob
+from fastapi import FastAPI, Depends, Request, Response, Query, Body, HTTPException, UploadFile, File
 from fastapi.responses import JSONResponse
 from typing import Optional, List
 from sqlalchemy.orm import Session
-# pyrefly: ignore [missing-import]
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
-import os
 
 from app.config   import settings
 from app.database import Base, engine, get_db
-from app.deps import get_current_user
+from app.deps import get_current_user, require_superadmin
 
 # Import all models so Alembic sees them
 from app.models import *  # noqa
@@ -227,6 +228,22 @@ class DynCreate(BaseModel):
     model_config = {"extra": "allow"}
 class DynUpdate(BaseModel):
     model_config = {"extra": "allow"}
+
+# ── Force Logout Endpoint (superadmin only) ───────────────────────────────────
+@app.post("/api/v1/users/{user_id}/force-logout")
+def force_logout_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_superadmin),
+):
+    target_user = db.query(User).filter(User.id == user_id).first()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    target_user.current_session_id = None
+    target_user.session_started_at = None
+    db.commit()
+    return {"ok": True}
+
 # ── Specific Workshop endpoints (MUST be defined before generic CRUD /{item_id} router) ──
 @app.get("/api/v1/workshop/cutting-register")
 def get_cutting_register(
@@ -519,10 +536,44 @@ def get_wo_by_so(
                 "customer_name": wo.customer_name,
                 "lines_count": len(wo.lines or []),
             }
-            for wo in wos
         ],
         "total": len(wos),
     }
+
+
+@app.post("/api/v1/workshop/{wo_id}/share-file")
+async def upload_wo_file(
+    wo_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not file.filename.endswith(".xlsx"):
+        raise HTTPException(status_code=400, detail="Only .xlsx files are allowed")
+
+    contents = await file.read()
+    if len(contents) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File size exceeds 5 MB limit")
+
+    wo_dir = os.path.join(settings.UPLOAD_DIR, "wo")
+    os.makedirs(wo_dir, exist_ok=True)
+
+    # Delete existing file for this wo_id to prevent accumulation
+    existing_pattern = os.path.join(wo_dir, f"WO{wo_id}_*.xlsx")
+    for old_file in glob.glob(existing_pattern):
+        try:
+            os.remove(old_file)
+        except Exception:
+            pass
+
+    token = secrets.token_urlsafe(8)
+    filename = f"WO{wo_id}_{token}.xlsx"
+    filepath = os.path.join(wo_dir, filename)
+
+    with open(filepath, "wb") as f:
+        f.write(contents)
+
+    return {"url": f"/uploads/wo/{filename}"}
 
 
 for cfg in ROUTER_CONFIGS:

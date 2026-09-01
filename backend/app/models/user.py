@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, JSON
+from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, JSON, DateTime
 from app.database import Base
 from app.models.base import TimestampMixin
 
@@ -17,3 +17,6 @@ class User(Base, TimestampMixin):
     is_active     = Column(Boolean, default=True)
     email         = Column(String(200), nullable=True)
     phone         = Column(String(20),  nullable=True)
+    current_session_id = Column(String(64), nullable=True)
+    session_started_at = Column(DateTime(timezone=True), nullable=True)
+

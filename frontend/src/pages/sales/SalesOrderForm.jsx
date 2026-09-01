@@ -4,9 +4,10 @@ import { PlusOutlined, ShoppingCartOutlined, FileTextOutlined, CarOutlined, Doll
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import dayjs from 'dayjs'
+import * as XLSX from 'xlsx'
 import MasterForm from '../../components/common/MasterForm'
 import { salesOrderApi, customerApi, productApi, quotationApi, purchaseOrderApi, deliveryChallanApi, invoiceApi, warehouseApi, workshopOrderApi, processMasterApi, employeeApi } from '../../api'
-import { generateSOPDF } from '../../utils/pdfGenerator'
+import { generateSOPDF, makePdfFilename } from '../../utils/pdfGenerator'
 import {
   getGroupBaseCostRate as sharedGetGroupBaseCostRate,
   getGroupLoadedCostRate as sharedGetGroupLoadedCostRate,
@@ -949,6 +950,37 @@ const SalesOrderForm = () => {
     message.success(`✓ All components updated to ${targetMarginPct}% margin (DC Charges unchanged, GST excluded)`)
     setGlobalComparison(null)
     setMarginTarget(null)
+  }
+
+  const handleDownloadCuttingList = () => {
+    const rows = []
+    ;(groups || []).forEach(g => {
+      ;(g.sizes || []).forEach(s => {
+        const w = s.width_inch || 0
+        const h = s.height_inch || 0
+        if (!w || !h) return
+        rows.push({
+          'Product': g.description || g.product_name || '',
+          'Thickness': g.glass_thickness || g.thickness || '',
+          [`Width (${soUnit === 'inch' ? 'in' : 'mm'})`]: soUnit === 'inch'
+            ? toFraction(w) : Math.round(w * 25.4),
+          [`Height (${soUnit === 'inch' ? 'in' : 'mm'})`]: soUnit === 'inch'
+            ? toFraction(h) : Math.round(h * 25.4),
+          'Qty': s.quantity || 1,
+        })
+      })
+    })
+    if (rows.length === 0) {
+      message.warning('No glass sizes to export')
+      return
+    }
+    const wb = XLSX.utils.book_new()
+    const ws = XLSX.utils.json_to_sheet(rows)
+    ws['!cols'] = [{ wch: 38 }, { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 8 }]
+    XLSX.utils.book_append_sheet(wb, ws, 'Cutting List')
+    const custName = form.getFieldValue('customer_name') || record?.customer_name || customers.find(c => c.id === (form.getFieldValue('customer_id') || record?.customer_id))?.name || ''
+    XLSX.writeFile(wb, makePdfFilename(record?.so_number || 'SO', custName, 'Customer', 'xlsx').replace('.xlsx', '_CuttingList.xlsx'))
+    message.success(`Exported ${rows.length} size rows`)
   }
 
   const getFlatLines = () => {
@@ -1966,59 +1998,81 @@ const SalesOrderForm = () => {
         <style>{`.dc-wizard-unchecked td { opacity: 0.4; }`}</style>
       </Modal>
 
-      <ActionToolbar
-        type="sales_order"
-        status={status}
-        isEdit={isEdit}
-        onCostAnalysis={openGlobalComparison}
-        onGeneratePDF={async () => {
-          const recordData = {
-            ...form.getFieldsValue(),
-            so_number: record?.so_number,
-            company_id: form.getFieldValue('company_id') || record?.company_id || 1,
-            customer_id: form.getFieldValue('customer_id') || record?.customer_id,
-            customer_name: form.getFieldValue('customer_name') || record?.customer_name,
-            order_date: form.getFieldValue('order_date') || record?.order_date,
-            delivery_date: form.getFieldValue('delivery_date') || record?.delivery_date,
-            salesperson: form.getFieldValue('salesperson') || record?.salesperson,
-            payment_terms: form.getFieldValue('payment_terms') || record?.payment_terms,
-            gst_mode: gstMode,
-            discount_amount: discountAmt,
-            dc_charges: dcCharges,
-            advance_received: advanceRec,
-            unit_mode: unit,
-            lines: getFlatLines(),
-            groups,
-            hardware_items: hardwareItems,
-            labor_items: laborItems,
-            wastage_items: wastageItems,
-            totals,
-            subtotal: totals.subI,
-            tax_amount: totals.cgst + totals.sgst + totals.igst,
-            total_amount: totals.grandTotal
-          }
-          const hide = message.loading('Generating Proforma Invoice PDF...', 0)
-          try {
-            await generateSOPDF(recordData)
-          } catch (err) {
-            message.error('Failed to generate PDF')
-          } finally {
-            hide()
-          }
-        }}
-        onConfirm={() => changeStage('confirmed')}
-        isConfirming={statusMutation.isPending && statusMutation.variables === 'confirmed'}
-        onCreatePO={() => createPOMutation.mutate()}
-        isCreatingPO={createPOMutation.isPending}
-        onProduction={() => changeStage('in_production')}
-        isStartingProduction={statusMutation.isPending && statusMutation.variables === 'in_production'}
-        onReady={() => changeStage('ready')}
-        isMarkingReady={statusMutation.isPending && statusMutation.variables === 'ready'}
-        onCreateDelivery={() => createDCMutation.mutate()}
-        isCreatingDelivery={createDCMutation.isPending}
-        onCreateInvoice={() => createInvoiceMutation.mutate()}
-        isCreatingInvoice={createInvoiceMutation.isPending}
-      />
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <ActionToolbar
+            type="sales_order"
+            status={status}
+            isEdit={isEdit}
+            onCostAnalysis={openGlobalComparison}
+            onGeneratePDF={async () => {
+              const recordData = {
+                ...form.getFieldsValue(),
+                so_number: record?.so_number,
+                company_id: form.getFieldValue('company_id') || record?.company_id || 1,
+                customer_id: form.getFieldValue('customer_id') || record?.customer_id,
+                customer_name: form.getFieldValue('customer_name') || record?.customer_name,
+                order_date: form.getFieldValue('order_date') || record?.order_date,
+                delivery_date: form.getFieldValue('delivery_date') || record?.delivery_date,
+                salesperson: form.getFieldValue('salesperson') || record?.salesperson,
+                payment_terms: form.getFieldValue('payment_terms') || record?.payment_terms,
+                gst_mode: gstMode,
+                discount_amount: discountAmt,
+                dc_charges: dcCharges,
+                advance_received: advanceRec,
+                unit_mode: unit,
+                lines: getFlatLines(),
+                groups,
+                hardware_items: hardwareItems,
+                labor_items: laborItems,
+                wastage_items: wastageItems,
+                totals,
+                subtotal: totals.subI,
+                tax_amount: totals.cgst + totals.sgst + totals.igst,
+                total_amount: totals.grandTotal
+              }
+              const hide = message.loading('Generating Proforma Invoice PDF...', 0)
+              try {
+                await generateSOPDF(recordData)
+              } catch (err) {
+                message.error('Failed to generate PDF')
+              } finally {
+                hide()
+              }
+            }}
+            onConfirm={() => changeStage('confirmed')}
+            isConfirming={statusMutation.isPending && statusMutation.variables === 'confirmed'}
+            onCreatePO={() => createPOMutation.mutate()}
+            isCreatingPO={createPOMutation.isPending}
+            onProduction={() => changeStage('in_production')}
+            isStartingProduction={statusMutation.isPending && statusMutation.variables === 'in_production'}
+            onReady={() => changeStage('ready')}
+            isMarkingReady={statusMutation.isPending && statusMutation.variables === 'ready'}
+            onCreateDelivery={() => createDCMutation.mutate()}
+            isCreatingDelivery={createDCMutation.isPending}
+            onCreateInvoice={() => createInvoiceMutation.mutate()}
+            isCreatingInvoice={createInvoiceMutation.isPending}
+          />
+        </div>
+        <Button
+          icon={<DownloadOutlined />}
+          onClick={handleDownloadCuttingList}
+          style={{
+            borderColor: '#E2E8F0',
+            color: '#0f172a',
+            borderRadius: 8,
+            height: 38,
+            fontWeight: 500,
+            display: 'flex',
+            alignItems: 'center',
+            boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+            background: '#fff',
+            marginTop: 14
+          }}
+        >
+          Cutting List
+        </Button>
+      </div>
 
       {isEdit && woData?.items?.length > 0 && (
         <div style={{
