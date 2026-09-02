@@ -1682,6 +1682,7 @@ const SalesOrderForm = () => {
 
       form.setFieldsValue({
         customer_id: quotation.customer_id,
+        order_date: dayjs(),
         payment_terms: quotation.payment_terms,
         salesperson: quotation.salesperson,
         notes: quotation.customer_notes,

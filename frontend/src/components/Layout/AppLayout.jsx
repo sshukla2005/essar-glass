@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react'
 import AIAssistant from '../AIAssistant'
-import { Layout, Menu, Typography, Space, Avatar, App, Button, Select, Tag, Dropdown, Tooltip } from 'antd'
+import { Layout, Menu, Typography, Space, Avatar, App, Button, Select, Tag, Dropdown, Tooltip, Modal } from 'antd'
 import {
   DashboardOutlined, AimOutlined, FunnelPlotOutlined, UnorderedListOutlined, NodeIndexOutlined,
   FileTextOutlined, ShoppingCartOutlined, DollarOutlined, AppstoreOutlined, ShoppingOutlined,
@@ -84,6 +84,17 @@ const AppLayout = () => {
   const { user, isSuperAdmin, activeCompanyId, setActiveCompany, logout, hasPermission } = useAuth()
   const companyId = activeCompanyId || user?.active_company_id || user?.company_id
 
+  const confirmLogout = () => {
+    Modal.confirm({
+      title: 'Log out?',
+      content: 'You will need to sign in again to continue.',
+      okText: 'Log out',
+      okButtonProps: { danger: true },
+      cancelText: 'Cancel',
+      onOk: () => logout(),
+    })
+  }
+
   const effectiveMenuItems = useMemo(() => {
     const rawItems = [...menuItems]
     if (user?.role === 'superadmin') {
@@ -140,10 +151,10 @@ const AppLayout = () => {
       icon: <LogoutOutlined />,
       label: 'Logout',
       danger: true,
-      onClick: logout,
+      onClick: confirmLogout,
     })
     return items
-  }, [user?.role, navigate, logout])
+  }, [user?.role, navigate, confirmLogout])
 
   const { data: activeCompany } = useQuery({
     queryKey: ['company-info', companyId],
@@ -353,7 +364,7 @@ const AppLayout = () => {
               <Button 
                 type="text" 
                 icon={<LogoutOutlined style={{ color: 'rgba(255,255,255,0.5)', fontSize: 16 }} />} 
-                onClick={logout}
+                onClick={confirmLogout}
                 style={{ padding: 0, width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
               />
             )}

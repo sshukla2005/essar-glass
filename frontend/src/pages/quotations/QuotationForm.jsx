@@ -7,7 +7,7 @@ import dayjs from 'dayjs'
 import * as XLSX from 'xlsx'
 import MasterForm from '../../components/common/MasterForm'
 import { quotationApi, customerApi, productApi, salesOrderApi, processMasterApi, employeeApi } from '../../api'
-import { generateQuotationPDF } from '../../utils/pdfGenerator'
+import { generateQuotationPDF, makePdfFilename } from '../../utils/pdfGenerator'
 import {
   getGroupBaseCostRate as sharedGetGroupBaseCostRate,
   getGroupLoadedCostRate as sharedGetGroupLoadedCostRate,
@@ -1285,6 +1285,37 @@ const QuotationForm = () => {
     )
   }
 
+  const handleDownloadCuttingList = () => {
+    const rows = []
+    ;(groups || []).forEach(g => {
+      ;(g.sizes || []).forEach(s => {
+        const w = s.width_inch || 0
+        const h = s.height_inch || 0
+        if (!w || !h) return
+        rows.push({
+          'Product': g.description || g.product_name || '',
+          'Thickness': g.glass_thickness || g.thickness || '',
+          [`Width (${unit === 'inch' ? 'in' : 'mm'})`]: unit === 'inch'
+            ? toFraction(w) : Math.round(w * 25.4),
+          [`Height (${unit === 'inch' ? 'in' : 'mm'})`]: unit === 'inch'
+            ? toFraction(h) : Math.round(h * 25.4),
+          'Qty': s.quantity || 1,
+        })
+      })
+    })
+    if (rows.length === 0) {
+      message.warning('No glass sizes to export')
+      return
+    }
+    const wb = XLSX.utils.book_new()
+    const ws = XLSX.utils.json_to_sheet(rows)
+    ws['!cols'] = [{ wch: 38 }, { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 8 }]
+    XLSX.utils.book_append_sheet(wb, ws, 'Cutting List')
+    const custName = form.getFieldValue('customer_name') || record?.customer_name || customers.find(c => c.id === (form.getFieldValue('customer_id') || record?.customer_id))?.name || ''
+    XLSX.writeFile(wb, makePdfFilename(record?.quote_number || 'QT', custName, 'Customer', 'xlsx').replace('.xlsx', '_CuttingList.xlsx'))
+    message.success(`Exported ${rows.length} size rows`)
+  }
+
   const convertMutation = useMutation({
     mutationFn: async () => {
       const soData = {
@@ -1334,6 +1365,7 @@ const QuotationForm = () => {
         subtotal: totals.subIII,
         tax_amount: totals.cgst + totals.sgst + totals.igst,
         total_amount: totals.grandTotal,
+        order_date: dayjs().format('YYYY-MM-DD'),
         status: 'confirmed',
       }
       const res = await salesOrderApi.create(soData)
@@ -2057,56 +2089,78 @@ const QuotationForm = () => {
       )}
 
       {/* ── Action Bar ── */}
-      <ActionToolbar
-        status={status}
-        isEdit={isEdit}
-        record={record}
-        onImportExcel={() => fileInputRef.current?.click()}
-        onCostAnalysis={openGlobalComparison}
-        onGeneratePDF={() => generateQuotationPDF({
-          quote_number: record?.quote_number,
-          quote_date: form.getFieldValue('quote_date')?.format?.('YYYY-MM-DD') || form.getFieldValue('quote_date'),
-          valid_until: form.getFieldValue('valid_until')?.format?.('YYYY-MM-DD') || form.getFieldValue('valid_until'),
-          salesperson: form.getFieldValue('salesperson'), payment_terms: form.getFieldValue('payment_terms'),
-          delivery_address: form.getFieldValue('delivery_address'), company_id: form.getFieldValue('company_id'),
-          customer_name: customers.find(c => c.id === form.getFieldValue('customer_id'))?.name || '',
-          customer_phone: customers.find(c => c.id === form.getFieldValue('customer_id'))?.phone || '',
-          customer_gstin: customers.find(c => c.id === form.getFieldValue('customer_id'))?.gstin || '',
-          advance_received: advanceRec || 0, unit_mode: unit, groups, totals, lines: getFlatLines(),
-          hardware_items: hardwareItems, labor_items: laborItems,
-        })}
-        onConvertToSO={() => {
-          Modal.confirm({
-            title: 'Convert to Sales Order?',
-            content: 'This will create a Sales Order and move this quotation to CONFIRMED. Do you want to continue?',
-            okText: 'Yes, convert',
-            cancelText: 'Cancel',
-            onOk: () => convertMutation.mutate(),
-          })
-        }}
-        isConverting={convertMutation.isPending}
-        onCancel={async () => {
-          await quotationApi.changeStatus(id, 'cancelled');
-          queryClient.invalidateQueries({ queryKey: ['quotations'] });
-          queryClient.invalidateQueries({ queryKey: ['quotations', id] });
-          message.info('Quotation cancelled')
-        }}
-        onConfirm={() => {
-          if (!id) {
-            message.warning('Please save first.');
-            handleSave(false);
-            return
-          }
-          Modal.confirm({
-            title: 'Confirm this quotation?',
-            content: 'This will move the quotation to SUBMITTED. Do you want to continue?',
-            okText: 'Yes, confirm',
-            cancelText: 'Cancel',
-            onOk: () => confirmMutation.mutate(),
-          })
-        }}
-        isConfirming={confirmMutation.isPending}
-      />
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <ActionToolbar
+            status={status}
+            isEdit={isEdit}
+            record={record}
+            onImportExcel={() => fileInputRef.current?.click()}
+            onCostAnalysis={openGlobalComparison}
+            onGeneratePDF={() => generateQuotationPDF({
+              quote_number: record?.quote_number,
+              quote_date: form.getFieldValue('quote_date')?.format?.('YYYY-MM-DD') || form.getFieldValue('quote_date'),
+              valid_until: form.getFieldValue('valid_until')?.format?.('YYYY-MM-DD') || form.getFieldValue('valid_until'),
+              salesperson: form.getFieldValue('salesperson'), payment_terms: form.getFieldValue('payment_terms'),
+              delivery_address: form.getFieldValue('delivery_address'), company_id: form.getFieldValue('company_id'),
+              customer_name: customers.find(c => c.id === form.getFieldValue('customer_id'))?.name || '',
+              customer_phone: customers.find(c => c.id === form.getFieldValue('customer_id'))?.phone || '',
+              customer_gstin: customers.find(c => c.id === form.getFieldValue('customer_id'))?.gstin || '',
+              advance_received: advanceRec || 0, unit_mode: unit, groups, totals, lines: getFlatLines(),
+              hardware_items: hardwareItems, labor_items: laborItems,
+            })}
+            onConvertToSO={() => {
+              Modal.confirm({
+                title: 'Convert to Sales Order?',
+                content: 'This will create a Sales Order and move this quotation to CONFIRMED. Do you want to continue?',
+                okText: 'Yes, convert',
+                cancelText: 'Cancel',
+                onOk: () => convertMutation.mutate(),
+              })
+            }}
+            isConverting={convertMutation.isPending}
+            onCancel={async () => {
+              await quotationApi.changeStatus(id, 'cancelled');
+              queryClient.invalidateQueries({ queryKey: ['quotations'] });
+              queryClient.invalidateQueries({ queryKey: ['quotations', id] });
+              message.info('Quotation cancelled')
+            }}
+            onConfirm={() => {
+              if (!id) {
+                message.warning('Please save first.');
+                handleSave(false);
+                return
+              }
+              Modal.confirm({
+                title: 'Confirm this quotation?',
+                content: 'This will move the quotation to SUBMITTED. Do you want to continue?',
+                okText: 'Yes, confirm',
+                cancelText: 'Cancel',
+                onOk: () => confirmMutation.mutate(),
+              })
+            }}
+            isConfirming={confirmMutation.isPending}
+          />
+        </div>
+        <Button
+          icon={<DownloadOutlined />}
+          onClick={handleDownloadCuttingList}
+          style={{
+            borderColor: '#E2E8F0',
+            color: '#0f172a',
+            borderRadius: 8,
+            height: 38,
+            fontWeight: 500,
+            display: 'flex',
+            alignItems: 'center',
+            boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+            background: '#fff',
+            marginTop: 14
+          }}
+        >
+          Cutting List
+        </Button>
+      </div>
 
       <Form form={form} layout="vertical" disabled={status === 'converted'}
         onValuesChange={() => { if (hydratedRef.current) setIsDirty(true) }}>

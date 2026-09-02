@@ -11,7 +11,7 @@ import {
   PieChart, Pie, Cell
 } from 'recharts'
 import {
-  DollarOutlined, ShoppingOutlined,
+  ShoppingOutlined,
   TeamOutlined, BankOutlined, LogoutOutlined, InfoCircleOutlined, ExpandOutlined
 } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
@@ -23,6 +23,17 @@ const SuperAdminDashboard = () => {
   const navigate = useNavigate()
   const { logout, setActiveCompany } = useAuth()
   const [expandedChart, setExpandedChart] = useState(null)
+
+  const confirmLogout = () => {
+    Modal.confirm({
+      title: 'Log out?',
+      content: 'You will need to sign in again to continue.',
+      okText: 'Log out',
+      okButtonProps: { danger: true },
+      cancelText: 'Cancel',
+      onOk: () => logout(),
+    })
+  }
 
   const { data: overviewRes, isLoading } = useQuery({
     queryKey: ['superadmin-group-overview'],
@@ -47,7 +58,6 @@ const SuperAdminDashboard = () => {
   const totalGroupRevenue = overviewRes?.totals?.group_revenue || 0
   const totalGroupCustomers = overviewRes?.totals?.total_customers || 0
   const totalGroupActiveSOs = overviewRes?.totals?.active_orders || 0
-  const totalGroupOutstanding = overviewRes?.totals?.outstanding || 0
 
   const fmt = (v) => {
     if (v >= 100000) return `₹${(v/100000).toFixed(1)}L`
@@ -117,7 +127,7 @@ const SuperAdminDashboard = () => {
         </div>
         <Space>
           <Button icon={<BankOutlined />} style={{ borderColor: '#6366f1', color: '#6366f1' }} onClick={() => navigate('/super/users')}>Manage Users</Button>
-          <Button danger icon={<LogoutOutlined />} onClick={logout}>Logout</Button>
+          <Button danger icon={<LogoutOutlined />} onClick={confirmLogout}>Logout</Button>
         </Space>
       </div>
 
@@ -133,16 +143,8 @@ const SuperAdminDashboard = () => {
           },
           { title: 'Total Customers', value: totalGroupCustomers, color: '#059669', bg: '#f0fdf4', prefix: <TeamOutlined style={{ fontSize: 22 }} /> },
           { title: 'Active Orders', value: totalGroupActiveSOs, color: '#2563eb', bg: '#eff6ff', prefix: <ShoppingOutlined style={{ fontSize: 22 }} /> },
-          {
-            title: 'Outstanding',
-            value: fmt(totalGroupOutstanding),
-            color: '#dc2626',
-            bg: '#fef2f7',
-            prefix: <DollarOutlined style={{ fontSize: 22 }} />,
-            subtext: totalGroupOutstanding === 0 ? 'Billed in Tally (₹0 in system)' : null
-          },
         ].map((kpi, i) => (
-          <Col span={6} key={i}>
+          <Col xs={24} sm={8} key={i}>
             <Card style={{ background: kpi.bg, border: 'none', boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 4px 12px rgba(0,0,0,0.04)', borderRadius: 12 }}>
               <Statistic
                 title={
@@ -375,7 +377,7 @@ const SuperAdminDashboard = () => {
           })} rowKey="id" pagination={false} size="small" style={{ background: 'transparent' }}
             columns={[
               { title: 'Company', dataIndex: 'name', width: 180, render: (v, r) => (<Space align="center"><div style={{ width: 10, height: 10, borderRadius: '50%', background: r.color, flexShrink: 0, boxShadow: `0 0 6px ${r.color}88` }} /><span style={{ color: '#1e293b', fontWeight: 600, fontSize: 13 }}>{v}</span></Space>) },
-              { title: 'Revenue', dataIndex: 'revenue', align: 'right', render: v => <span style={{ color: '#d97706', fontWeight: 700 }}>{fmt(v)}</span> },
+              { title: 'Revenue', dataIndex: 'revenue', align: 'right', render: (v, r) => <span style={{ color: '#d97706', fontWeight: 700 }}>{fmt(r.id === 1 ? (overviewRes?.wholesale?.month_revenue || 0) : (r.revenue || 0))}</span> },
               { title: 'Gross Margin', dataIndex: 'grossMargin', align: 'center', render: v => v != null ? <Tag color={v>=20?'green':v>=10?'orange':'red'}>{v}%</Tag> : <span style={{ color: '#94a3b8' }}>—</span> },
               { title: 'Quotations', dataIndex: 'totalQuotes', align: 'center', render: v => <span style={{ color: '#2563eb' }}>{v}</span> },
               { title: 'Sales Orders', dataIndex: 'totalSOs', align: 'center', render: v => <span style={{ color: '#059669' }}>{v}</span> },
