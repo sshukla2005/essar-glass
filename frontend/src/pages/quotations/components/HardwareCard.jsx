@@ -76,21 +76,6 @@ const HardwareCard = ({
       ) 
     },
     { 
-      title: 'Cost Rate', 
-      dataIndex: 'cost_rate', 
-      width: 130, 
-      render: (v, row) => (
-        <InputNumber 
-          size="small" 
-          value={v} 
-          min={0} 
-          prefix="₹" 
-          style={{ width: '100%', borderColor: '#f59e0b', borderRadius: 6 }} 
-          onChange={val => setHardwareItems(prev => prev.map(h => h.hw_key !== row.hw_key ? h : { ...h, cost_rate: val, cost_amount: parseFloat(((h.qty || 0) * (val || 0)).toFixed(2)) }))} 
-        />
-      ) 
-    },
-    { 
       title: 'Rate', 
       dataIndex: 'rate', 
       width: 130, 
@@ -102,6 +87,21 @@ const HardwareCard = ({
           prefix="₹" 
           style={{ width: '100%', borderRadius: 6 }} 
           onChange={val => setHardwareItems(prev => prev.map(h => h.hw_key !== row.hw_key ? h : { ...h, rate: val, amount: parseFloat(((h.qty || 0) * (val || 0)).toFixed(2)) }))} 
+        />
+      ) 
+    },
+    { 
+      title: 'Cost Rate', 
+      dataIndex: 'cost_rate', 
+      width: 130, 
+      render: (v, row) => (
+        <InputNumber 
+          size="small" 
+          value={v} 
+          min={0} 
+          prefix="₹" 
+          style={{ width: '100%', borderColor: '#f59e0b', borderRadius: 6 }} 
+          onChange={val => setHardwareItems(prev => prev.map(h => h.hw_key !== row.hw_key ? h : { ...h, cost_rate: val, cost_amount: parseFloat(((h.qty || 0) * (val || 0)).toFixed(2)) }))} 
         />
       ) 
     },

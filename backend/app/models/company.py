@@ -36,3 +36,7 @@ class Company(Base, TimestampMixin, SoftDeleteMixin):
     state_name     = Column(String(100), nullable=True)
     address_line2  = Column(String(500), nullable=True)
     jurisdiction   = Column(String(100), nullable=True)
+
+    # ── Per-company document terms (stored as plain text, no HTML) ────────────
+    terms_conditions = Column(Text, nullable=True)
+    warranty_terms   = Column(Text, nullable=True)

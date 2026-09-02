@@ -41,22 +41,6 @@ const WastageCard = ({
       ) 
     },
     { 
-      title: 'Cost Rate', 
-      dataIndex: 'cost_rate', 
-      width: 140, 
-      render: (v, row) => (
-        <InputNumber 
-          size="small" 
-          value={v} 
-          min={0} 
-          prefix="₹" 
-          addonAfter="/sqft" 
-          style={{ width: '100%', borderColor: '#f59e0b', borderRadius: 6 }} 
-          onChange={val => setWastageItems(prev => prev.map(w => w.wst_key !== row.wst_key ? w : { ...w, cost_rate: val, cost_amount: parseFloat(((w.qty || 0) * (val || 0)).toFixed(2)) }))} 
-        />
-      ) 
-    },
-    { 
       title: 'Selling Rate', 
       dataIndex: 'rate', 
       width: 140, 
@@ -69,6 +53,22 @@ const WastageCard = ({
           addonAfter="/sqft" 
           style={{ width: '100%', borderRadius: 6 }} 
           onChange={val => setWastageItems(prev => prev.map(w => w.wst_key !== row.wst_key ? w : { ...w, rate: val, amount: parseFloat(((w.qty || 0) * (val || 0)).toFixed(2)) }))} 
+        />
+      ) 
+    },
+    { 
+      title: 'Cost Rate', 
+      dataIndex: 'cost_rate', 
+      width: 140, 
+      render: (v, row) => (
+        <InputNumber 
+          size="small" 
+          value={v} 
+          min={0} 
+          prefix="₹" 
+          addonAfter="/sqft" 
+          style={{ width: '100%', borderColor: '#f59e0b', borderRadius: 6 }} 
+          onChange={val => setWastageItems(prev => prev.map(w => w.wst_key !== row.wst_key ? w : { ...w, cost_rate: val, cost_amount: parseFloat(((w.qty || 0) * (val || 0)).toFixed(2)) }))} 
         />
       ) 
     },

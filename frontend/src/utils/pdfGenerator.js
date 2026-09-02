@@ -1129,7 +1129,7 @@ const calculateGroupHeight = (group, hasCep) => {
 }
 
 // ── Draw Glass Card (Splits Dynamically across pages) ──
-const drawGroupCard = (doc, group, groupNo, hasCep, cols, startY, pageNum, quotation, unitMode = 'inch') => {
+const drawGroupCard = (doc, group, groupNo, hasCep, cols, startY, pageNum, quotation, company, unitMode = 'inch') => {
   const sizes = group.sizes || []
   
   const groupHeight = calculateGroupHeight(group, hasCep)
@@ -1138,12 +1138,12 @@ const drawGroupCard = (doc, group, groupNo, hasCep, cols, startY, pageNum, quota
   
   let y = startY
   if (groupHeight <= cleanPageSpace && groupHeight > remainingSpace && remainingSpace < 50) {
-    y = checkPageBreak(doc, y, 999, pageNum, quotation)
+    y = checkPageBreak(doc, y, 999, pageNum, quotation, company)
   }
   
   const headerHeight = 13 + 11 + 6.5 + SP_8
   if ((PAGE_H - 18) - y < headerHeight) {
-    y = checkPageBreak(doc, y, 999, pageNum, quotation)
+    y = checkPageBreak(doc, y, 999, pageNum, quotation, company)
   }
   
   let ly = y + SP_8
@@ -1171,7 +1171,7 @@ const drawGroupCard = (doc, group, groupNo, hasCep, cols, startY, pageNum, quota
     grpQty += qty; grpSqft += sqft; grpRft += rft; grpCep += cep; grpAmt += amt
     
     if ((PAGE_H - 18) - ly < 6.5 + 7.5 + 5.5) {
-      y = checkPageBreak(doc, y, 999, pageNum, quotation)
+      y = checkPageBreak(doc, y, 999, pageNum, quotation, company)
       ly = y + SP_8
       ly = drawGroupBanner(doc, groupNo, refCode, groupDesc + ' (Continued)', group.is_toughened, group.cep, ly)
       ly = drawTableHeader(doc, cols, ly)
@@ -1557,7 +1557,7 @@ const calculateDocumentFooterHeight = (company) => {
   }
   const bankH = bankLinesCount > 0 ? (4.5 + bankLinesCount * 3.2 + 2.0) : 0
   const rightH = bankH + 25.0
-  const leftH = 46.0
+  const leftH = 21.0
   const maxTwoColH = Math.max(leftH, rightH)
   return maxTwoColH + 4.5 + 12.0
 }
@@ -1566,7 +1566,7 @@ const drawDocumentFooterSection = (doc, company, y, pageNum, docData) => {
   const footerH = calculateDocumentFooterHeight(company)
   
   // Page break check so footer is never cut off
-  y = checkPageBreak(doc, y, footerH, pageNum, docData)
+  y = checkPageBreak(doc, y, footerH, pageNum, docData, company)
 
   const startY = y
   const leftX = MARGIN.l // 10mm
@@ -1576,47 +1576,9 @@ const drawDocumentFooterSection = (doc, company, y, pageNum, docData) => {
   const rightW = CONTENT_W - leftW - colGap // 92mm
 
   // ---------------------------------------------------------
-  // LEFT COLUMN: Terms of Sale/Payment/Delivery:
+  // LEFT COLUMN: Disclaimer & Payment Terms
   // ---------------------------------------------------------
   let ly = startY
-  setFont(doc, 8, 'bold', C.primary)
-  drawText(doc, 'Terms of Sale/Payment/Delivery:', leftX, ly)
-  const headingW = doc.getTextWidth('Terms of Sale/Payment/Delivery:')
-  drawLine(doc, leftX, ly + 0.8, leftX + headingW, ly + 0.8, C.primary, 0.3)
-  
-  ly += 4.5
-
-  const jurisdiction = cleanVal(company?.jurisdiction) || cleanVal(company?.city) || cleanVal(company?.state_name) || 'Palghar'
-  // Validity = valid_until − quote_date. Falls back to the fixed 8-day
-  // wording when either date is absent (e.g. Sales Orders).
-  const validityDays = (() => {
-    const qd = docData?.quote_date
-    const vu = docData?.valid_until
-    if (!qd || !vu) return null
-    const d = dayjs(vu).diff(dayjs(qd), 'day')
-    return (Number.isFinite(d) && d > 0) ? d : null
-  })()
-  const validityText = validityDays
-    ? `• Validity of Document is ${validityDays} Day${validityDays === 1 ? '' : 's'} from the date of issue.`
-    : '• Validity of Document is 8 Days from the date of issue.'
-  const bullets = [
-    validityText,
-    '• Goods sold cannot be Exchanged or Returned.',
-    '• Accepted Tolerance limits will be +/- 1mm in dimentions & =/- .01mm in thickness',
-    '• Delivery is effected solely on buyer\'s risk n costs',
-    `• All disputes subject to ${jurisdiction} jurisdiction`
-  ]
-
-  setFont(doc, 6.5, 'normal', C.text)
-  bullets.forEach(b => {
-    const wrapped = doc.splitTextToSize(b, leftW)
-    wrapped.forEach(wline => {
-      drawText(doc, wline, leftX, ly)
-      ly += 3.2
-    })
-  })
-
-  ly += 1.5
 
   // Red Italic Disclaimer
   const companyShort = (cleanVal(company?.short_name) || cleanVal(company?.name) || 'COMPANY').toUpperCase()
@@ -1843,6 +1805,71 @@ const checkPageBreak = (doc, y, heightNeeded, pageNum, quotation, company) => {
   return y
 }
 
+const drawAnnexurePages = (doc, company, title, bodyText, docNumber) => {
+  if (!bodyText || !String(bodyText).trim()) return
+  const rawParas = String(bodyText).split(/\n\s*\n/).filter(p => p.trim())
+  if (rawParas.length === 0) return
+
+  // Filter out leading title lines if they match ANNEXURE
+  const paras = rawParas.filter(p => !p.trim().toUpperCase().startsWith('ANNEXURE'))
+  if (paras.length === 0) return
+
+  const drawHeaderBlock = () => {
+    doc.addPage()
+    drawBorder(doc)
+    let ny = MARGIN.t + SP_8
+    setFont(doc, 9, 'bold', C.primary)
+    drawText(doc, company?.name || 'COMPANY', MARGIN.l + 2, ny + 4)
+    setFont(doc, 7, 'normal', C.textLight)
+    drawText(doc, `Ref No: ${docNumber || ''}`, PAGE_W - MARGIN.r - 2, ny + 4, { align: 'right' })
+    drawLine(doc, MARGIN.l, ny + 7, MARGIN.l + CONTENT_W, ny + 7, C.border, 0.3)
+    return ny + 12
+  }
+
+  let y = drawHeaderBlock()
+
+  setFont(doc, 9.5, 'bold', C.primary)
+  drawText(doc, title, MARGIN.l + 2, y)
+  y += 7
+
+  const lineHeight = 3.4
+  const paraGap = 2.0
+  const maxY = PAGE_H - 22
+
+  const checkHeight = (needed = lineHeight) => {
+    if (y + needed > maxY) {
+      y = drawHeaderBlock()
+      setFont(doc, 9.5, 'bold', C.primary)
+      drawText(doc, `${title} (Contd.)`, MARGIN.l + 2, y)
+      y += 7
+    }
+  }
+
+  paras.forEach(para => {
+    const isClause = /^\d+\.\d+\s/.test(para.trim())
+    const rawLines = para.trim().split('\n').filter(l => l.trim())
+
+    rawLines.forEach((rline, rIndex) => {
+      const isHeadingLine = isClause && rIndex === 0
+      const wrapped = doc.splitTextToSize(rline.trim(), CONTENT_W - 4)
+
+      wrapped.forEach((wline, wIndex) => {
+        if (isHeadingLine && wIndex === 0) {
+          checkHeight(lineHeight * 2)
+          setFont(doc, 7.5, 'bold', C.text)
+        } else {
+          checkHeight(lineHeight)
+          setFont(doc, 7.5, 'normal', C.text)
+        }
+        drawText(doc, wline, MARGIN.l + 2, y)
+        y += lineHeight
+      })
+    })
+
+    y += paraGap
+  })
+}
+
 const addFootersAndPageNumbers = (doc, quoteNo) => {
   const totalPages = doc.getNumberOfPages()
   for (let i = 1; i <= totalPages; i++) {
@@ -2036,7 +2063,7 @@ export const generateQuotationPDF = async (quotation) => {
 
     groups.forEach((group) => {
       groupNo++
-      const res = drawGroupCard(doc, group, groupNo, hasCep, cols, y, pageNum, quotation, unitMode)
+      const res = drawGroupCard(doc, group, groupNo, hasCep, cols, y, pageNum, quotation, company, unitMode)
       totalQty += res.grpQty
       totalSqft += res.grpSqft
       totalCep += res.grpCep
@@ -2056,7 +2083,7 @@ export const generateQuotationPDF = async (quotation) => {
     })
 
     // Glass total bar
-    y = checkPageBreak(doc, y, 8 + SP_16, pageNum, quotation)
+    y = checkPageBreak(doc, y, 8 + SP_16, pageNum, quotation, company)
     y = drawTotalSummaryGridRow(doc, totalQty, totalSqft, grandGlass, y, totalWeightKg) + SP_16
 
     // Process Charges Card
@@ -2071,28 +2098,28 @@ export const generateQuotationPDF = async (quotation) => {
     const aggProcs = aggregateProcesses(allDocProcs)
     if (aggProcs.length > 0) {
       const procHeight = calculateProcessCardHeight(aggProcs)
-      y = checkPageBreak(doc, y, procHeight, pageNum, quotation)
+      y = checkPageBreak(doc, y, procHeight, pageNum, quotation, company)
       y = drawProcessCard(doc, aggProcs, y) + SP_16
     }
 
     // Hardware Card
     if (hardware_items.length > 0) {
       const hwHeight = calculateHardwareHeight(hardware_items)
-      y = checkPageBreak(doc, y, hwHeight, pageNum, quotation)
+      y = checkPageBreak(doc, y, hwHeight, pageNum, quotation, company)
       y = drawHardwareCard(doc, hardware_items, y) + SP_16
     }
 
     // Labor Card
     if (labor_items.length > 0) {
       const lbHeight = calculateLaborHeight(labor_items)
-      y = checkPageBreak(doc, y, lbHeight, pageNum, quotation)
+      y = checkPageBreak(doc, y, lbHeight, pageNum, quotation, company)
       y = drawLaborCard(doc, labor_items, y) + SP_16
     }
 
     // Wastage Card
     if (wastage_items.length > 0) {
       const wstHeight = calculateWastageHeight(wastage_items)
-      y = checkPageBreak(doc, y, wstHeight, pageNum, quotation)
+      y = checkPageBreak(doc, y, wstHeight, pageNum, quotation, company)
       y = drawWastageCard(doc, wastage_items, y) + SP_16
     }
 
@@ -2148,6 +2175,9 @@ export const generateQuotationPDF = async (quotation) => {
     y = checkPageBreak(doc, y, footerSectionH, pageNum, quotation, company)
 
     drawDocumentFooterSection(doc, company, y, pageNum, quotation)
+
+    drawAnnexurePages(doc, company, 'ANNEXURE II — TERMS & CONDITIONS', company?.terms_conditions, quotation.quote_number)
+    drawAnnexurePages(doc, company, 'ANNEXURE III — WARRANTY TERMS', company?.warranty_terms, quotation.quote_number)
 
     // Complete footers rendering pass
     addFootersAndPageNumbers(doc, quotation.quote_number || 'QT')
@@ -2212,7 +2242,7 @@ export const generateQuotationPDF = async (quotation) => {
 
 // ── Draw Sales Order Items Card (Splits dynamically) ──
 // ── Draw Sales Order Items Card (Splits dynamically) ──
-const drawSOItemsCard = (doc, lines, hasCep, cols, startY, pageNum, so, unitMode = 'inch') => {
+const drawSOItemsCard = (doc, lines, hasCep, cols, startY, pageNum, so, company, unitMode = 'inch') => {
   let y = startY
   let ly = y + SP_8
   
@@ -2234,7 +2264,7 @@ const drawSOItemsCard = (doc, lines, hasCep, cols, startY, pageNum, so, unitMode
     tQty += qty; tArea += area; tRft += rft; tCep += cep; tAmt += amt
     
     if ((PAGE_H - 18) - ly < 6.5 + 7.5 + 5.5) {
-      y = checkPageBreak(doc, y, 999, pageNum, so)
+      y = checkPageBreak(doc, y, 999, pageNum, so, company)
       ly = y + SP_8
       ly = drawGroupBanner(doc, '1', refCode, bannerTitle + ' (Continued)', false, false, ly)
       ly = drawTableHeader(doc, cols, ly)
@@ -2266,7 +2296,7 @@ const drawSOItemsCard = (doc, lines, hasCep, cols, startY, pageNum, so, unitMode
   return { endY: ly, tQty, tArea, tAmt }
 }
 
-const drawSOGroupCard = (doc, group, groupNo, hasCep, cols, startY, pageNum, so, unitMode = 'inch') => {
+const drawSOGroupCard = (doc, group, groupNo, hasCep, cols, startY, pageNum, so, company, unitMode = 'inch') => {
   const sizes = group.sizes || []
   
   const groupHeight = calculateGroupHeight(group, hasCep)
@@ -2275,12 +2305,12 @@ const drawSOGroupCard = (doc, group, groupNo, hasCep, cols, startY, pageNum, so,
   
   let y = startY
   if (groupHeight <= cleanPageSpace && groupHeight > remainingSpace && remainingSpace < 50) {
-    y = checkPageBreak(doc, y, 999, pageNum, so)
+    y = checkPageBreak(doc, y, 999, pageNum, so, company)
   }
   
   const headerHeight = 13 + 11 + 6.5 + SP_8
   if ((PAGE_H - 18) - y < headerHeight) {
-    y = checkPageBreak(doc, y, 999, pageNum, so)
+    y = checkPageBreak(doc, y, 999, pageNum, so, company)
   }
   
   let ly = y + SP_8
@@ -2308,7 +2338,7 @@ const drawSOGroupCard = (doc, group, groupNo, hasCep, cols, startY, pageNum, so,
     grpQty += qty; grpSqft += sqft; grpRft += rft; grpCep += cep; grpAmt += amt
     
     if ((PAGE_H - 18) - ly < 6.5 + 7.5 + 5.5) {
-      y = checkPageBreak(doc, y, 999, pageNum, so)
+      y = checkPageBreak(doc, y, 999, pageNum, so, company)
       ly = y + SP_8
       ly = drawGroupBanner(doc, groupNo, refCode, groupDesc + ' (Continued)', group.is_toughened, group.cep, ly)
       ly = drawTableHeader(doc, cols, ly)
@@ -2411,7 +2441,7 @@ export const generateSOPDF = async (so) => {
       let groupNo = 0
       groups.forEach((group) => {
         groupNo++
-        const res = drawSOGroupCard(doc, group, groupNo, hasCep, cols, y, pageNum, so, unitMode)
+        const res = drawSOGroupCard(doc, group, groupNo, hasCep, cols, y, pageNum, so, company, unitMode)
         totalQty += res.grpQty
         totalSqft += res.grpSqft
         totalCep += res.grpCep
@@ -2430,7 +2460,7 @@ export const generateSOPDF = async (so) => {
         })
       })
     } else {
-      const res = drawSOItemsCard(doc, so.lines || [], hasCep, cols, y, pageNum, so, unitMode)
+      const res = drawSOItemsCard(doc, so.lines || [], hasCep, cols, y, pageNum, so, company, unitMode)
       totalQty = res.tQty
       totalSqft = res.tArea
       grandGlass = res.tAmt
@@ -2449,7 +2479,7 @@ export const generateSOPDF = async (so) => {
     }
 
     // Glass total bar
-    y = checkPageBreak(doc, y, 8 + SP_16, pageNum, so)
+    y = checkPageBreak(doc, y, 8 + SP_16, pageNum, so, company)
     y = drawTotalSummaryGridRow(doc, totalQty, totalSqft, grandGlass, y, totalWeightKg) + SP_16
 
     // Process Charges Card
@@ -2465,28 +2495,28 @@ export const generateSOPDF = async (so) => {
     const aggProcs = aggregateProcesses(allDocProcs)
     if (aggProcs.length > 0) {
       const procHeight = calculateProcessCardHeight(aggProcs)
-      y = checkPageBreak(doc, y, procHeight, pageNum, so)
+      y = checkPageBreak(doc, y, procHeight, pageNum, so, company)
       y = drawProcessCard(doc, aggProcs, y) + SP_16
     }
 
     // Hardware Card
     if (hardware_items.length > 0) {
       const hwHeight = calculateHardwareHeight(hardware_items)
-      y = checkPageBreak(doc, y, hwHeight, pageNum, so)
+      y = checkPageBreak(doc, y, hwHeight, pageNum, so, company)
       y = drawHardwareCard(doc, hardware_items, y) + SP_16
     }
 
     // Labor Card
     if (labor_items.length > 0) {
       const lbHeight = calculateLaborHeight(labor_items)
-      y = checkPageBreak(doc, y, lbHeight, pageNum, so)
+      y = checkPageBreak(doc, y, lbHeight, pageNum, so, company)
       y = drawLaborCard(doc, labor_items, y) + SP_16
     }
 
     // Wastage Card
     if (wastage_items.length > 0) {
       const wstHeight = calculateWastageHeight(wastage_items)
-      y = checkPageBreak(doc, y, wstHeight, pageNum, so)
+      y = checkPageBreak(doc, y, wstHeight, pageNum, so, company)
       y = drawWastageCard(doc, wastage_items, y) + SP_16
     }
 
@@ -2552,6 +2582,9 @@ export const generateSOPDF = async (so) => {
     y = checkPageBreak(doc, y, footerSectionH, pageNum, so, company)
     drawDocumentFooterSection(doc, company, y, pageNum, so)
 
+    drawAnnexurePages(doc, company, 'ANNEXURE II — TERMS & CONDITIONS', company?.terms_conditions, so.so_number)
+    drawAnnexurePages(doc, company, 'ANNEXURE III — WARRANTY TERMS', company?.warranty_terms, so.so_number)
+
     addFootersAndPageNumbers(doc, so.so_number || 'SO')
     doc.save(makePdfFilename(so.so_number || 'SO', cust.name, 'Customer'))
   } catch (e) {
@@ -2561,7 +2594,7 @@ export const generateSOPDF = async (so) => {
 }
 
 // ── Draw Purchase Order Items Card (Splits dynamically) ──
-const drawPOItemsCard = (doc, lines, cols, startY, pageNum, po) => {
+const drawPOItemsCard = (doc, lines, cols, startY, pageNum, po, company) => {
   let y = startY
   let ly = y + SP_8
   
@@ -2582,7 +2615,7 @@ const drawPOItemsCard = (doc, lines, cols, startY, pageNum, po) => {
     tQty += qty; tArea += area; tRft += rft; tAmt += amt
     
     if ((PAGE_H - 18) - ly < 6.5 + 7.5 + 5.5) {
-      y = checkPageBreak(doc, y, 999, pageNum, po)
+      y = checkPageBreak(doc, y, 999, pageNum, po, company)
       ly = y + SP_8
       ly = drawGroupBanner(doc, '1', refCode, bannerTitle + ' (Continued)', false, false, ly)
       ly = drawTableHeader(doc, cols, ly)
@@ -2663,13 +2696,13 @@ export const generatePOPDF = async (po) => {
     })
 
     // Render items card (using splits if needed)
-    const res = drawPOItemsCard(doc, po.lines || [], cols, y, pageNum, po)
+    const res = drawPOItemsCard(doc, po.lines || [], cols, y, pageNum, po, company)
     const tQty = res.tQty
     const tArea = res.tArea
     const tAmt = res.tAmt
     y = res.endY + SP_16
 
-    y = checkPageBreak(doc, y, 8 + SP_16, pageNum, po)
+    y = checkPageBreak(doc, y, 8 + SP_16, pageNum, po, company)
     y = drawTotalSummaryGridRow(doc, tQty, tArea, tAmt, y, totalWeightKg) + SP_16
 
     // Summary block

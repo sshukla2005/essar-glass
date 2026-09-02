@@ -39,6 +39,8 @@ const CompanyInfo = () => {
         bank_branch: companyData.bank_branch || '',
         bank_ac_no: companyData.bank_ac_no || '',
         bank_ifsc: companyData.bank_ifsc || '',
+        terms_conditions: companyData.terms_conditions ?? '',
+        warranty_terms: companyData.warranty_terms ?? '',
       })
       setLogoPreview(companyData.logo || null)
     }
@@ -262,6 +264,36 @@ const CompanyInfo = () => {
             <Col span={12}>
               <Form.Item name="bank_ifsc" label="IFSC Code">
                 <Input placeholder="IFSC Code" style={{ textTransform: 'uppercase' }} />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Divider orientation="left">Document Terms</Divider>
+          <Row gutter={16}>
+            <Col span={24}>
+              <Form.Item
+                name="terms_conditions"
+                label="Terms & Conditions"
+                extra="Appears as an annexure page on quotation PDFs. Use a blank line between clauses."
+              >
+                <Input.TextArea
+                  rows={14}
+                  placeholder={`2.1 QUALITY STANDARDS\nAll glasses shall be made as per...`}
+                />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={16}>
+            <Col span={24}>
+              <Form.Item
+                name="warranty_terms"
+                label="Warranty Terms"
+                extra="Appears as a separate annexure page on quotation PDFs."
+              >
+                <Input.TextArea
+                  rows={14}
+                  placeholder={`3.1 LIMITED PRODUCT WARRANTY\nUnless otherwise specified...`}
+                />
               </Form.Item>
             </Col>
           </Row>
