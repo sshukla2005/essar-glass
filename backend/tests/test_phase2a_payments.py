@@ -1,5 +1,6 @@
 import os
 import sys
+import secrets
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
@@ -44,7 +45,11 @@ def payment_test_env(db_session: Session):
     db_session.commit()
     db_session.refresh(admin_user)
 
-    token = create_access_token(admin_user.id, admin_user.role, company_id=1, active_company_id=1)
+    import secrets
+    sid = secrets.token_urlsafe(16)
+    admin_user.current_session_id = sid
+    db_session.commit()
+    token = create_access_token(admin_user.id, admin_user.role, company_id=1, active_company_id=1, session_id=sid)
     headers = {"Authorization": f"Bearer {token}"}
 
     cust1 = Customer(customer_code="CUST-P2A-1", name="P2A Cust 1", company_id=1, phone="9998887771")
@@ -238,7 +243,11 @@ def test_group_overview_reconciles_with_receivables(db_session: Session, payment
     super_user = db_session.query(User).filter(User.role == "superadmin").first()
     assert super_user is not None
 
-    super_token = create_access_token(super_user.id, "superadmin")
+    super_sid = secrets.token_urlsafe(16)
+    super_user.current_session_id = super_sid
+    db_session.commit()
+
+    super_token = create_access_token(super_user.id, "superadmin", session_id=super_sid)
     super_headers = {"Authorization": f"Bearer {super_token}"}
 
     res_group = client.get("/api/v1/super/group-overview", headers=super_headers)

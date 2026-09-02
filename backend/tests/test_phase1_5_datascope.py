@@ -1,4 +1,5 @@
 import os
+import secrets
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
@@ -49,8 +50,14 @@ def test_b_auto_created_by_and_scoping(db_session: Session):
     db_session.refresh(user_a)
     db_session.refresh(user_b)
 
-    token_a = create_access_token(user_a.id, user_a.role, company_id=1, active_company_id=1)
-    token_b = create_access_token(user_b.id, user_b.role, company_id=1, active_company_id=1)
+    import secrets
+    sid_a, sid_b = secrets.token_urlsafe(16), secrets.token_urlsafe(16)
+    user_a.current_session_id = sid_a
+    user_b.current_session_id = sid_b
+    db_session.commit()
+
+    token_a = create_access_token(user_a.id, user_a.role, company_id=1, active_company_id=1, session_id=sid_a)
+    token_b = create_access_token(user_b.id, user_b.role, company_id=1, active_company_id=1, session_id=sid_b)
     headers_a = {"Authorization": f"Bearer {token_a}"}
     headers_b = {"Authorization": f"Bearer {token_b}"}
 
@@ -107,6 +114,9 @@ def test_b_auto_created_by_and_scoping(db_session: Session):
 
 def test_b_module_scope_overrides(db_session: Session):
     """Test that per-module scope overrides take precedence over user default data_scope."""
+    db_session.query(User).filter(User.username == "sales_override_user").delete()
+    db_session.commit()
+
     # User default scope is own, but quotations is overridden to company
     user = User(
         username="sales_override_user",
@@ -122,7 +132,11 @@ def test_b_module_scope_overrides(db_session: Session):
     db_session.commit()
     db_session.refresh(user)
 
-    token = create_access_token(user.id, user.role, company_id=1, active_company_id=1)
+    sid = secrets.token_urlsafe(16)
+    user.current_session_id = sid
+    db_session.commit()
+
+    token = create_access_token(user.id, user.role, company_id=1, active_company_id=1, session_id=sid)
     headers = {"Authorization": f"Bearer {token}"}
 
     try:

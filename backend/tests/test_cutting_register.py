@@ -28,7 +28,8 @@ def db_session():
 @pytest.fixture
 def cutting_test_env(db_session: Session):
     """Fixture creating test user, products, and workshop orders."""
-    # Clean up test user if exists
+    # Clean up test user and orders if exist
+    db_session.query(WorkshopOrder).filter(WorkshopOrder.wo_number.in_(["WO-TEST-001", "WO-TEST-002", "WO-TEST-FLOW-001", "WO-LEGACY-001"])).delete(synchronize_session=False)
     db_session.query(User).filter(User.username == "cutting_admin").delete()
     db_session.commit()
 
@@ -44,7 +45,12 @@ def cutting_test_env(db_session: Session):
     db_session.commit()
     db_session.refresh(admin_user)
 
-    token = create_access_token(admin_user.id, admin_user.role, company_id=1, active_company_id=1)
+    import secrets
+    sid = secrets.token_urlsafe(16)
+    admin_user.current_session_id = sid
+    db_session.commit()
+
+    token = create_access_token(admin_user.id, admin_user.role, company_id=1, active_company_id=1, session_id=sid)
     headers = {"Authorization": f"Bearer {token}"}
 
     # Create test WOs with specific line configurations

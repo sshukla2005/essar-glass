@@ -26,7 +26,12 @@ def test_so_revenue_lifecycle_and_gross_margin(db_session: Session):
     super_user = db_session.query(User).filter(User.role == "superadmin").first()
     assert super_user is not None, "Superadmin user must exist"
 
-    token = create_access_token(super_user.id, "superadmin")
+    import secrets
+    sid = secrets.token_urlsafe(16)
+    super_user.current_session_id = sid
+    db_session.commit()
+
+    token = create_access_token(super_user.id, "superadmin", session_id=sid)
     headers = {"Authorization": f"Bearer {token}"}
 
     # Baseline revenue for company 1

@@ -430,6 +430,7 @@ const InvoiceForm = () => {
   })
 
   const handleSave = async (andNew = false) => {
+    if (saveMutation.isPending) return
     try {
       const values = await form.validateFields()
       if (values.invoice_date) values.invoice_date = values.invoice_date.format('YYYY-MM-DD')

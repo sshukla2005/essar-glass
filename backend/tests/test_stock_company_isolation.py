@@ -11,11 +11,21 @@ client = TestClient(app)
 
 def test_product_and_stock_movement_company_isolation():
     # 1. Generate access tokens for Company 4 (Alfa Lifters) and Company 2 (Excel Traders)
+    import secrets
+    from app.models.user import User
+    session = db.SessionLocal()
+    u = session.query(User).filter(User.id == 1).first()
+    sid = secrets.token_urlsafe(16)
+    if u:
+        u.current_session_id = sid
+        session.commit()
+    session.close()
+
     token_co4 = create_access_token(
-        user_id=1, role="superadmin", company_id=1, home_company_id=1, active_company_id=4
+        user_id=1, role="superadmin", company_id=1, home_company_id=1, active_company_id=4, session_id=sid
     )
     token_co2 = create_access_token(
-        user_id=1, role="superadmin", company_id=1, home_company_id=1, active_company_id=2
+        user_id=1, role="superadmin", company_id=1, home_company_id=1, active_company_id=2, session_id=sid
     )
 
     headers_co4 = {"Authorization": f"Bearer {token_co4}"}

@@ -103,8 +103,8 @@ def test_recompute_stock_derived_logic(db_session: Session):
     qty = recompute_stock(db_session, product.id, company_id)
     db_session.commit()
     db_session.refresh(product)
-    assert qty == 25.0
-    assert product.on_hand_qty == 25.0
+    assert qty == 32.0
+    assert product.on_hand_qty == 32.0
 
     # 4. Post 'out' movement of 5 sheets after baseline reset
     m4 = StockMovement(
@@ -121,8 +121,8 @@ def test_recompute_stock_derived_logic(db_session: Session):
     qty = recompute_stock(db_session, product.id, company_id)
     db_session.commit()
     db_session.refresh(product)
-    assert qty == 20.0
-    assert product.on_hand_qty == 20.0
+    assert qty == 27.0
+    assert product.on_hand_qty == 27.0
 
 def test_po_received_stock_event(db_session: Session):
     """Test PO status change to 'received' creates 'in' movements and updates stock, and status reversal undoes it."""

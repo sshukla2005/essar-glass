@@ -261,6 +261,22 @@ def make_crud_router(
                 company_id=obj_data.get("company_id"),
             )
 
+        # Server-side guard: reject duplicate active non-cancelled invoice for the same Sales Order
+        if getattr(model, "__tablename__", None) == "invoices":
+            so_id = obj_data.get("so_id")
+            if so_id:
+                from app.models.invoice import Invoice as InvoiceModel
+                existing = db.query(InvoiceModel).filter(
+                    InvoiceModel.so_id == so_id,
+                    InvoiceModel.is_active == True,
+                    InvoiceModel.status != "cancelled",
+                ).first()
+                if existing:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Sales Order already has invoice {existing.invoice_number}. Cancel it before creating another."
+                    )
+
         # Server-side guard: reject stock movements whose warehouse or product belongs to a different company
         if getattr(model, "__tablename__", None) == "stock_movements":
             wh_id = obj_data.get("warehouse_id")
@@ -437,6 +453,22 @@ def make_crud_router(
         update_data.pop("total_cost", None)
         update_data.pop("profit_amount", None)
         update_data.pop("profit_percent", None)
+
+        if getattr(model, "__tablename__", None) == "invoices":
+            so_id = update_data.get("so_id")
+            if so_id:
+                from app.models.invoice import Invoice as InvoiceModel
+                existing = db.query(InvoiceModel).filter(
+                    InvoiceModel.so_id == so_id,
+                    InvoiceModel.is_active == True,
+                    InvoiceModel.status != "cancelled",
+                    InvoiceModel.id != item.id,
+                ).first()
+                if existing:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Sales Order already has invoice {existing.invoice_number}. Cancel it before creating another."
+                    )
 
         if getattr(model, "__tablename__", None) == "stock_movements":
             wh_id = update_data.get("warehouse_id", getattr(item, "warehouse_id", None))
