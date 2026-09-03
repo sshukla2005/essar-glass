@@ -2,9 +2,9 @@ import base64
 import io
 import json
 import logging
-import os
 import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from app.config import settings
 from app.deps import get_current_user
 
 logger = logging.getLogger(__name__)
@@ -71,7 +71,7 @@ async def extract_cutting_list(
     file: UploadFile = File(...),
     user=Depends(get_current_user),
 ):
-    api_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
+    api_key = (settings.ANTHROPIC_API_KEY or "").strip()
     if not api_key:
         raise HTTPException(503, "AI extraction is not configured on this server.")
 
@@ -92,7 +92,7 @@ async def extract_cutting_list(
         raise HTTPException(413, "Image still too large after downscaling. Retake at lower resolution.")
 
     payload = {
-        "model": os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5"),
+        "model": settings.ANTHROPIC_MODEL or "claude-sonnet-4-5",
         "max_tokens": 8000,
         "system": EXTRACT_PROMPT,
         "messages": [{
