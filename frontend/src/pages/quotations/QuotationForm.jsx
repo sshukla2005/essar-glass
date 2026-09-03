@@ -6,7 +6,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import dayjs from 'dayjs'
 import * as XLSX from 'xlsx'
 import MasterForm from '../../components/common/MasterForm'
-import { quotationApi, customerApi, productApi, salesOrderApi, processMasterApi, employeeApi } from '../../api'
+import { quotationApi, customerApi, productApi, salesOrderApi, processMasterApi, employeeApi, settingsApi } from '../../api'
 import { generateQuotationPDF, makePdfFilename } from '../../utils/pdfGenerator'
 import {
   getGroupBaseCostRate as sharedGetGroupBaseCostRate,
@@ -356,6 +356,29 @@ const QuotationForm = () => {
   })
   const employees = Array.isArray(employeesData) ? employeesData : (employeesData?.items || [])
 
+  const { data: paymentAccountsData } = useQuery({
+    queryKey: ['payment-accounts'],
+    queryFn: async () => {
+      const res = await settingsApi.get('payment_accounts')
+      if (res && Array.isArray(res)) return res
+      try {
+        return JSON.parse(localStorage.getItem('payment_accounts') || '[]')
+      } catch {
+        return []
+      }
+    },
+  })
+
+  const paymentAccountOptions = useMemo(() => {
+    const list = Array.isArray(paymentAccountsData) ? paymentAccountsData : []
+    return list
+      .filter(acc => acc.bank_ac_no && acc.bank_ac_no.trim() !== '')
+      .map(acc => ({
+        value: acc.id,
+        label: `${acc.name} — ${acc.bank_name || ''} ${acc.bank_ac_no}`.trim(),
+      }))
+  }, [paymentAccountsData])
+
   // Safe extraction — works for both array and {items:[]} format
   const customers = Array.isArray(customersData) ? customersData : (customersData?.items || [])
   const products = Array.isArray(productsData) ? productsData : (productsData?.items || [])
@@ -500,6 +523,7 @@ const QuotationForm = () => {
         crm_lead_id: record.crm_lead?.id || record.crm_lead_id,
         quote_date: record.quote_date ? dayjs(record.quote_date) : null,
         valid_until: record.valid_until ? dayjs(record.valid_until) : null,
+        payment_account_id: record.payment_account_id || record.totals?.payment_account_id || null,
       })
       let reconstructed = null
       if (record.lines?.length) {
@@ -1318,8 +1342,26 @@ const QuotationForm = () => {
 
   const convertMutation = useMutation({
     mutationFn: async () => {
+      const selectedAccId = form.getFieldValue('payment_account_id')
+      let bankSnap = null
+      if (selectedAccId && Array.isArray(paymentAccountsData)) {
+        const acc = paymentAccountsData.find(a => a.id === selectedAccId)
+        if (acc) {
+          bankSnap = {
+            ac_name: acc.bank_ac_name || '',
+            ac_no:   acc.bank_ac_no   || '',
+            bank:    acc.bank_name    || '',
+            branch:  acc.bank_branch  || '',
+            ifsc:    acc.bank_ifsc    || '',
+            label:   acc.name || '',
+          }
+        }
+      }
+
       const soData = {
         ...form.getFieldsValue(),
+        payment_account_id: selectedAccId || null,
+        bank_snapshot: bankSnap,
         lines: (() => {
           const flat = getFlatLines()
           let li = 0
@@ -1357,7 +1399,11 @@ const QuotationForm = () => {
         wastage_items: wastageItems,
         process_rate_card: processRateCard,
         dc_cost: form.getFieldValue('dc_cost') || 0,
-        totals: totals,
+        totals: {
+          ...totals,
+          bank_snapshot: bankSnap,
+          payment_account_id: selectedAccId || null,
+        },
         quotation_id: parseInt(id),
         gst_mode: gstMode,
         unit_mode: unit,
@@ -1441,7 +1487,24 @@ const QuotationForm = () => {
       if (values.quote_date) values.quote_date = values.quote_date.format('YYYY-MM-DD')
       if (values.valid_until) values.valid_until = values.valid_until.format('YYYY-MM-DD')
 
+      const selectedAccId = values.payment_account_id || null
+      let bankSnap = null
+      if (selectedAccId && Array.isArray(paymentAccountsData)) {
+        const acc = paymentAccountsData.find(a => a.id === selectedAccId)
+        if (acc) {
+          bankSnap = {
+            ac_name: acc.bank_ac_name || '',
+            ac_no:   acc.bank_ac_no   || '',
+            bank:    acc.bank_name    || '',
+            branch:  acc.bank_branch  || '',
+            ifsc:    acc.bank_ifsc    || '',
+            label:   acc.name || '',
+          }
+        }
+      }
 
+      values.payment_account_id = selectedAccId
+      values.bank_snapshot = bankSnap
       values.lines = getFlatLines()
       values.processes = []
       values.gst_mode = gstMode
@@ -1456,7 +1519,11 @@ const QuotationForm = () => {
       values.total_amount = totals.grandTotal
       values.balance_due = totals.balance
       values.groups = groups
-      values.totals = totals
+      values.totals = {
+        ...totals,
+        bank_snapshot: bankSnap,
+        payment_account_id: selectedAccId,
+      }
       values.process_rate_card = processRateCard
 
       const leadIdFromUrl = searchParams.get('lead_id')
@@ -2306,6 +2373,7 @@ const QuotationForm = () => {
               totals={totals}
               gstMode={gstMode}
               setGstMode={setGstMode}
+              paymentAccountOptions={paymentAccountOptions}
             />
           </Col>
         </Row>

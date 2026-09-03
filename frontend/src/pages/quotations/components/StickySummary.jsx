@@ -1,5 +1,5 @@
 import React from 'react'
-import { Form, InputNumber, Radio, Typography, Row, Col } from 'antd'
+import { Form, InputNumber, Radio, Typography, Row, Col, Select } from 'antd'
 import { InfoCircleOutlined } from '@ant-design/icons'
 
 const { Text } = Typography
@@ -8,6 +8,7 @@ const StickySummary = ({
   totals = {},
   gstMode = 'cgst_sgst',
   setGstMode,
+  paymentAccountOptions = [],
   invoiceStatusContent = null
 }) => {
   const fmt = (val) => {
@@ -128,6 +129,19 @@ const StickySummary = ({
                 <Text style={{ color: '#ef4444', fontWeight: 500 }}>- {fmt(totals.discountAmt)}</Text>
               </div>
             )}
+
+            <Form.Item
+              name="payment_account_id"
+              label={<span style={{ fontSize: 11, color: '#64748B', fontWeight: 600 }}>Bank / Payment Account</span>}
+              style={{ marginTop: 8, marginBottom: 0 }}
+            >
+              <Select
+                allowClear
+                placeholder="Company default"
+                options={paymentAccountOptions}
+                style={{ width: '100%' }}
+              />
+            </Form.Item>
           </div>
 
           {/* GST Toggle Selector */}

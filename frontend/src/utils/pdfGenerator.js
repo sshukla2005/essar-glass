@@ -1541,9 +1541,21 @@ const drawFinalSummaryBlock = (doc, totalsRows, amtWords, quotation, y) => {
 }
 
 // ── Terms & Signature Section ──
-const calculateDocumentFooterHeight = (company) => {
+const calculateDocumentFooterHeight = (company, docData = null) => {
+  const snap = docData?.bank_snapshot || docData?.totals?.bank_snapshot
+  const hasSnap = snap && (snap.ac_name || snap.ac_no || snap.bank || snap.branch || snap.ifsc)
+
   let bankLinesCount = 0
-  if (company) {
+  if (hasSnap) {
+    const fields = [
+      snap.ac_name,
+      snap.ac_no,
+      snap.bank,
+      snap.branch,
+      snap.ifsc
+    ]
+    bankLinesCount = fields.filter(f => cleanVal(f)).length
+  } else if (company) {
     const fields = [
       company.bank_ac_name,
       company.bank_ac_no,
@@ -1563,7 +1575,7 @@ const calculateDocumentFooterHeight = (company) => {
 }
 
 const drawDocumentFooterSection = (doc, company, y, pageNum, docData) => {
-  const footerH = calculateDocumentFooterHeight(company)
+  const footerH = calculateDocumentFooterHeight(company, docData)
   
   // Page break check so footer is never cut off
   y = checkPageBreak(doc, y, footerH, pageNum, docData, company)
@@ -1607,7 +1619,16 @@ const drawDocumentFooterSection = (doc, company, y, pageNum, docData) => {
   // ---------------------------------------------------------
   let ry = startY
 
-  const bankFields = [
+  const snap = docData?.bank_snapshot || docData?.totals?.bank_snapshot
+  const hasSnap = snap && (snap.ac_name || snap.ac_no || snap.bank || snap.branch || snap.ifsc)
+
+  const bankFields = hasSnap ? [
+    cleanVal(snap.ac_name) ? { label: 'A/c Name:', val: cleanVal(snap.ac_name) } : null,
+    cleanVal(snap.ac_no) ? { label: 'A/c Number:', val: cleanVal(snap.ac_no) } : null,
+    cleanVal(snap.bank) ? { label: 'Bank Name:', val: cleanVal(snap.bank) } : null,
+    cleanVal(snap.branch) ? { label: 'Branch:', val: cleanVal(snap.branch) } : null,
+    cleanVal(snap.ifsc) ? { label: 'IFC/RTGS Code:', val: cleanVal(snap.ifsc) } : null,
+  ].filter(Boolean) : [
     cleanVal(company.bank_ac_name) ? { label: 'A/c Name:', val: cleanVal(company.bank_ac_name) } : null,
     cleanVal(company.bank_ac_no) ? { label: 'A/c Number:', val: cleanVal(company.bank_ac_no) } : null,
     cleanVal(company.bank_name) ? { label: 'Bank Name:', val: cleanVal(company.bank_name) } : null,
@@ -1805,8 +1826,15 @@ const checkPageBreak = (doc, y, heightNeeded, pageNum, quotation, company) => {
   return y
 }
 
-const drawAnnexurePages = (doc, company, title, bodyText, docNumber) => {
+const drawAnnexurePages = (doc, company, fallbackTitle, bodyText, docNumber) => {
   if (!bodyText || !String(bodyText).trim()) return
+
+  const headerLine = String(bodyText)
+    .split('\n')
+    .map(l => l.trim())
+    .find(l => l.toUpperCase().startsWith('ANNEXURE'))
+  const title = headerLine || fallbackTitle
+
   const rawParas = String(bodyText).split(/\n\s*\n/).filter(p => p.trim())
   if (rawParas.length === 0) return
 
@@ -2162,7 +2190,7 @@ export const generateQuotationPDF = async (quotation) => {
     ].filter(Boolean)
 
     const summaryHeight = calculateSummaryHeight(totalsRows)
-    const footerSectionH = calculateDocumentFooterHeight(company)
+    const footerSectionH = calculateDocumentFooterHeight(company, quotation)
     
     // Break for the summary block only — it is much shorter than the terms
     // section, so checking them together needlessly pushed BOTH to a new
@@ -2176,8 +2204,8 @@ export const generateQuotationPDF = async (quotation) => {
 
     drawDocumentFooterSection(doc, company, y, pageNum, quotation)
 
-    drawAnnexurePages(doc, company, 'ANNEXURE II — TERMS & CONDITIONS', company?.terms_conditions, quotation.quote_number)
-    drawAnnexurePages(doc, company, 'ANNEXURE III — WARRANTY TERMS', company?.warranty_terms, quotation.quote_number)
+    drawAnnexurePages(doc, company, 'ANNEXURE I — TERMS & CONDITIONS', company?.terms_conditions, quotation.quote_number)
+    drawAnnexurePages(doc, company, 'ANNEXURE II — WARRANTY TERMS', company?.warranty_terms, quotation.quote_number)
 
     // Complete footers rendering pass
     addFootersAndPageNumbers(doc, quotation.quote_number || 'QT')
@@ -2574,7 +2602,7 @@ export const generateSOPDF = async (so) => {
     ].filter(Boolean)
 
     const summaryHeight = calculateSummaryHeight(totalsRows)
-    const footerSectionH = calculateDocumentFooterHeight(company)
+    const footerSectionH = calculateDocumentFooterHeight(company, so)
     
     y = checkPageBreak(doc, y, summaryHeight, pageNum, so, company)
     y = drawFinalSummaryBlock(doc, totalsRows, toWords(Math.round(grand)), { payment_terms: so.payment_terms }, y) + SP_16
@@ -2582,8 +2610,8 @@ export const generateSOPDF = async (so) => {
     y = checkPageBreak(doc, y, footerSectionH, pageNum, so, company)
     drawDocumentFooterSection(doc, company, y, pageNum, so)
 
-    drawAnnexurePages(doc, company, 'ANNEXURE II — TERMS & CONDITIONS', company?.terms_conditions, so.so_number)
-    drawAnnexurePages(doc, company, 'ANNEXURE III — WARRANTY TERMS', company?.warranty_terms, so.so_number)
+    drawAnnexurePages(doc, company, 'ANNEXURE I — TERMS & CONDITIONS', company?.terms_conditions, so.so_number)
+    drawAnnexurePages(doc, company, 'ANNEXURE II — WARRANTY TERMS', company?.warranty_terms, so.so_number)
 
     addFootersAndPageNumbers(doc, so.so_number || 'SO')
     doc.save(makePdfFilename(so.so_number || 'SO', cust.name, 'Customer'))

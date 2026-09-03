@@ -6,7 +6,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import dayjs from 'dayjs'
 import * as XLSX from 'xlsx'
 import MasterForm from '../../components/common/MasterForm'
-import { salesOrderApi, customerApi, productApi, quotationApi, purchaseOrderApi, deliveryChallanApi, invoiceApi, warehouseApi, workshopOrderApi, processMasterApi, employeeApi } from '../../api'
+import { salesOrderApi, customerApi, productApi, quotationApi, purchaseOrderApi, deliveryChallanApi, invoiceApi, warehouseApi, workshopOrderApi, processMasterApi, employeeApi, settingsApi } from '../../api'
 import { generateSOPDF, makePdfFilename } from '../../utils/pdfGenerator'
 import {
   getGroupBaseCostRate as sharedGetGroupBaseCostRate,
@@ -161,6 +161,29 @@ const SalesOrderForm = () => {
   const { data: quotationsData } = useQuery({ queryKey: ['quotations-dd'], queryFn: () => quotationApi.dropdown().then(r => r.data) })
   const { data: warehousesData } = useQuery({ queryKey: ['warehouses-dd'], queryFn: () => warehouseApi.dropdown().then(r => r.data) })
   const { data: employeesData } = useQuery({ queryKey: ['employees-dd'], queryFn: () => employeeApi.dropdown().then(r => r.data) })
+
+  const { data: paymentAccountsData } = useQuery({
+    queryKey: ['payment-accounts'],
+    queryFn: async () => {
+      const res = await settingsApi.get('payment_accounts')
+      if (res && Array.isArray(res)) return res
+      try {
+        return JSON.parse(localStorage.getItem('payment_accounts') || '[]')
+      } catch {
+        return []
+      }
+    },
+  })
+
+  const paymentAccountOptions = useMemo(() => {
+    const list = Array.isArray(paymentAccountsData) ? paymentAccountsData : []
+    return list
+      .filter(acc => acc.bank_ac_no && acc.bank_ac_no.trim() !== '')
+      .map(acc => ({
+        value: acc.id,
+        label: `${acc.name} — ${acc.bank_name || ''} ${acc.bank_ac_no}`.trim(),
+      }))
+  }, [paymentAccountsData])
 
   const { data: posData } = useQuery({ queryKey: ['pos-so', id], queryFn: () => purchaseOrderApi.list({ so_id: id }).then(r => r.data), enabled: isEdit })
   const { data: dcsData } = useQuery({ queryKey: ['dcs-so', id], queryFn: () => deliveryChallanApi.list({ so_id: id }).then(r => r.data), enabled: isEdit })
@@ -1081,6 +1104,7 @@ const SalesOrderForm = () => {
         customer_id: record.customer_id,
         order_date: record.order_date ? dayjs(record.order_date) : null,
         delivery_date: record.delivery_date ? dayjs(record.delivery_date) : null,
+        payment_account_id: record.payment_account_id || record.totals?.payment_account_id || null,
       })
 
       let reconstructed = null
@@ -1644,6 +1668,24 @@ const SalesOrderForm = () => {
       if (values.order_date) values.order_date = values.order_date.format('YYYY-MM-DD')
       if (values.delivery_date) values.delivery_date = values.delivery_date.format('YYYY-MM-DD')
 
+      const selectedAccId = values.payment_account_id || null
+      let bankSnap = null
+      if (selectedAccId && Array.isArray(paymentAccountsData)) {
+        const acc = paymentAccountsData.find(a => a.id === selectedAccId)
+        if (acc) {
+          bankSnap = {
+            ac_name: acc.bank_ac_name || '',
+            ac_no:   acc.bank_ac_no   || '',
+            bank:    acc.bank_name    || '',
+            branch:  acc.bank_branch  || '',
+            ifsc:    acc.bank_ifsc    || '',
+            label:   acc.name || '',
+          }
+        }
+      }
+
+      values.payment_account_id = selectedAccId
+      values.bank_snapshot = bankSnap
       values.lines = getFlatLines()
       values.groups = groups
       values.unit_mode = soUnit
@@ -1652,7 +1694,11 @@ const SalesOrderForm = () => {
       values.labor_items = laborItems
       values.wastage_items = wastageItems
       values.dc_cost = dcCost || 0
-      values.totals = totals
+      values.totals = {
+        ...totals,
+        bank_snapshot: bankSnap,
+        payment_account_id: selectedAccId,
+      }
       values.subtotal = totals.subIII
       values.tax_amount = totals.cgst + totals.sgst + totals.igst
       values.total_amount = totals.grandTotal
@@ -1680,12 +1726,15 @@ const SalesOrderForm = () => {
 
       if (quotation.unit_mode) setSoUnit(quotation.unit_mode)
 
+      const qAccId = quotation.payment_account_id || quotation.totals?.payment_account_id || null
+
       form.setFieldsValue({
         customer_id: quotation.customer_id,
         order_date: dayjs(),
         payment_terms: quotation.payment_terms,
         salesperson: quotation.salesperson,
         notes: quotation.customer_notes,
+        ...(qAccId ? { payment_account_id: qAccId } : {}),
       })
 
       if (quotation.groups?.length) {
@@ -2251,6 +2300,7 @@ const SalesOrderForm = () => {
               totals={totals}
               gstMode={gstMode}
               setGstMode={setGstMode}
+              paymentAccountOptions={paymentAccountOptions}
               invoiceStatusContent={
                 <SOInvoiceStatusPanel
                   invoices={invItems}
