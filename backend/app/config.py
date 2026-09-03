@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     # Shared secret for the wholesale app's push endpoint.
     # Empty string disables the endpoint (returns 503).
     WHOLESALE_SYNC_TOKEN: str = ""
+    ANTHROPIC_API_KEY: str = ""
+    ANTHROPIC_MODEL: str = "claude-sonnet-4-5"
 
     # ── Company isolation flags ──────────────────────────────────────────
     # ASSUMPTION 1: Read-only-on-switch applies to ALL roles including

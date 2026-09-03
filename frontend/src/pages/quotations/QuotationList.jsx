@@ -1,11 +1,12 @@
 import React, { useState } from 'react'
 import { Tag, Button, Tooltip, Typography, Space } from 'antd'
 import { useSearchParams, useNavigate } from 'react-router-dom'
-import { ArrowLeftOutlined, DownloadOutlined } from '@ant-design/icons'
+import { ArrowLeftOutlined, DownloadOutlined, FileImageOutlined } from '@ant-design/icons'
 import MasterList from '../../components/common/MasterList'
 import { quotationApi } from '../../api'
 import { generateQuotationPDF } from '../../utils/pdfGenerator'
 import { QUOTE_STATUS_LABELS } from './components/ActionToolbar'
+import CuttingListImportModal from '../../components/CuttingListImportModal'
 
 const { Text } = Typography
 
@@ -18,6 +19,7 @@ const QuotationList = () => {
 
   const [statusTab, setStatusTab] = useState('active')
   const [counts, setCounts] = useState(null)
+  const [importModalOpen, setImportModalOpen] = useState(false)
 
   const tabs = [
     { key: 'active', label: 'Active', count: counts?.active },
@@ -98,15 +100,26 @@ const QuotationList = () => {
         createPath={leadId ? `/quotations/new?lead_id=${leadId}` : '/quotations/new'}
         editPath={(r) => `/quotations/${r.id}/edit`}
         searchPlaceholder="Search by quote number, salesperson..."
+        extraHeaderActions={
+          <Button
+            icon={<FileImageOutlined />}
+            onClick={() => setImportModalOpen(true)}
+          >
+            Import from Photo
+          </Button>
+        }
         extraActions={(r) => (
           <Tooltip title="Download PDF">
             <Button type="text" size="small" icon={<DownloadOutlined />} style={{ color: '#10b981' }} onClick={() => generateQuotationPDF(r)} />
           </Tooltip>
         )}
       />
+      <CuttingListImportModal
+        open={importModalOpen}
+        onClose={() => setImportModalOpen(false)}
+      />
     </>
   )
 }
 
 export default QuotationList
-

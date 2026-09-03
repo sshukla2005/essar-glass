@@ -175,6 +175,8 @@ from app.routers.inter_company import router as inter_company_router
 from app.routers.payments import router as payments_router
 from app.routers.delivery_notes import router as delivery_notes_router
 
+from app.routers import ai as ai_router
+
 PREFIX = "/api/v1"
 
 # Auth
@@ -197,6 +199,9 @@ app.include_router(payments_router)
 
 # Delivery Notes
 app.include_router(delivery_notes_router, prefix=f"{PREFIX}")
+
+# AI Cutting List
+app.include_router(ai_router.router, prefix="/api/v1")
 
 
 # Auto CRUD routers

@@ -197,3 +197,14 @@ export const superApi = {
     return { data: res.data }
   },
 }
+
+export const aiApi = {
+  extractCuttingList: (file) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return api.post('/api/v1/ai/extract-cutting-list', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 150000,
+    })
+  },
+}
