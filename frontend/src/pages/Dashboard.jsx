@@ -121,7 +121,8 @@ const Dashboard = () => {
   const [cuttingPreset, setCuttingPreset] = useState('today')
   const [cuttingDate, setCuttingDate] = useState(dayjs())
   const [viewMode, setViewMode] = useState('active')
-  const { activeCompanyId } = useAuth()
+  const { activeCompanyId, user } = useAuth()
+  const isSales = user?.role === 'sales'
   const navigate = useNavigate()
 
   const { data: companyListRes } = useQuery({
@@ -178,6 +179,7 @@ const Dashboard = () => {
       date: cuttingDate ? cuttingDate.format('YYYY-MM-DD') : undefined
     }).then(r => r.data),
     staleTime: 30000,
+    enabled: !isSales,
   })
 
   const stats = useMemo(() => {
@@ -488,231 +490,235 @@ const Dashboard = () => {
       </Card>
 
       {/* ── Cutting Register ─────────────────────────────────── */}
-      <Card
-        bordered={false}
-        style={{ borderRadius: 16, boxShadow: '0 4px 20px rgba(0,0,0,0.04)', overflow: 'hidden', marginTop: 24 }}
-        bodyStyle={{ padding: 0 }}
-      >
-        {/* Header */}
-        <div style={{
-          padding: '16px 24px',
-          borderBottom: '1px solid #f0f0f0',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          flexWrap: 'wrap',
-          gap: 12,
-          background: '#fff',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{
-              background: '#fef3c7', padding: 8, borderRadius: 8,
-              display: 'flex', alignItems: 'center', justifyContent: 'center'
-            }}>
-              <span style={{ fontSize: 20 }}>🔪</span>
-            </div>
-            <div>
-              <Title level={4} style={{ margin: 0, fontWeight: 700 }}>Cutting Register</Title>
-              <Text type="secondary" style={{ fontSize: 13 }}>Workshop orders — glass cutting status</Text>
-            </div>
-          </div>
-          <Space wrap>
-            <Radio.Group
-              value={cuttingPreset}
-              onChange={(e) => {
-                const val = e.target.value;
-                setCuttingPreset(val);
-                if (val === 'today') setCuttingDate(dayjs());
-                if (val === 'yesterday') setCuttingDate(dayjs().subtract(1, 'day'));
-              }}
-              size="small"
-            >
-              <Radio.Button value="today">Today</Radio.Button>
-              <Radio.Button value="yesterday">Yesterday</Radio.Button>
-              <Radio.Button value="this_week">This Week</Radio.Button>
-            </Radio.Group>
-            <DatePicker
-              size="small"
-              value={cuttingDate}
-              onChange={(val) => {
-                if (val) {
-                  setCuttingDate(val);
-                  setCuttingPreset('custom');
-                }
-              }}
-              style={{ width: 120 }}
-            />
-            <Button size="small" onClick={() => navigate('/workshop/orders')}>View All WOs</Button>
-          </Space>
-        </div>
-
-        {/* 4 Productivity Tiles */}
-        <div style={{ padding: '16px 24px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-          <Row gutter={[16, 16]}>
-            <Col xs={24} sm={12} lg={6}>
-              <ProductionTile
-                title={cuttingPreset === 'this_week' ? "Cut This Week" : "Cut Selected Day"}
-                data={stats.cut_today}
-                color="green"
-                bgColor="#f0fdf4"
-              />
-            </Col>
-            <Col xs={24} sm={12} lg={6}>
-              <ProductionTile
-                title="In Progress"
-                data={stats.in_progress}
-                color="orange"
-                bgColor="#fffbeb"
-              />
-            </Col>
-            <Col xs={24} sm={12} lg={6}>
-              <ProductionTile
-                title="Pending"
-                data={stats.pending}
-                color="blue"
-                bgColor="#eff6ff"
-              />
-            </Col>
-            <Col xs={24} sm={12} lg={6}>
-              <ProductionTile
-                title="Completed (Cumulative)"
-                data={stats.completed}
-                color="purple"
-                bgColor="#faf5ff"
-              />
-            </Col>
-          </Row>
-        </div>
-
-        {/* View Mode Switcher */}
-        <div style={{ padding: '12px 24px', borderBottom: '1px solid #f0f0f0', display: 'flex', justifyContent: 'flex-start', background: '#fff' }}>
-          <Radio.Group
-            value={viewMode}
-            onChange={(e) => setViewMode(e.target.value)}
-            size="small"
+      {!isSales && (
+        <>
+          <Card
+            bordered={false}
+            style={{ borderRadius: 16, boxShadow: '0 4px 20px rgba(0,0,0,0.04)', overflow: 'hidden', marginTop: 24 }}
+            bodyStyle={{ padding: 0 }}
           >
-            <Radio.Button value="active">Active Production</Radio.Button>
-            <Radio.Button value="completed">Completed Orders</Radio.Button>
-            <Radio.Button value="all">All Orders</Radio.Button>
-          </Radio.Group>
-        </div>
-
-        {/* Table */}
-        <Table
-          dataSource={filteredCuttingRows}
-          pagination={{ pageSize: 15, size: 'small' }}
-          size="small"
-          locale={{ emptyText: 'No workshop orders in this view' }}
-          onRow={(record) => ({
-            style: { cursor: 'pointer' },
-            onClick: () => navigate(`/workshop/orders/${record.id}/edit`)
-          })}
-          columns={[
-            {
-              title: 'Date', dataIndex: 'date', width: 90,
-              render: v => {
-                if (!v || v === '—') return '—'
-                try {
-                  const d = new Date(v)
-                  return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
-                } catch { return v }
-              }
-            },
-            {
-              title: 'Order No', dataIndex: 'wo_number', width: 100,
-              render: v => <Text strong style={{ color: '#6366f1' }}>{v}</Text>
-            },
-            {
-              title: 'Customer Name', dataIndex: 'customer_name', width: 180,
-              render: v => <Text strong>{v}</Text>
-            },
-            {
-              title: 'THICKNESS', dataIndex: 'description', width: 200,
-              render: v => (
-                <Text style={{ fontSize: 12, color: '#475569' }}>
-                  {v?.length > 40 ? v.substring(0, 40) + '...' : v}
-                </Text>
-              )
-            },
-            {
-              title: 'THIN', dataIndex: 'thin_sqft', width: 80, align: 'right',
-              render: v => v ? (
-                <Text strong style={{ color: '#16a34a' }}>
-                  {Number(v).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
-                </Text>
-              ) : null
-            },
-            {
-              title: 'THICK', dataIndex: 'thick_sqft', width: 80, align: 'right',
-              render: v => v ? (
-                <Text strong style={{ color: '#1d4ed8' }}>
-                  {Number(v).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
-                </Text>
-              ) : null
-            },
-            {
-              title: 'UNCLASS', dataIndex: 'unclassified_sqft', width: 80, align: 'right',
-              render: v => v ? (
-                <Text strong style={{ color: '#ea580c' }}>
-                  {Number(v).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
-                </Text>
-              ) : null
-            },
-            {
-              title: 'Cut / Total', key: 'cut_total', width: 90, align: 'center',
-              render: (_, record) => (
-                <Text style={{ fontSize: 13, fontWeight: 600, color: '#334155' }}>
-                  {record.cut_pieces} / {record.total_pieces}
-                </Text>
-              )
-            },
-            {
-              title: 'Progress', dataIndex: 'progress_pct', width: 120,
-              render: (pct) => (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <Progress
-                    percent={pct}
-                    size="small"
-                    strokeColor={{
-                      '0%': '#10b981',
-                      '100%': '#059669',
-                    }}
-                    style={{ flex: 1, margin: 0 }}
-                  />
+            {/* Header */}
+            <div style={{
+              padding: '16px 24px',
+              borderBottom: '1px solid #f0f0f0',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: 12,
+              background: '#fff',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{
+                  background: '#fef3c7', padding: 8, borderRadius: 8,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center'
+                }}>
+                  <span style={{ fontSize: 20 }}>🔪</span>
                 </div>
-              )
-            },
-            {
-              title: 'STATUS', dataIndex: 'status_label', width: 110,
-              render: (v) => {
-                const colorMap = {
-                  'PENDING': { bg: '#fef3c7', color: '#b45309', border: '#fde047' },
-                  'UNDR CTNG': { bg: '#fecaca', color: '#dc2626', border: '#fca5a5' },
-                  'UNDR TOUGH': { bg: '#fecaca', color: '#dc2626', border: '#fca5a5' },
-                  'RDY': { bg: '#bbf7d0', color: '#15803d', border: '#86efac' },
-                  'RDY RPDA': { bg: '#bbf7d0', color: '#15803d', border: '#86efac' },
-                  'CANCELLED': { bg: '#e2e8f0', color: '#64748b', border: '#cbd5e1' },
-                }
-                const style = colorMap[v] || colorMap['PENDING']
-                return (
-                  <span style={{
-                    background: style.bg,
-                    color: style.color,
-                    border: `1px solid ${style.border}`,
-                    borderRadius: 4,
-                    padding: '2px 8px',
-                    fontSize: 11,
-                    fontWeight: 700,
-                    letterSpacing: 0.5,
-                  }}>
-                    {v}
-                  </span>
-                )
-              }
-            },
-          ]}
-        />
-      </Card>
+                <div>
+                  <Title level={4} style={{ margin: 0, fontWeight: 700 }}>Cutting Register</Title>
+                  <Text type="secondary" style={{ fontSize: 13 }}>Workshop orders — glass cutting status</Text>
+                </div>
+              </div>
+              <Space wrap>
+                <Radio.Group
+                  value={cuttingPreset}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setCuttingPreset(val);
+                    if (val === 'today') setCuttingDate(dayjs());
+                    if (val === 'yesterday') setCuttingDate(dayjs().subtract(1, 'day'));
+                  }}
+                  size="small"
+                >
+                  <Radio.Button value="today">Today</Radio.Button>
+                  <Radio.Button value="yesterday">Yesterday</Radio.Button>
+                  <Radio.Button value="this_week">This Week</Radio.Button>
+                </Radio.Group>
+                <DatePicker
+                  size="small"
+                  value={cuttingDate}
+                  onChange={(val) => {
+                    if (val) {
+                      setCuttingDate(val);
+                      setCuttingPreset('custom');
+                    }
+                  }}
+                  style={{ width: 120 }}
+                />
+                <Button size="small" onClick={() => navigate('/workshop/orders')}>View All WOs</Button>
+              </Space>
+            </div>
+
+            {/* 4 Productivity Tiles */}
+            <div style={{ padding: '16px 24px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+              <Row gutter={[16, 16]}>
+                <Col xs={24} sm={12} lg={6}>
+                  <ProductionTile
+                    title={cuttingPreset === 'this_week' ? "Cut This Week" : "Cut Selected Day"}
+                    data={stats.cut_today}
+                    color="green"
+                    bgColor="#f0fdf4"
+                  />
+                </Col>
+                <Col xs={24} sm={12} lg={6}>
+                  <ProductionTile
+                    title="In Progress"
+                    data={stats.in_progress}
+                    color="orange"
+                    bgColor="#fffbeb"
+                  />
+                </Col>
+                <Col xs={24} sm={12} lg={6}>
+                  <ProductionTile
+                    title="Pending"
+                    data={stats.pending}
+                    color="blue"
+                    bgColor="#eff6ff"
+                  />
+                </Col>
+                <Col xs={24} sm={12} lg={6}>
+                  <ProductionTile
+                    title="Completed (Cumulative)"
+                    data={stats.completed}
+                    color="purple"
+                    bgColor="#faf5ff"
+                  />
+                </Col>
+              </Row>
+            </div>
+
+            {/* View Mode Switcher */}
+            <div style={{ padding: '12px 24px', borderBottom: '1px solid #f0f0f0', display: 'flex', justifyContent: 'flex-start', background: '#fff' }}>
+              <Radio.Group
+                value={viewMode}
+                onChange={(e) => setViewMode(e.target.value)}
+                size="small"
+              >
+                <Radio.Button value="active">Active Production</Radio.Button>
+                <Radio.Button value="completed">Completed Orders</Radio.Button>
+                <Radio.Button value="all">All Orders</Radio.Button>
+              </Radio.Group>
+            </div>
+
+            {/* Table */}
+            <Table
+              dataSource={filteredCuttingRows}
+              pagination={{ pageSize: 15, size: 'small' }}
+              size="small"
+              locale={{ emptyText: 'No workshop orders in this view' }}
+              onRow={(record) => ({
+                style: { cursor: 'pointer' },
+                onClick: () => navigate(`/workshop/orders/${record.id}/edit`)
+              })}
+              columns={[
+                {
+                  title: 'Date', dataIndex: 'date', width: 90,
+                  render: v => {
+                    if (!v || v === '—') return '—'
+                    try {
+                      const d = new Date(v)
+                      return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
+                    } catch { return v }
+                  }
+                },
+                {
+                  title: 'Order No', dataIndex: 'wo_number', width: 100,
+                  render: v => <Text strong style={{ color: '#6366f1' }}>{v}</Text>
+                },
+                {
+                  title: 'Customer Name', dataIndex: 'customer_name', width: 180,
+                  render: v => <Text strong>{v}</Text>
+                },
+                {
+                  title: 'THICKNESS', dataIndex: 'description', width: 200,
+                  render: v => (
+                    <Text style={{ fontSize: 12, color: '#475569' }}>
+                      {v?.length > 40 ? v.substring(0, 40) + '...' : v}
+                    </Text>
+                  )
+                },
+                {
+                  title: 'THIN', dataIndex: 'thin_sqft', width: 80, align: 'right',
+                  render: v => v ? (
+                    <Text strong style={{ color: '#16a34a' }}>
+                      {Number(v).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                    </Text>
+                  ) : null
+                },
+                {
+                  title: 'THICK', dataIndex: 'thick_sqft', width: 80, align: 'right',
+                  render: v => v ? (
+                    <Text strong style={{ color: '#1d4ed8' }}>
+                      {Number(v).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                    </Text>
+                  ) : null
+                },
+                {
+                  title: 'UNCLASS', dataIndex: 'unclassified_sqft', width: 80, align: 'right',
+                  render: v => v ? (
+                    <Text strong style={{ color: '#ea580c' }}>
+                      {Number(v).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                    </Text>
+                  ) : null
+                },
+                {
+                  title: 'Cut / Total', key: 'cut_total', width: 90, align: 'center',
+                  render: (_, record) => (
+                    <Text style={{ fontSize: 13, fontWeight: 600, color: '#334155' }}>
+                      {record.cut_pieces} / {record.total_pieces}
+                    </Text>
+                  )
+                },
+                {
+                  title: 'Progress', dataIndex: 'progress_pct', width: 120,
+                  render: (pct) => (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Progress
+                        percent={pct}
+                        size="small"
+                        strokeColor={{
+                          '0%': '#10b981',
+                          '100%': '#059669',
+                        }}
+                        style={{ flex: 1, margin: 0 }}
+                      />
+                    </div>
+                  )
+                },
+                {
+                  title: 'STATUS', dataIndex: 'status_label', width: 110,
+                  render: (v) => {
+                    const colorMap = {
+                      'PENDING': { bg: '#fef3c7', color: '#b45309', border: '#fde047' },
+                      'UNDR CTNG': { bg: '#fecaca', color: '#dc2626', border: '#fca5a5' },
+                      'UNDR TOUGH': { bg: '#fecaca', color: '#dc2626', border: '#fca5a5' },
+                      'RDY': { bg: '#bbf7d0', color: '#15803d', border: '#86efac' },
+                      'RDY RPDA': { bg: '#bbf7d0', color: '#15803d', border: '#86efac' },
+                      'CANCELLED': { bg: '#e2e8f0', color: '#64748b', border: '#cbd5e1' },
+                    }
+                    const style = colorMap[v] || colorMap['PENDING']
+                    return (
+                      <span style={{
+                        background: style.bg,
+                        color: style.color,
+                        border: `1px solid ${style.border}`,
+                        borderRadius: 4,
+                        padding: '2px 8px',
+                        fontSize: 11,
+                        fontWeight: 700,
+                        letterSpacing: 0.5,
+                      }}>
+                        {v}
+                      </span>
+                    )
+                  }
+                },
+              ]}
+            />
+          </Card>
+        </>
+      )}
 
       <style>{`
         .operational-tracking-row:hover > td { background-color: #fafafa !important; }
