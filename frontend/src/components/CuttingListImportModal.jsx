@@ -1,15 +1,43 @@
 import React, { useState, useEffect } from 'react'
-import { Modal, Upload, Spin, Radio, Card, Input, InputNumber, Select, Table, Button, Alert, Tooltip, Space, Typography, Flex } from 'antd'
+import { Modal, Upload, Spin, Radio, Card, Input, InputNumber, Select, Table, Button, Alert, Tooltip, Space, Typography, Flex, Row, Col } from 'antd'
 import { InboxOutlined, WarningOutlined, PlusOutlined, DeleteOutlined, FileImageOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import { useNavigate } from 'react-router-dom'
-import { aiApi, customerApi, productApi, quotationApi } from '../api'
+import { aiApi, customerApi, quotationApi } from '../api'
+import { settingsApi } from '../api/settingsApi'
 
-const { Text, Title } = Typography
+const { Text } = Typography
 const { Dragger } = Upload
 
 const MM_TO_INCH = 25.4
 const toInch = (v, unit) => unit === 'mm' ? (Number(v) || 0) / MM_TO_INCH : (Number(v) || 0)
+
+const DEFAULT_DROPDOWN_CONFIG = {
+  thicknesses: [3.5, 4, 5, 6, 8, 10, 12],
+  glass_types: ['Annealed', 'Toughened', 'Laminated', 'DGU'],
+  categories: ['Clear', 'Xtra Clear', 'Tinted', 'Reflective', 'Mirror'],
+}
+
+const getDropdownConfig = () => {
+  try {
+    const cfg = JSON.parse(localStorage.getItem('glass_dropdown_config') || '{}')
+    return {
+      thicknesses: cfg.thicknesses?.length ? cfg.thicknesses : DEFAULT_DROPDOWN_CONFIG.thicknesses,
+      glass_types: cfg.glass_types?.length ? cfg.glass_types : DEFAULT_DROPDOWN_CONFIG.glass_types,
+      categories: cfg.categories?.length ? cfg.categories : DEFAULT_DROPDOWN_CONFIG.categories,
+    }
+  } catch {
+    return DEFAULT_DROPDOWN_CONFIG
+  }
+}
+
+const buildDescription = (g) => {
+  const parts = []
+  if (g.glass_category) parts.push(g.glass_category)
+  if (g.glass_type) parts.push(g.glass_type)
+  if (g.glass_thickness) parts.push(`${g.glass_thickness}mm`)
+  return parts.join(' ') || ''
+}
 
 const CuttingListImportModal = ({ open, onClose }) => {
   const navigate = useNavigate()
@@ -25,8 +53,23 @@ const CuttingListImportModal = ({ open, onClose }) => {
   const [customerId, setCustomerId] = useState(null)
 
   const [customers, setCustomers] = useState([])
-  const [products, setProducts] = useState([])
   const [loadingDropdowns, setLoadingDropdowns] = useState(false)
+  const [dropdownConfig, setDropdownConfig] = useState(getDropdownConfig)
+
+  useEffect(() => {
+    settingsApi.get(settingsApi.KEYS.GLASS_DROPDOWN_CONFIG)
+      .then(data => {
+        if (data && Object.keys(data).length > 0) {
+          localStorage.setItem('glass_dropdown_config', JSON.stringify(data))
+          setDropdownConfig({
+            thicknesses: data.thicknesses?.length ? data.thicknesses : DEFAULT_DROPDOWN_CONFIG.thicknesses,
+            glass_types: data.glass_types?.length ? data.glass_types : DEFAULT_DROPDOWN_CONFIG.glass_types,
+            categories: data.categories?.length ? data.categories : DEFAULT_DROPDOWN_CONFIG.categories,
+          })
+        }
+      })
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     if (open) {
@@ -40,18 +83,13 @@ const CuttingListImportModal = ({ open, onClose }) => {
       setCustomerId(null)
 
       setLoadingDropdowns(true)
-      Promise.all([
-        customerApi.dropdown(),
-        productApi.dropdown(),
-      ])
-        .then(([custRes, prodRes]) => {
+      customerApi.dropdown()
+        .then(custRes => {
           const custItems = Array.isArray(custRes.data) ? custRes.data : (custRes.data?.items || [])
-          const prodItems = Array.isArray(prodRes.data) ? prodRes.data : (prodRes.data?.items || [])
           setCustomers(custItems)
-          setProducts(prodItems)
         })
         .catch(err => {
-          console.error("Failed to load dropdowns:", err)
+          console.error("Failed to load customer dropdown:", err)
         })
         .finally(() => {
           setLoadingDropdowns(false)
@@ -70,21 +108,26 @@ const CuttingListImportModal = ({ open, onClose }) => {
       setUnit(detectedUnit)
       setWarnings(data.warnings || [])
 
-      const parsedGroups = (data.groups || []).map((g, gi) => ({
-        id: Date.now() + gi,
-        label: g.label || `Group ${gi + 1}`,
-        stated_total: g.stated_total !== undefined && g.stated_total !== null ? g.stated_total : null,
-        product_id: null,
-        thickness: null,
-        rows: (g.rows || []).map((r, ri) => ({
-          row_key: Date.now() + gi * 1000 + ri,
-          width: r.width ?? null,
-          height: r.height ?? null,
-          qty: r.qty ?? 1,
-          confidence: r.confidence || 'high',
-          note: r.note || null,
-        })),
-      }))
+      const parsedGroups = (data.groups || []).map((g, gi) => {
+        const groupObj = {
+          id: Date.now() + gi,
+          label: g.label || `Group ${gi + 1}`,
+          stated_total: g.stated_total !== undefined && g.stated_total !== null ? g.stated_total : null,
+          glass_thickness: null,
+          glass_type: null,
+          glass_category: null,
+          description: '',
+          rows: (g.rows || []).map((r, ri) => ({
+            row_key: Date.now() + gi * 1000 + ri,
+            width: r.width ?? null,
+            height: r.height ?? null,
+            qty: r.qty ?? 1,
+            confidence: r.confidence || 'high',
+            note: r.note || null,
+          })),
+        }
+        return groupObj
+      })
 
       setGroups(parsedGroups)
       setStage('review')
@@ -101,12 +144,13 @@ const CuttingListImportModal = ({ open, onClose }) => {
     setGroups(prev => prev.map((g, idx) => idx === gIndex ? { ...g, label: val } : g))
   }
 
-  const handleGroupProductChange = (gIndex, val) => {
-    setGroups(prev => prev.map((g, idx) => idx === gIndex ? { ...g, product_id: val } : g))
-  }
-
-  const handleGroupThicknessChange = (gIndex, val) => {
-    setGroups(prev => prev.map((g, idx) => idx === gIndex ? { ...g, thickness: val } : g))
+  const handleGroupAttributeChange = (gIndex, field, val) => {
+    setGroups(prev => prev.map((g, idx) => {
+      if (idx !== gIndex) return g
+      const updated = { ...g, [field]: val }
+      updated.description = buildDescription(updated)
+      return updated
+    }))
   }
 
   const handleRowChange = (gIndex, rIndex, field, val) => {
@@ -145,9 +189,10 @@ const CuttingListImportModal = ({ open, onClose }) => {
     try {
       const payloadGroups = groups.map((g, gi) => ({
         group_key: Date.now() + gi,
-        product_id: g.product_id,
-        description: g.label,
-        glass_thickness: g.thickness || null,
+        description: g.description,
+        glass_thickness: Number(g.glass_thickness),
+        glass_type: g.glass_type,
+        glass_category: g.glass_category,
         sizes: g.rows.map((r, ri) => ({
           size_key: Date.now() + gi * 1000 + ri,
           width_inch: parseFloat(toInch(r.width, unit).toFixed(4)),
@@ -177,16 +222,11 @@ const CuttingListImportModal = ({ open, onClose }) => {
     }
   }
 
-  const canCreate = customerId && groups.length > 0 && groups.every(g => Boolean(g.product_id))
+  const canCreate = customerId && groups.length > 0 && groups.every(g => g.glass_thickness && g.glass_type && g.glass_category)
 
   const customerOptions = customers.map(c => ({
     value: c.id,
     label: `${c.name} ${c.customer_code ? `(${c.customer_code})` : ''}`,
-  }))
-
-  const productOptions = products.map(p => ({
-    value: p.id,
-    label: `${p.name} ${p.thickness_mm ? `(${p.thickness_mm}mm)` : ''}`,
   }))
 
   return (
@@ -411,6 +451,8 @@ const CuttingListImportModal = ({ open, onClose }) => {
                 },
               ]
 
+              const isAttributesComplete = Boolean(group.glass_thickness && group.glass_type && group.glass_category)
+
               return (
                 <Card
                   key={group.id || gIdx}
@@ -424,38 +466,62 @@ const CuttingListImportModal = ({ open, onClose }) => {
                       style={{ fontWeight: 600, fontSize: 14 }}
                     />
                   }
-                  style={{ borderColor: !group.product_id ? '#ff4d4f' : undefined }}
+                  style={{ borderColor: !isAttributesComplete ? '#ff4d4f' : undefined }}
                 >
                   <Space direction="vertical" style={{ width: '100%' }} size="small">
-                    <Flex gap="small" wrap="wrap">
-                      <div style={{ flex: 2, minWidth: 240 }}>
-                        <Text strong style={{ fontSize: 12 }}>
-                          Glass Product <Text type="danger">*</Text>
+                    <div>
+                      <Row gutter={[8, 8]} align="middle">
+                        <Col span={8}>
+                          <Text style={{ fontSize: 10, color: '#64748B', display: 'block', marginBottom: 4, textTransform: 'uppercase', fontWeight: 600 }}>
+                            Thickness <Text type="danger">*</Text>
+                          </Text>
+                          <Select
+                            placeholder="Select mm"
+                            style={{ width: '100%' }}
+                            size="small"
+                            value={group.glass_thickness}
+                            onChange={(v) => handleGroupAttributeChange(gIdx, 'glass_thickness', v)}
+                            options={dropdownConfig.thicknesses.map(t => ({ value: t, label: `${t}mm` }))}
+                            status={!group.glass_thickness ? 'error' : undefined}
+                          />
+                        </Col>
+                        <Col span={8}>
+                          <Text style={{ fontSize: 10, color: '#64748B', display: 'block', marginBottom: 4, textTransform: 'uppercase', fontWeight: 600 }}>
+                            Type <Text type="danger">*</Text>
+                          </Text>
+                          <Select
+                            placeholder="Select Type"
+                            style={{ width: '100%' }}
+                            size="small"
+                            value={group.glass_type}
+                            onChange={(v) => handleGroupAttributeChange(gIdx, 'glass_type', v)}
+                            options={dropdownConfig.glass_types.map(t => ({ value: t, label: t }))}
+                            status={!group.glass_type ? 'error' : undefined}
+                          />
+                        </Col>
+                        <Col span={8}>
+                          <Text style={{ fontSize: 10, color: '#64748B', display: 'block', marginBottom: 4, textTransform: 'uppercase', fontWeight: 600 }}>
+                            Category <Text type="danger">*</Text>
+                          </Text>
+                          <Select
+                            placeholder="Select Category"
+                            style={{ width: '100%' }}
+                            size="small"
+                            value={group.glass_category}
+                            onChange={(v) => handleGroupAttributeChange(gIdx, 'glass_category', v)}
+                            options={dropdownConfig.categories.map(c => ({ value: c, label: c }))}
+                            status={!group.glass_category ? 'error' : undefined}
+                          />
+                        </Col>
+                      </Row>
+
+                      <div style={{ marginTop: 6, padding: '4px 8px', background: '#f8fafc', borderRadius: 4, border: '1px dashed #e2e8f0' }}>
+                        <Text type="secondary" style={{ fontSize: 11, marginRight: 6 }}>Auto Description:</Text>
+                        <Text strong style={{ fontSize: 12, color: group.description ? '#1e293b' : '#94a3b8' }}>
+                          {group.description || '(Select Thickness, Type, and Category)'}
                         </Text>
-                        <Select
-                          placeholder="Select Glass Product (Required)"
-                          showSearch
-                          style={{ width: '100%' }}
-                          value={group.product_id}
-                          onChange={(v) => handleGroupProductChange(gIdx, v)}
-                          filterOption={(input, option) =>
-                            (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-                          }
-                          options={productOptions}
-                          status={!group.product_id ? 'error' : undefined}
-                        />
                       </div>
-                      <div style={{ flex: 1, minWidth: 140 }}>
-                        <Text strong style={{ fontSize: 12 }}>Thickness (mm)</Text>
-                        <InputNumber
-                          placeholder="e.g. 5, 8, 12"
-                          value={group.thickness}
-                          onChange={(v) => handleGroupThicknessChange(gIdx, v)}
-                          style={{ width: '100%' }}
-                          min={0}
-                        />
-                      </div>
-                    </Flex>
+                    </div>
 
                     <Table
                       dataSource={group.rows}
