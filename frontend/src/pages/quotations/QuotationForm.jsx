@@ -2579,7 +2579,71 @@ const QuotationForm = () => {
               { title: 'Proc Cost', dataIndex: 'proc_cost', width: 90, align: 'right', render: v => <Text style={{ color: '#f59e0b' }}>₹{Number(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Text> },
               ...(compWizard.cep_on ? [{ title: <span>CEP Cost<br /><Text type="secondary" style={{ fontSize: 10, fontWeight: 400 }}>Rft × ₹{compWizard.cep_cost_rate}</Text></span>, key: 'cep_cost', width: 110, align: 'center', render: (_, r) => <InputNumber size="small" value={r.cep_cost != null ? parseFloat(Number(r.cep_cost).toFixed(2)) : null} min={0} step={1} style={{ width: '100%', borderColor: '#7c3aed' }} onChange={val => { setCompWizard(prev => { const newRows = prev.rows.map(row => { if (row.key !== r.key) return row; const cep_cost = val || 0, cost_amount = parseFloat(((row.glass_cost || 0) + cep_cost + (row.proc_cost || 0)).toFixed(2)), margin_amount = parseFloat((row.selling_amount - cost_amount).toFixed(2)), margin_pct = cost_amount > 0 ? parseFloat(((margin_amount / cost_amount) * 100).toFixed(2)) : 100; return { ...row, cep_cost, _cep_cost_manual: true, cost_amount, margin_amount, margin_pct } }); const totalCost = newRows.reduce((s, row) => s + row.cost_amount, 0), totalCepCost = newRows.reduce((s, row) => s + (row.cep_cost || 0), 0), totalMargin = prev.totalSelling - totalCost, totalMarginPct = totalCost > 0 ? parseFloat(((totalMargin / totalCost) * 100).toFixed(2)) : 100; return { ...prev, rows: newRows, totalCost, totalCepCost, totalMargin, totalMarginPct } }) }} /> }] : []),
               { title: 'Total Cost', dataIndex: 'cost_amount', width: 100, align: 'right', render: v => <Text strong style={{ color: '#dc2626' }}>₹{Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Text> },
-            ]} />
+            ]}
+            summary={() => {
+              const rows = compWizard.rows || []
+              const totalQty = rows.reduce((s, r) => s + (Number(r.quantity) || 0), 0)
+              const totalSellingSqft = rows.reduce((s, r) => s + (parseFloat(r.selling_sqft) || 0), 0)
+              const totalChargedSqft = rows.reduce((s, r) => s + (parseFloat(r.charged_sqft) || 0), 0)
+              const totalActualRft = rows.reduce((s, r) => s + (parseFloat(r.actual_rft) || 0), 0)
+              const totalSellingAmount = rows.reduce((s, r) => s + (parseFloat(r.selling_amount) || 0), 0)
+              const totalGlassCost = rows.reduce((s, r) => s + (parseFloat(r.glass_cost) || 0), 0)
+              const totalProcCost = rows.reduce((s, r) => s + (parseFloat(r.proc_cost) || 0), 0)
+              const totalCepCost = rows.reduce((s, r) => s + (parseFloat(r.cep_cost) || 0), 0)
+              const totalCostAmount = rows.reduce((s, r) => s + (parseFloat(r.cost_amount) || 0), 0)
+
+              return (
+                <Table.Summary>
+                  <Table.Summary.Row style={{ background: '#f8fafc', fontWeight: 600 }}>
+                    <Table.Summary.Cell index={0}>
+                      <Text strong style={{ fontSize: 12 }}>Total</Text>
+                    </Table.Summary.Cell>
+                    <Table.Summary.Cell index={1}>
+                      <Text style={{ fontSize: 12 }}>{totalQty}</Text>
+                    </Table.Summary.Cell>
+                    <Table.Summary.Cell index={2}>
+                      <Text>{totalSellingSqft.toFixed(3)}</Text>
+                    </Table.Summary.Cell>
+                    <Table.Summary.Cell index={3}>
+                      <Text type="secondary">{totalChargedSqft.toFixed(3)}</Text>
+                    </Table.Summary.Cell>
+                    <Table.Summary.Cell index={4}>
+                      <Text type="secondary">{totalActualRft.toFixed(3)}</Text>
+                    </Table.Summary.Cell>
+                    <Table.Summary.Cell index={5} />
+                    <Table.Summary.Cell index={6} />
+                    <Table.Summary.Cell index={7} align="right">
+                      <Text strong style={{ color: '#16a34a' }}>
+                        ₹{totalSellingAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </Text>
+                    </Table.Summary.Cell>
+                    <Table.Summary.Cell index={8} align="right">
+                      <Text style={{ color: '#ea580c' }}>
+                        ₹{totalGlassCost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </Text>
+                    </Table.Summary.Cell>
+                    <Table.Summary.Cell index={9} align="right">
+                      <Text style={{ color: '#f59e0b' }}>
+                        ₹{totalProcCost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </Text>
+                    </Table.Summary.Cell>
+                    {compWizard.cep_on && (
+                      <Table.Summary.Cell index={10} align="right">
+                        <Text style={{ color: '#7c3aed' }}>
+                          ₹{totalCepCost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </Text>
+                      </Table.Summary.Cell>
+                    )}
+                    <Table.Summary.Cell index={compWizard.cep_on ? 11 : 10} align="right">
+                      <Text strong style={{ color: '#dc2626' }}>
+                        ₹{totalCostAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </Text>
+                    </Table.Summary.Cell>
+                  </Table.Summary.Row>
+                </Table.Summary>
+              )
+            }}
+          />
 
           <Divider style={{ margin: '12px 0' }} />
           <Row gutter={[12, 8]}>
