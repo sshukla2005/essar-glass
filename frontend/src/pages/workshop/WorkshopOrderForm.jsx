@@ -84,6 +84,8 @@ const WorkshopOrderForm = () => {
   }
   const [expandedRowKeys, setExpandedRowKeys] = useState([])
   const [exportWizard, setExportWizard] = useState(false)
+  const [exportFormat, setExportFormat] = useState('excel')
+  const exportFormatRef = useRef('excel')
   const [downloadPickerOpen, setDownloadPickerOpen] = useState(false)
   const [exportLoading, setExportLoading] = useState(null)
   const [waLink, setWaLink] = useState(null)
@@ -818,8 +820,13 @@ const WorkshopOrderForm = () => {
   })
 
   const statusMutation = useMutation({
-    mutationFn: (newStatus) => workshopOrderApi.changeStatus(id, newStatus),
-    onSuccess: (_res, newStatus) => {
+    mutationFn: (variables) => {
+      const newStatus = typeof variables === 'string' ? variables : variables?.status
+      return workshopOrderApi.changeStatus(id, newStatus)
+    },
+    onSuccess: (_res, variables) => {
+      const newStatus = typeof variables === 'string' ? variables : variables?.status
+      const chosenFormat = (typeof variables === 'object' && variables?.format) || exportFormatRef.current || exportFormat || 'excel'
       queryClient.invalidateQueries({ queryKey: ['workshop_orders', id] })
       if (newStatus === 'in_progress') {
         setLines(prev => prev.map(l => {
@@ -828,7 +835,7 @@ const WorkshopOrderForm = () => {
         }))
         setIsDirty(true)
         message.success('Processing started — all lines marked as fully cut. Review and Save.')
-        handleShareWOExcelToWhatsApp(id, record)
+        handleShareWOFileToWhatsApp(id, record, chosenFormat)
       } else {
         const label = String(newStatus).replace(/_/g, ' ').toUpperCase()
         message.success(`Workshop Order moved to ${label}`)
@@ -957,7 +964,7 @@ const WorkshopOrderForm = () => {
     })
   }
 
-  const handleStartProcessing = async () => {
+  const canStartProcessing = () => {
     const missing = missingArtworkLines()
     if (missing.length > 0) {
       const nums = missing.map(({ i }) => i + 1).join(', ')
@@ -965,13 +972,23 @@ const WorkshopOrderForm = () => {
         title: 'Artwork required before processing',
         content: `${missing.length} glass line(s) with a process have no artwork uploaded (row ${nums}). Upload artwork for each, or turn off "Has Process", before starting processing.`,
       })
-      return
+      return false
     }
 
     if (!lines.length) {
       message.warning('Add at least one glass line before starting processing.')
-      return
+      return false
     }
+
+    return true
+  }
+
+  const handleStartProcessing = async (chosenFormat) => {
+    if (!canStartProcessing()) return false
+
+    const fmt = chosenFormat || exportFormatRef.current || exportFormat || 'excel'
+    exportFormatRef.current = fmt
+    setExportFormat(fmt)
 
     // Order-level cutting start: stamp every line that has not started yet
     const nowIso = new Date().toISOString()
@@ -997,11 +1014,12 @@ const WorkshopOrderForm = () => {
         await saveMutation.mutateAsync(values)
       } catch (err) {
         message.error('Could not start cutting: ' + (err?.message || ''))
-        return
+        return false
       }
     }
 
-    statusMutation.mutate('in_progress')
+    statusMutation.mutate({ status: 'in_progress', format: fmt })
+    return true
   }
 
   const handleSave = async (andNew = false) => {
@@ -1041,6 +1059,19 @@ const WorkshopOrderForm = () => {
       console.error('PDF generation error:', err)
       message.error('PDF generation failed: ' + (err?.message || 'Unknown error'))
     }
+  }
+
+  const buildWOPdfBlob = async () => {
+    const custName = record?.customer_name || record?.customer?.name || customerList.find(c => c.id === record?.customer_id)?.name || 'Customer'
+    const doc = await generateWorkshopOrderPDF({
+      ...record,
+      customer_name: custName,
+      lines,
+      artworkMaps,
+    })
+    const blob = doc ? doc.output('blob') : null
+    const filename = makePdfFilename(record?.wo_number || 'WorkshopOrder', custName, 'Customer', 'pdf')
+    return { blob, filename, customerName: custName }
   }
 
   const buildWOExcelBlob = async () => {
@@ -1385,17 +1416,31 @@ const WorkshopOrderForm = () => {
     }
   }
 
-  const handleShareWOExcelToWhatsApp = async (targetWoId, targetRecord) => {
+  const handleShareWOFileToWhatsApp = async (targetWoId, targetRecord, formatToUse) => {
     const woId = targetWoId || id
     const woRec = targetRecord || record
+    const format = formatToUse || exportFormatRef.current || exportFormat || 'excel'
+    const isPdf = format === 'pdf'
     let blob, filename, customerName
     try {
-      const resBlob = await buildWOExcelBlob()
-      blob = resBlob.blob
-      filename = resBlob.filename
-      customerName = resBlob.customerName
+      if (isPdf) {
+        const resBlob = await buildWOPdfBlob()
+        blob = resBlob.blob
+        filename = resBlob.filename
+        customerName = resBlob.customerName
+      } else {
+        const resBlob = await buildWOExcelBlob()
+        blob = resBlob.blob
+        filename = resBlob.filename
+        customerName = resBlob.customerName
+      }
     } catch (err) {
-      console.error('Error generating Excel for share:', err)
+      console.error(`Error generating ${isPdf ? 'PDF' : 'Excel'} for share:`, err)
+      return
+    }
+
+    if (!blob) {
+      console.error('No blob generated for share')
       return
     }
 
@@ -1404,9 +1449,10 @@ const WorkshopOrderForm = () => {
       formData.append('file', blob, filename)
       const res = await workshopOrderApi.shareFile(woId, formData)
       const base = window.location.origin
+      const formatLabel = isPdf ? 'PDF' : 'Excel'
       const text = `*${woRec?.wo_number || ('WO-' + woId)}* — ${customerName}\n` +
         `${lines.length} job card(s)\n` +
-        `Download cutting list:\n${base}${res.data.url}`
+        `Download cutting list (${formatLabel}):\n${base}${res.data.url}`
       window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank')
     } catch (err) {
       console.warn('Share upload failed, falling back to local download', err)
@@ -1417,6 +1463,8 @@ const WorkshopOrderForm = () => {
       window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank')
     }
   }
+
+  const handleShareWOExcelToWhatsApp = handleShareWOFileToWhatsApp
 
   return (
     <MasterForm title="Workshop Order" isEdit={isEdit} isLoading={isLoading} isSaving={saveMutation.isPending}
@@ -1484,7 +1532,9 @@ const WorkshopOrderForm = () => {
               <Button
                 type="primary"
                 icon={<PlayCircleOutlined />}
-                onClick={handleStartProcessing}
+                onClick={() => {
+                  if (canStartProcessing()) setExportWizard(true)
+                }}
                 style={{ background: '#f59e0b' }}
               >
                 Start Processing
@@ -1975,30 +2025,29 @@ const WorkshopOrderForm = () => {
           <div style={{ display: 'flex', gap: 12, marginBottom: 20 }}>
             {/* PDF Button */}
             <div
-              onClick={async () => {
-                setExportLoading('pdf')
-                try {
-                  await generateWOPdf()
-                  const phone = customerList.find(c => c.id === record?.customer_id)?.phone || ''
-                  const msg = encodeURIComponent(
-                    `Hi, please find attached the Workshop Order *${record?.wo_number}* for SO *${record?.so_number}*.\n` +
-                    `Customer: ${customerList.find(c => c.id === record?.customer_id)?.name || ''}\n` +
-                    `Items: ${lines.length} job card(s)\n` +
-                    `Date: ${dayjs().format('DD/MM/YYYY')}`
-                  )
-                  if (phone) setWaLink(`https://wa.me/${phone.replace(/\D/g, '')}?text=${msg}`)
-                } finally {
-                  setExportLoading(null)
-                }
+              id="wo-export-format-pdf"
+              onClick={() => {
+                setExportFormat('pdf')
+                exportFormatRef.current = 'pdf'
               }}
               style={{
-                flex: 1, border: '2px solid #e2e8f0', borderRadius: 10,
+                flex: 1, border: '2px solid', borderRadius: 10,
                 padding: '20px 16px', cursor: 'pointer', textAlign: 'center',
                 transition: 'all 0.2s',
-                background: exportLoading === 'pdf' ? '#eff6ff' : '#fff',
-                borderColor: exportLoading === 'pdf' ? '#3b82f6' : '#e2e8f0',
+                position: 'relative',
+                background: exportFormat === 'pdf' ? '#eff6ff' : '#fff',
+                borderColor: exportFormat === 'pdf' ? '#3b82f6' : '#e2e8f0',
+                boxShadow: exportFormat === 'pdf' ? '0 0 0 2px rgba(59, 130, 246, 0.2)' : 'none',
               }}
             >
+              {exportFormat === 'pdf' && (
+                <div style={{
+                  position: 'absolute', top: 8, right: 8,
+                  width: 20, height: 20, borderRadius: '50%',
+                  background: '#3b82f6', color: '#fff',
+                  fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center'
+                }}>✓</div>
+              )}
               <div style={{ fontSize: 32, marginBottom: 8 }}>📄</div>
               <div style={{ fontWeight: 700, fontSize: 14, color: '#0f172a' }}>PDF</div>
               <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>
@@ -2008,30 +2057,29 @@ const WorkshopOrderForm = () => {
 
             {/* Excel Button */}
             <div
-              onClick={async () => {
-                setExportLoading('excel')
-                try {
-                  await generateWOExcel()
-                  const phone = customerList.find(c => c.id === record?.customer_id)?.phone || ''
-                  const msg = encodeURIComponent(
-                    `Hi, please find attached the Workshop Order *${record?.wo_number}* for SO *${record?.so_number}*.\n` +
-                    `Customer: ${customerList.find(c => c.id === record?.customer_id)?.name || ''}\n` +
-                    `Items: ${lines.length} job card(s)\n` +
-                    `Date: ${dayjs().format('DD/MM/YYYY')}`
-                  )
-                  if (phone) setWaLink(`https://wa.me/${phone.replace(/\D/g, '')}?text=${msg}`)
-                } finally {
-                  setExportLoading(null)
-                }
+              id="wo-export-format-excel"
+              onClick={() => {
+                setExportFormat('excel')
+                exportFormatRef.current = 'excel'
               }}
               style={{
-                flex: 1, border: '2px solid #e2e8f0', borderRadius: 10,
+                flex: 1, border: '2px solid', borderRadius: 10,
                 padding: '20px 16px', cursor: 'pointer', textAlign: 'center',
                 transition: 'all 0.2s',
-                background: exportLoading === 'excel' ? '#f0fdf4' : '#fff',
-                borderColor: exportLoading === 'excel' ? '#10b981' : '#e2e8f0',
+                position: 'relative',
+                background: exportFormat === 'excel' ? '#f0fdf4' : '#fff',
+                borderColor: exportFormat === 'excel' ? '#10b981' : '#e2e8f0',
+                boxShadow: exportFormat === 'excel' ? '0 0 0 2px rgba(16, 185, 129, 0.2)' : 'none',
               }}
             >
+              {exportFormat === 'excel' && (
+                <div style={{
+                  position: 'absolute', top: 8, right: 8,
+                  width: 20, height: 20, borderRadius: '50%',
+                  background: '#10b981', color: '#fff',
+                  fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center'
+                }}>✓</div>
+              )}
               <div style={{ fontSize: 32, marginBottom: 8 }}>📊</div>
               <div style={{ fontWeight: 700, fontSize: 14, color: '#0f172a' }}>Excel</div>
               <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>
@@ -2068,14 +2116,19 @@ const WorkshopOrderForm = () => {
 
           {/* Start Processing button */}
           <Button
+            id="wo-start-processing-now-btn"
             type="primary"
             block
             icon={<PlayCircleOutlined />}
+            loading={statusMutation.isPending || saveMutation.isPending}
             style={{ background: '#f59e0b', borderColor: '#f59e0b', height: 42, fontSize: 14, fontWeight: 600 }}
-            onClick={() => {
-              setExportWizard(false)
-              setWaLink(null)
-              changeStatus('in_progress')
+            onClick={async () => {
+              const chosenFormat = exportFormatRef.current || exportFormat || 'excel'
+              const ok = await handleStartProcessing(chosenFormat)
+              if (ok) {
+                setExportWizard(false)
+                setWaLink(null)
+              }
             }}
           >
             Start Processing Now

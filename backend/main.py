@@ -553,8 +553,21 @@ async def upload_wo_file(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    if not file.filename.endswith(".xlsx"):
-        raise HTTPException(status_code=400, detail="Only .xlsx files are allowed")
+    ext = None
+    filename_lower = (file.filename or "").lower()
+    if filename_lower.endswith(".xlsx"):
+        ext = "xlsx"
+    elif filename_lower.endswith(".pdf"):
+        ext = "pdf"
+    elif file.content_type:
+        ct = file.content_type.lower()
+        if "spreadsheet" in ct or "excel" in ct or ct == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
+            ext = "xlsx"
+        elif ct == "application/pdf":
+            ext = "pdf"
+
+    if not ext:
+        raise HTTPException(status_code=400, detail="Only .xlsx and .pdf files are allowed")
 
     contents = await file.read()
     if len(contents) > 5 * 1024 * 1024:
@@ -563,16 +576,17 @@ async def upload_wo_file(
     wo_dir = os.path.join(settings.UPLOAD_DIR, "wo")
     os.makedirs(wo_dir, exist_ok=True)
 
-    # Delete existing file for this wo_id to prevent accumulation
-    existing_pattern = os.path.join(wo_dir, f"WO{wo_id}_*.xlsx")
+    # Delete existing file for this wo_id to prevent accumulation regardless of extension
+    existing_pattern = os.path.join(wo_dir, f"WO{wo_id}_*")
     for old_file in glob.glob(existing_pattern):
-        try:
-            os.remove(old_file)
-        except Exception:
-            pass
+        if os.path.isfile(old_file):
+            try:
+                os.remove(old_file)
+            except Exception:
+                pass
 
     token = secrets.token_urlsafe(8)
-    filename = f"WO{wo_id}_{token}.xlsx"
+    filename = f"WO{wo_id}_{token}.{ext}"
     filepath = os.path.join(wo_dir, filename)
 
     with open(filepath, "wb") as f:
