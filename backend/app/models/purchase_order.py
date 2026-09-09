@@ -21,6 +21,8 @@ class PurchaseOrder(Base, TimestampMixin, SoftDeleteMixin):
     tax_amount        = Column(Float,       default=0)
     total_amount      = Column(Float,       default=0)
     vendor_reference  = Column(String(200), nullable=True)
+    unit_mode         = Column(String(10),  default="inch", nullable=True)
+    gst_mode          = Column(String(20),  default="cgst_sgst", nullable=True)
     linked_ref        = Column(JSON,        nullable=True)
     company_id        = Column(Integer, ForeignKey("companies.id"),
                                nullable=True, index=True)

@@ -15,7 +15,8 @@ import {
   App,
   Typography,
   Collapse,
-  Modal
+  Modal,
+  Radio
 } from 'antd'
 import {
   PlusOutlined,
@@ -111,6 +112,8 @@ const PurchaseOrderForm = () => {
   const [hardwareItems, setHardwareItems] = useState([])
   const [laborItems, setLaborItems] = useState([])
   const [wastageItems, setWastageItems] = useState([])
+  const [poUnit, setPoUnit] = useState('inch')
+  const [gstMode, setGstMode] = useState('cgst_sgst')
 
   const { data: record, isLoading } = useQuery({
     queryKey: ['purchase_orders', id],
@@ -163,6 +166,7 @@ const PurchaseOrderForm = () => {
           try {
             const so = (await salesOrderApi.get(parseInt(soIdParam))).data
             form.setFieldValue('vendor_reference', so.so_number)
+            if (so.unit_mode) setPoUnit(so.unit_mode)
 
             let groups = []
             if (so.groups?.length) {
@@ -260,6 +264,8 @@ const PurchaseOrderForm = () => {
         po_date: record.po_date ? dayjs(record.po_date) : null,
         expected_delivery: record.expected_delivery ? dayjs(record.expected_delivery) : null,
       })
+      if (record.unit_mode) setPoUnit(record.unit_mode)
+      if (record.gst_mode) setGstMode(record.gst_mode)
       if (record.lines?.length) {
         const rawLines = record.lines
 
@@ -273,8 +279,8 @@ const PurchaseOrderForm = () => {
             key: line.id || line.key || (Date.now() + idx + Math.random()),
             description: line.description || '',
             product_id: line.product_id || null,
-            width_inch: line.width_mm ? parseFloat((line.width_mm / 25.4).toFixed(4)) : 0,
-            height_inch: line.height_mm ? parseFloat((line.height_mm / 25.4).toFixed(4)) : 0,
+            width_inch: line.width_inch ?? (line.width_mm ? parseFloat((line.width_mm / 25.4).toFixed(4)) : 0),
+            height_inch: line.height_inch ?? (line.height_mm ? parseFloat((line.height_mm / 25.4).toFixed(4)) : 0),
             sqft: line.sqft || 0,
             quantity: line.quantity || 1,
             unit_price: line.unit_price || 0,
@@ -380,22 +386,24 @@ const PurchaseOrderForm = () => {
     const subtotal = parseFloat((glassSubtotal + hwSubtotal + lbSubtotal + wstSubtotal).toFixed(2))
 
     let tax_amount = 0
-    glassGroups.forEach(g => {
-      const prod = productList.find(p => p.id === g.product_id)
-      const taxRate = prod?.tax_rate ?? 18
-      ;(g.sizes || []).forEach(sz => {
-        tax_amount += (sz.subtotal || 0) * taxRate / 100
+    if (gstMode !== 'none' && gstMode !== 'off') {
+      glassGroups.forEach(g => {
+        const prod = productList.find(p => p.id === g.product_id)
+        const taxRate = prod?.tax_rate ?? 18
+        ;(g.sizes || []).forEach(sz => {
+          tax_amount += (sz.subtotal || 0) * taxRate / 100
+        })
       })
-    })
-    hardwareItems.forEach(h => {
-      tax_amount += (h.subtotal || 0) * 18 / 100
-    })
-    laborItems.forEach(l => {
-      tax_amount += (l.subtotal || 0) * 18 / 100
-    })
-    wastageItems.forEach(w => {
-      tax_amount += (w.subtotal || 0) * 18 / 100
-    })
+      hardwareItems.forEach(h => {
+        tax_amount += (h.subtotal || 0) * 18 / 100
+      })
+      laborItems.forEach(l => {
+        tax_amount += (l.subtotal || 0) * 18 / 100
+      })
+      wastageItems.forEach(w => {
+        tax_amount += (w.subtotal || 0) * 18 / 100
+      })
+    }
 
     tax_amount = parseFloat(tax_amount.toFixed(2))
     const total_amount = parseFloat((subtotal + tax_amount).toFixed(2))
@@ -409,7 +417,7 @@ const PurchaseOrderForm = () => {
       tax_amount,
       total_amount,
     }
-  }, [glassGroups, hardwareItems, laborItems, wastageItems, productList])
+  }, [glassGroups, hardwareItems, laborItems, wastageItems, productList, gstMode])
 
   const saveMutation = useMutation({
     mutationFn: (data) => isEdit ? purchaseOrderApi.update(id, data) : purchaseOrderApi.create(data),
@@ -450,6 +458,8 @@ const PurchaseOrderForm = () => {
       const values = await form.validateFields()
       if (values.po_date) values.po_date = values.po_date.format('YYYY-MM-DD')
       if (values.expected_delivery) values.expected_delivery = values.expected_delivery.format('YYYY-MM-DD')
+      values.unit_mode = poUnit
+      values.gst_mode = gstMode
       values.lines = getFlatLines()
       Object.assign(values, totals)
       await saveMutation.mutateAsync(values)
@@ -635,26 +645,48 @@ const PurchaseOrderForm = () => {
       )
     },
     {
-      title: 'W (in)',
+      title: `W (${poUnit === 'inch' ? 'in' : 'mm'})`,
       width: 100,
       dataIndex: 'width_inch',
-      render: (v, row) => (
+      render: (v, row) => poUnit === 'inch' ? (
         <FractionInput
           value={v}
           placeholder="W (in)"
           onChange={val => updateGlassSize(group.key, row.key, 'width_inch', val)}
         />
+      ) : (
+        <InputNumber
+          size="small"
+          value={v ? Math.round(v * 25.4) : null}
+          min={0}
+          step={1}
+          precision={0}
+          placeholder="W (mm)"
+          style={{ width: '100%', borderRadius: 6 }}
+          onChange={val => updateGlassSize(group.key, row.key, 'width_inch', val ? val / 25.4 : null)}
+        />
       )
     },
     {
-      title: 'H (in)',
+      title: `H (${poUnit === 'inch' ? 'in' : 'mm'})`,
       width: 100,
       dataIndex: 'height_inch',
-      render: (v, row) => (
+      render: (v, row) => poUnit === 'inch' ? (
         <FractionInput
           value={v}
           placeholder="H (in)"
           onChange={val => updateGlassSize(group.key, row.key, 'height_inch', val)}
+        />
+      ) : (
+        <InputNumber
+          size="small"
+          value={v ? Math.round(v * 25.4) : null}
+          min={0}
+          step={1}
+          precision={0}
+          placeholder="H (mm)"
+          style={{ width: '100%', borderRadius: 6 }}
+          onChange={val => updateGlassSize(group.key, row.key, 'height_inch', val ? val / 25.4 : null)}
         />
       )
     },
@@ -1033,6 +1065,7 @@ const PurchaseOrderForm = () => {
                   recordData.subtotal = totals.subtotal
                   recordData.tax_amount = totals.tax_amount
                   recordData.total_amount = totals.total_amount
+                  recordData.unit_mode = poUnit
                   generatePOPDF(recordData)
                 }}
               >
@@ -1058,37 +1091,66 @@ const PurchaseOrderForm = () => {
               border: '1px solid #E2E8F0',
               boxShadow: '0 1px 3px rgba(0,0,0,0.02), 0 1px 2px rgba(0,0,0,0.04)',
               marginBottom: 20,
-              padding: 24
+              overflow: 'hidden'
             }}>
-              <CompanySelector form={form} />
-              <Row gutter={16}>
-                <Col xs={24} sm={12} md={8}>
-                  <Form.Item name="vendor_id" label={<span style={{ fontWeight: 600, fontSize: 12, color: '#475569' }}>Vendor</span>} rules={[{ required: true }]}>
-                    <Select
-                      showSearch
-                      placeholder="Select Vendor"
-                      options={vendors.map(v => ({ value: v.id, label: v.name }))}
-                      filterOption={(input, option) => (option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
-                      style={{ borderRadius: 6 }}
-                    />
-                  </Form.Item>
-                </Col>
-                <Col xs={12} sm={6} md={5}>
-                  <Form.Item name="po_date" label={<span style={{ fontWeight: 600, fontSize: 12, color: '#475569' }}>Order Date</span>}>
-                    <DatePicker style={{ width: '100%', borderRadius: 6 }} />
-                  </Form.Item>
-                </Col>
-                <Col xs={12} sm={6} md={5}>
-                  <Form.Item name="expected_delivery" label={<span style={{ fontWeight: 600, fontSize: 12, color: '#475569' }}>Expected Delivery</span>}>
-                    <DatePicker style={{ width: '100%', borderRadius: 6 }} disabledDate={notBefore(watchedPoDate)} />
-                  </Form.Item>
-                </Col>
-                <Col xs={24} sm={12} md={6}>
-                  <Form.Item name="vendor_reference" label={<span style={{ fontWeight: 600, fontSize: 12, color: '#475569' }}>Vendor Ref / SO #</span>}>
-                    <Input placeholder="Reference / SO #" style={{ borderRadius: 6 }} />
-                  </Form.Item>
-                </Col>
-              </Row>
+              {/* Header */}
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: '16px 24px',
+                borderBottom: '1px solid #F1F5F9',
+                background: '#FAFBFD'
+              }}>
+                <span style={{ fontSize: 16, fontWeight: 600, color: '#0f172a', letterSpacing: -0.1 }}>
+                  Purchase Order Details
+                </span>
+                <Space>
+                  <Radio.Group
+                    value={poUnit}
+                    onChange={e => setPoUnit(e.target.value)}
+                    buttonStyle="solid"
+                    size="small"
+                    style={{ borderRadius: 6 }}
+                  >
+                    <Radio.Button value="inch" style={{ borderRadius: '6px 0 0 6px' }}>inch</Radio.Button>
+                    <Radio.Button value="mm" style={{ borderRadius: '0 6px 6px 0' }}>MM</Radio.Button>
+                  </Radio.Group>
+                  <Text type="secondary" style={{ fontSize: 11 }}>(Default: Inch)</Text>
+                </Space>
+              </div>
+
+              <div style={{ padding: 24 }}>
+                <CompanySelector form={form} />
+                <Row gutter={16}>
+                  <Col xs={24} sm={12} md={8}>
+                    <Form.Item name="vendor_id" label={<span style={{ fontWeight: 600, fontSize: 12, color: '#475569' }}>Vendor</span>} rules={[{ required: true }]}>
+                      <Select
+                        showSearch
+                        placeholder="Select Vendor"
+                        options={vendors.map(v => ({ value: v.id, label: v.name }))}
+                        filterOption={(input, option) => (option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
+                        style={{ borderRadius: 6 }}
+                      />
+                    </Form.Item>
+                  </Col>
+                  <Col xs={12} sm={6} md={5}>
+                    <Form.Item name="po_date" label={<span style={{ fontWeight: 600, fontSize: 12, color: '#475569' }}>Order Date</span>}>
+                      <DatePicker style={{ width: '100%', borderRadius: 6 }} />
+                    </Form.Item>
+                  </Col>
+                  <Col xs={12} sm={6} md={5}>
+                    <Form.Item name="expected_delivery" label={<span style={{ fontWeight: 600, fontSize: 12, color: '#475569' }}>Expected Delivery</span>}>
+                      <DatePicker style={{ width: '100%', borderRadius: 6 }} disabledDate={notBefore(watchedPoDate)} />
+                    </Form.Item>
+                  </Col>
+                  <Col xs={24} sm={12} md={6}>
+                    <Form.Item name="vendor_reference" label={<span style={{ fontWeight: 600, fontSize: 12, color: '#475569' }}>Vendor Ref / SO #</span>}>
+                      <Input placeholder="Reference / SO #" style={{ borderRadius: 6 }} />
+                    </Form.Item>
+                  </Col>
+                </Row>
+              </div>
             </div>
 
             {/* Glass Line Items Section */}
@@ -1435,10 +1497,49 @@ const PurchaseOrderForm = () => {
                       <Text style={{ color: '#0f172a' }}>{fmtCurrency(totals.subtotal)}</Text>
                     </div>
 
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
-                      <Text type="secondary">GST Tax (18%)</Text>
-                      <Text style={{ fontWeight: 500, color: '#334155' }}>{fmtCurrency(totals.tax_amount)}</Text>
+                    {/* GST Toggle Selector */}
+                    <div style={{ 
+                      display: 'flex', 
+                      justifyContent: 'space-between', 
+                      alignItems: 'center', 
+                      marginBottom: 12, 
+                      padding: '10px 0', 
+                      borderTop: '1px solid #F1F5F9' 
+                    }}>
+                      <Text style={{ fontSize: 12, color: '#64748B', fontWeight: 500 }}>GST Config</Text>
+                      <Radio.Group 
+                        value={gstMode} 
+                        onChange={e => setGstMode(e.target.value)} 
+                        buttonStyle="solid" 
+                        size="small"
+                        style={{ borderRadius: 6 }}
+                      >
+                        <Radio.Button value="cgst_sgst" style={{ borderRadius: '4px 0 0 4px' }}>CGST/SGST</Radio.Button>
+                        <Radio.Button value="igst">IGST</Radio.Button>
+                        <Radio.Button value="none" style={{ borderRadius: '0 4px 4px 0' }}>None</Radio.Button>
+                      </Radio.Group>
                     </div>
+
+                    {/* GST Breakdowns */}
+                    {gstMode === 'cgst_sgst' && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                          <Text type="secondary">CGST</Text>
+                          <Text style={{ fontWeight: 500, color: '#334155' }}>{fmtCurrency(totals.tax_amount / 2)}</Text>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                          <Text type="secondary">SGST</Text>
+                          <Text style={{ fontWeight: 500, color: '#334155' }}>{fmtCurrency(totals.tax_amount / 2)}</Text>
+                        </div>
+                      </div>
+                    )}
+
+                    {gstMode === 'igst' && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 14 }}>
+                        <Text type="secondary">IGST</Text>
+                        <Text style={{ fontWeight: 500, color: '#334155' }}>{fmtCurrency(totals.tax_amount)}</Text>
+                      </div>
+                    )}
                   </div>
 
                   <div style={{

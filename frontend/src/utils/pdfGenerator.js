@@ -1041,18 +1041,29 @@ const drawGroupBanner = (doc, groupNo, refCode, desc, isToughened, hasCep, y) =>
   return y + bannerH
 }
 
-const drawDataRow = (doc, cols, vals, isAlt, y) => {
+const drawDataRow = (doc, cols, vals, isAlt, y, colSpans = null) => {
   const rowH = 6.5
   setFont(doc, 7, 'normal', C.text)
   
+  let skipUntil = -1
   cols.forEach((c, i) => {
+    if (i <= skipUntil) return
+
+    const span = (colSpans && colSpans[i]) ? colSpans[i] : 1
+    const spannedCols = span > 1 ? cols.slice(i, i + span) : [c]
+    const totalW = spannedCols.reduce((sum, col) => sum + col.w, 0)
+
     drawLine(doc, c.x, y, c.x, y + rowH, [60, 60, 60], 0.2)
     const v = String(vals[i] ?? '')
     const isAmountCol = (i === cols.length - 1)
-    const cx = isAmountCol ? c.x + c.w - 3.0 : (c.a === 'r' ? c.x + c.w - 2.0 : c.a === 'c' ? c.x + c.w / 2 : c.x + 2.0)
-    const al = isAmountCol ? 'right' : (c.a === 'r' ? 'right' : c.a === 'c' ? 'center' : 'left')
-    const maxLen = isAmountCol ? 24 : Math.max(5, Math.floor(c.w / 1.6))
+    const cx = (span > 1) ? c.x + 2.0 : (isAmountCol ? c.x + c.w - 3.0 : (c.a === 'r' ? c.x + c.w - 2.0 : c.a === 'c' ? c.x + c.w / 2 : c.x + 2.0))
+    const al = (span > 1) ? 'left' : (isAmountCol ? 'right' : (c.a === 'r' ? 'right' : c.a === 'c' ? 'center' : 'left'))
+    const maxLen = (span > 1) ? Math.max(5, Math.floor(totalW / 1.6)) : (isAmountCol ? 24 : Math.max(5, Math.floor(c.w / 1.6)))
     if (v) drawText(doc, v.substring(0, maxLen), cx, y + 4.5, { align: al })
+
+    if (span > 1) {
+      skipUntil = i + span - 1
+    }
   })
   
   const lastCol = cols[cols.length - 1]
@@ -2632,6 +2643,7 @@ const drawPOItemsCard = (doc, lines, cols, startY, pageNum, po, company) => {
   ly = drawTableHeader(doc, cols, ly)
   
   let tQty = 0, tArea = 0, tRft = 0, tAmt = 0
+  const unitMode = po?.unit_mode || 'inch'
   
   lines.forEach((line, i) => {
     const w = line.width_inch || (line.width_mm ? line.width_mm / 25.4 : 0)
@@ -2653,19 +2665,34 @@ const drawPOItemsCard = (doc, lines, cols, startY, pageNum, po, company) => {
     const chargedH = line.charged_h_inch || h
     const rate = line.unit_price ?? line.rate ?? 0
     
-    const vals = [
+    const isNonGlass = Boolean((line.item_type && line.item_type !== 'glass') || (!line.item_type && w === 0 && h === 0 && (line.description || line.remarks || line.product_name)))
+    const desc = isNonGlass
+      ? String(line.description || line.remarks || line.product_name || (line.item_type ? (line.item_type.charAt(0).toUpperCase() + line.item_type.slice(1)) : '')).trim()
+      : ''
+    
+    const vals = isNonGlass ? [
       String(i + 1),
-      w > 0 ? toFraction(w) : '',
-      h > 0 ? toFraction(h) : '',
-      chargedW > 0 ? toFraction(chargedW) : '',
-      chargedH > 0 ? toFraction(chargedH) : '',
+      desc,
+      '',
+      '',
+      '',
+      String(qty),
+      area > 0 ? area.toFixed(3) : '',
+      fmtN(rate),
+      fmtN(amt)
+    ] : [
+      String(i + 1),
+      w > 0 ? fmtDim(w, unitMode) : '',
+      h > 0 ? fmtDim(h, unitMode) : '',
+      chargedW > 0 ? fmtDim(chargedW, unitMode) : '',
+      chargedH > 0 ? fmtDim(chargedH, unitMode) : '',
       String(qty),
       area.toFixed(3),
       fmtN(rate),
       fmtN(amt)
     ]
     
-    ly = drawDataRow(doc, cols, vals, false, ly)
+    ly = drawDataRow(doc, cols, vals, false, ly, isNonGlass ? { 1: 4 } : null)
   })
   
   ly = drawGroupSubtotal(doc, cols, tQty, tArea, tRft, 0, tAmt, false, ly)
@@ -2696,7 +2723,8 @@ export const generatePOPDF = async (po) => {
       }
     }
 
-    const cols = buildCols(false)
+    const unitMode = po?.unit_mode || 'inch'
+    const cols = buildCols(false, unitMode)
     let pageNum = { val: 1, total: '?' }
 
     drawBorder(doc)
@@ -2735,9 +2763,31 @@ export const generatePOPDF = async (po) => {
 
     // Summary block
     const grand = po.total_amount || 0
+    const taxAmt = po.tax_amount || 0
+    const subtotal = po.subtotal || 0
+    const gstMode = po.gst_mode || 'cgst_sgst'
+    const isTaxActive = gstMode !== 'none' && gstMode !== 'off' && taxAmt > 0
+
+    let taxRows = []
+    if (isTaxActive) {
+      const fullRate = (subtotal > 0 && taxAmt > 0) ? ((taxAmt / subtotal) * 100) : 18
+      const halfRate = fullRate / 2
+      const fullRateStr = (Math.round(fullRate * 100) / 100).toFixed(2)
+      const halfRateStr = (Math.round(halfRate * 100) / 100).toFixed(2)
+
+      if (gstMode === 'igst') {
+        taxRows.push({ label: 'IGST', value: taxAmt, pct: fullRateStr })
+      } else {
+        const halfTax = parseFloat((taxAmt / 2).toFixed(2))
+        const otherHalfTax = parseFloat((taxAmt - halfTax).toFixed(2))
+        taxRows.push({ label: 'CGST', value: halfTax, pct: halfRateStr })
+        taxRows.push({ label: 'SGST', value: otherHalfTax, pct: halfRateStr })
+      }
+    }
+
     const totalsRows = [
-      { label: 'Items Subtotal', value: po.subtotal || 0 },
-      po.tax_amount > 0 ? { label: 'GST', value: po.tax_amount, pct: '18.00' } : null,
+      { label: 'Items Subtotal', value: subtotal },
+      ...taxRows,
       { label: 'GRAND TOTAL', value: grand, grand: true }
     ].filter(Boolean)
 
