@@ -1580,9 +1580,7 @@ const calculateDocumentFooterHeight = (company, docData = null) => {
   }
   const bankH = bankLinesCount > 0 ? (4.5 + bankLinesCount * 3.2 + 2.0) : 0
   const rightH = bankH + 25.0
-  const leftH = 21.0
-  const maxTwoColH = Math.max(leftH, rightH)
-  return maxTwoColH + 4.5 + 12.0
+  return rightH + 4.5 + 12.0
 }
 
 const drawDocumentFooterSection = (doc, company, y, pageNum, docData) => {
@@ -1597,33 +1595,6 @@ const drawDocumentFooterSection = (doc, company, y, pageNum, docData) => {
   const leftW = 94
   const rightX = leftX + leftW + colGap // 108mm
   const rightW = CONTENT_W - leftW - colGap // 92mm
-
-  // ---------------------------------------------------------
-  // LEFT COLUMN: Disclaimer & Payment Terms
-  // ---------------------------------------------------------
-  let ly = startY
-
-  // Red Italic Disclaimer
-  const companyShort = (cleanVal(company?.short_name) || cleanVal(company?.name) || 'COMPANY').toUpperCase()
-  const disclaimerText = `At ${companyShort} we value the time of our clients very highly, but due to the brittle nature of our product, many a times we are unable to meet our commitments and the deadlines of our esteemed clients due to reasons beyond our control.`
-  
-  setFont(doc, 6.5, 'italic', [220, 38, 38])
-  const disclaimerLines = doc.splitTextToSize(disclaimerText, leftW)
-  disclaimerLines.forEach(dline => {
-    drawText(doc, dline, leftX, ly)
-    ly += 3.0
-  })
-
-  ly += 2.0
-
-  // Emphasized Payment terms
-  setFont(doc, 7.5, 'bold', C.text)
-  drawText(doc, '50% Advance', leftX, ly)
-  ly += 3.5
-  drawText(doc, 'Bal before delivery', leftX, ly)
-  ly += 4.0
-
-  const leftEndY = ly
 
   // ---------------------------------------------------------
   // RIGHT COLUMN: BANK DETAILS & SIGNATORY BOX
@@ -1679,12 +1650,11 @@ const drawDocumentFooterSection = (doc, company, y, pageNum, docData) => {
   ry += sigBoxH + 3.0
 
   const rightEndY = ry
-  const maxTwoColY = Math.max(leftEndY, rightEndY)
 
   // ---------------------------------------------------------
   // CENTERED COMPUTERIZED DOCUMENT NOTE
   // ---------------------------------------------------------
-  let noteY = maxTwoColY + 1.0
+  let noteY = rightEndY + 1.0
   setFont(doc, 6.5, 'italic', C.textLight)
   drawText(
     doc,

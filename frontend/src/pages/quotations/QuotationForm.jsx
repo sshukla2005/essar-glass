@@ -428,7 +428,19 @@ const QuotationForm = () => {
   const reconstructGroups = (flatLines) => {
     const groupMap = new Map()
     flatLines.forEach((line, i) => {
-      const gkey = line.product_id || line.description || `solo_${i}`
+      // Group by every attribute that makes a glass line distinct, not
+      // by product alone — two lines can share a product but differ in
+      // CEP, rate, ceiling or toughening, and must stay separate.
+      const gkey = [
+        line.product_id ?? '',
+        line.description ?? '',
+        line.cep ? 1 : 0,
+        line.cep_polish_rate ?? '',
+        line.rate ?? line.unit_price ?? '',
+        line.is_toughened ? 1 : 0,
+        line.ceiling_w_inches ?? line.ceiling_inches ?? '',
+        line.ceiling_h_inches ?? line.ceiling_inches ?? '',
+      ].join('|') || `solo_${i}`
       if (!groupMap.has(gkey)) {
         groupMap.set(gkey, {
           group_key: Date.now() + Math.random() + i,
