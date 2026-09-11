@@ -14,6 +14,7 @@ class Customer(Base, TimestampMixin, SoftDeleteMixin):
     gst_treatment   = Column(String(50),  nullable=True)
     pan_number      = Column(String(20),  nullable=True)
     address         = Column(Text,        nullable=True)
+    address_line2   = Column(Text,        nullable=True)
     city            = Column(String(100), nullable=True)
     state           = Column(String(100), nullable=True)
     pincode         = Column(String(10),  nullable=True)

@@ -204,11 +204,14 @@ app.include_router(delivery_notes_router, prefix=f"{PREFIX}")
 app.include_router(ai_router.router, prefix="/api/v1")
 
 
+from app.schemas.customer import CustomerCreate, CustomerUpdate, CustomerResponse
+from app.schemas.vendor import VendorCreate, VendorUpdate, VendorResponse
+
 # Auto CRUD routers
 ROUTER_CONFIGS = [
     {"prefix": "/companies",       "tag": "Companies",       "model": Company,         "code_prefix": "COMP", "code_field": None, "company_scoped": True, "read_roles": None, "write_roles": {"superadmin"}, "module": "company"},
-    {"prefix": "/customers",       "tag": "Customers",       "model": Customer,        "code_prefix": "CUST", "code_field": "customer_code", "module": "customers"},
-    {"prefix": "/vendors",         "tag": "Vendors",         "model": Vendor,          "code_prefix": "VEND", "code_field": "vendor_code", "module": "vendors"},
+    {"prefix": "/customers",       "tag": "Customers",       "model": Customer,        "code_prefix": "CUST", "code_field": "customer_code", "module": "customers", "create_schema": CustomerCreate, "update_schema": CustomerUpdate, "response_schema": CustomerResponse},
+    {"prefix": "/vendors",         "tag": "Vendors",         "model": Vendor,          "code_prefix": "VEND", "code_field": "vendor_code", "module": "vendors", "create_schema": VendorCreate, "update_schema": VendorUpdate, "response_schema": VendorResponse},
     {"prefix": "/products",        "tag": "Products",        "model": Product,         "code_prefix": "PROD", "code_field": "internal_ref", "module": "products"},
     {"prefix": "/employees",       "tag": "Employees",       "model": Employee,        "code_prefix": "EMP",  "code_field": "employee_code", "module": "employees"},
     {"prefix": "/crm/stages",      "tag": "CRM Stages",      "model": CRMStage,        "code_prefix": None,   "code_field": None, "module": "stages"},
@@ -600,9 +603,9 @@ for cfg in ROUTER_CONFIGS:
         prefix=f"{PREFIX}{cfg['prefix']}",
         tag=cfg["tag"],
         model=cfg["model"],
-        create_schema=DynCreate,
-        update_schema=DynUpdate,
-        response_schema=DynCreate,
+        create_schema=cfg.get("create_schema", DynCreate),
+        update_schema=cfg.get("update_schema", DynUpdate),
+        response_schema=cfg.get("response_schema", DynCreate),
         code_prefix=cfg.get("code_prefix"),
         code_field=cfg.get("code_field"),
         company_scoped=cfg.get("company_scoped", True),

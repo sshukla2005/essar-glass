@@ -10,6 +10,7 @@ class Vendor(Base, TimestampMixin, SoftDeleteMixin):
     name          = Column(String(200), nullable=False, index=True)
     gstin         = Column(String(20),  nullable=True)
     address       = Column(Text,        nullable=True)
+    address_line2 = Column(Text,        nullable=True)
     city          = Column(String(100), nullable=True)
     state         = Column(String(100), nullable=True)
     phone         = Column(String(20),  nullable=True)

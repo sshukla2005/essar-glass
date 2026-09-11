@@ -730,9 +730,23 @@ const drawCustomerCard = (doc, cust, y, shipCust = null, pageW = PAGE_W) => {
 
   // Compute the rendered height for one side so both boxes stay the same size.
   // Mirrors drawSide exactly: 11.5 header space + 4.5 name + lines×3.5 + 4 bottom pad.
+  const getAddrLines = (data) => {
+    const parts = []
+    const a1 = cleanVal(data.address)
+    const a2 = cleanVal(data.address_line2)
+    if (a1) parts.push(a1)
+    if (a2) parts.push(a2)
+    const cityStatePin = [cleanVal(data.city), cleanVal(data.state || data.state_name), cleanVal(data.pincode)].filter(Boolean).join(', ')
+    if (cityStatePin && (!a1 || !a1.includes(cleanVal(data.city)))) {
+      parts.push(cityStatePin)
+    }
+    if (parts.length === 0) return []
+    const full = parts.join('\n')
+    return doc.splitTextToSize(full, cardW - 8).slice(0, 3)
+  }
+
   const sideHeight = (data) => {
-    const addr = cleanVal(data.address)
-    const addrLines = addr ? doc.splitTextToSize(addr, cardW - 8).slice(0, 3) : []
+    const addrLines = getAddrLines(data)
     const pan      = cleanVal(data.pan || data.pan_number)
     const gstin    = cleanVal(data.gstin)
     const stateStr = cleanVal(getStateStr(gstin, cleanVal(data.state || data.state_name)))
@@ -769,8 +783,7 @@ const drawCustomerCard = (doc, cust, y, shipCust = null, pageW = PAGE_W) => {
     setFont(doc, 7.5, 'normal', C.textMid)
 
     // Address — only advance for lines that actually exist
-    const addr = cleanVal(data.address)
-    const addrLines = addr ? doc.splitTextToSize(addr, cardW - 8).slice(0, 3) : []
+    const addrLines = getAddrLines(data)
     addrLines.forEach(line => {
       drawText(doc, cleanVal(line) || '', startX + 4, ly)
       ly += 3.5
@@ -866,7 +879,14 @@ const drawVendorCard = (doc, vend, y) => {
   drawText(doc, cleanVal(vend.name).substring(0, 60), MARGIN.l + 4, ly)
   ly += 5
   setFont(doc, 7.5, 'normal', C.textMid)
-  const addr = cleanVal(vend.address)
+  const vParts = []
+  if (cleanVal(vend.address)) vParts.push(cleanVal(vend.address))
+  if (cleanVal(vend.address_line2)) vParts.push(cleanVal(vend.address_line2))
+  const cityPin = [cleanVal(vend.city), cleanVal(vend.state), cleanVal(vend.pincode)].filter(Boolean).join(', ')
+  if (cityPin && (!cleanVal(vend.address) || !cleanVal(vend.address).includes(cleanVal(vend.city)))) {
+    vParts.push(cityPin)
+  }
+  const addr = vParts.join('\n')
   if (addr) {
     const lines = doc.splitTextToSize(addr, CONTENT_W - 8)
     lines.slice(0, 2).forEach(l => {
@@ -2042,6 +2062,7 @@ export const generateQuotationPDF = async (quotation) => {
     let cust = {
       name: quotation.customer_name || '',
       address: quotation.delivery_address || '',
+      address_line2: quotation.delivery_address_line2 || '',
       city: quotation.customer_city || '',
       state: quotation.customer_state || quotation.customer_state_name || '',
       state_name: quotation.customer_state || quotation.customer_state_name || '',
@@ -2057,7 +2078,8 @@ export const generateQuotationPDF = async (quotation) => {
         const c = res.data || res
         if (c) cust = {
           name: c.name || quotation.customer_name || '',
-          address: [c.address, c.city, c.state, c.pincode].filter(Boolean).join(', ') || c.address || '',
+          address: c.address || '',
+          address_line2: c.address_line2 || '',
           city: c.city || '',
           state: c.state || c.state_name || '',
           state_name: c.state || c.state_name || '',
@@ -2074,7 +2096,8 @@ export const generateQuotationPDF = async (quotation) => {
           const c = all.find(x => x.id === customerId)
           if (c) cust = {
             name: c.name,
-            address: [c.address, c.city, c.state, c.pincode].filter(Boolean).join(', ') || c.address || '',
+            address: c.address || '',
+            address_line2: c.address_line2 || '',
             city: c.city || '',
             state: c.state || c.state_name || '',
             state_name: c.state || c.state_name || '',
@@ -2439,6 +2462,7 @@ export const generateSOPDF = async (so) => {
     let cust = {
       name: so.customer_name || '',
       address: so.delivery_address || '',
+      address_line2: so.delivery_address_line2 || '',
       city: so.customer_city || '',
       state: so.customer_state || so.customer_state_name || '',
       state_name: so.customer_state || so.customer_state_name || '',
@@ -2455,7 +2479,8 @@ export const generateSOPDF = async (so) => {
         if (c) {
           cust = {
             name: c.name || so.customer_name || '',
-            address: [c.address, c.city, c.state, c.pincode].filter(Boolean).join(', ') || c.address || '',
+            address: c.address || '',
+            address_line2: c.address_line2 || '',
             city: c.city || '',
             state: c.state || c.state_name || '',
             state_name: c.state || c.state_name || '',
@@ -2474,7 +2499,8 @@ export const generateSOPDF = async (so) => {
           if (c) {
             cust = {
               name: c.name,
-              address: [c.address, c.city, c.state, c.pincode].filter(Boolean).join(', ') || c.address || '',
+              address: c.address || '',
+              address_line2: c.address_line2 || '',
               city: c.city || '',
               state: c.state || c.state_name || '',
               state_name: c.state || c.state_name || '',
@@ -2743,17 +2769,35 @@ export const generatePOPDF = async (po) => {
       preloadCompanyLogos(await fetchCompany(po.company_id)),
       preloadBrandLogos(),
     ])
-    let vend = { name: po.vendor_name || '', address: '', phone: '', gstin: '' }
+    let vend = { name: po.vendor_name || '', address: '', address_line2: '', city: '', state: '', pincode: '', phone: '', gstin: '' }
     if (po.vendor_id) {
       try {
         const res = await vendorApi.get(po.vendor_id)
         const v = res.data || res
-        if (v) vend = { name: v.name || po.vendor_name || '', address: [v.address, v.city, v.state, v.pincode].filter(Boolean).join(', '), phone: v.phone || v.mobile || '', gstin: v.gstin || '' }
+        if (v) vend = {
+          name: v.name || po.vendor_name || '',
+          address: v.address || '',
+          address_line2: v.address_line2 || '',
+          city: v.city || '',
+          state: v.state || '',
+          pincode: v.pincode || '',
+          phone: v.phone || v.mobile || '',
+          gstin: v.gstin || ''
+        }
       } catch (err) {
         try {
           const all = JSON.parse(localStorage.getItem('vendors') || '[]')
           const v = all.find(x => x.id === po.vendor_id)
-          if (v) vend = { name: v.name, address: [v.address, v.city].filter(Boolean).join(', '), phone: v.phone || '', gstin: v.gstin || '' }
+          if (v) vend = {
+            name: v.name,
+            address: v.address || '',
+            address_line2: v.address_line2 || '',
+            city: v.city || '',
+            state: v.state || '',
+            pincode: v.pincode || '',
+            phone: v.phone || '',
+            gstin: v.gstin || ''
+          }
         } catch { }
       }
     }
@@ -3121,7 +3165,8 @@ export const generateDeliveryChallanPDF = async (dc) => {
         const c = res.data || res
         if (c) cust = {
           name: c.name || dc.customer_name || '',
-          address: [c.address, c.city, c.state, c.pincode].filter(Boolean).join(', ') || c.address || '',
+          address: c.address || '',
+          address_line2: c.address_line2 || '',
           city: c.city || '',
           state: c.state || c.state_name || '',
           state_name: c.state || c.state_name || '',
@@ -3137,7 +3182,8 @@ export const generateDeliveryChallanPDF = async (dc) => {
           const c = all.find(x => x.id === dc.customer_id)
           if (c) cust = {
             name: c.name,
-            address: [c.address, c.city, c.state, c.pincode].filter(Boolean).join(', ') || c.address || '',
+            address: c.address || '',
+            address_line2: c.address_line2 || '',
             city: c.city || '',
             state: c.state || c.state_name || '',
             state_name: c.state || c.state_name || '',

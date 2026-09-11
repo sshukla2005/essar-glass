@@ -120,7 +120,7 @@ const VendorForm = () => {
           <Divider orientation="left">Address & Contact</Divider>
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item name="address_line1" label="Address Line 1"><Input placeholder="Street address" /></Form.Item>
+              <Form.Item name="address" label="Address Line 1"><Input placeholder="Street address" /></Form.Item>
               <Form.Item name="address_line2" label="Address Line 2"><Input placeholder="Apartment, suite, etc." /></Form.Item>
               <Row gutter={16}>
                 <Col span={8}><Form.Item name="city" label="City"><Input placeholder="City" /></Form.Item></Col>
