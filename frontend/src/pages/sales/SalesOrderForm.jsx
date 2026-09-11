@@ -2070,6 +2070,7 @@ const SalesOrderForm = () => {
             onGeneratePDF={async () => {
               const recordData = {
                 ...form.getFieldsValue(),
+                id: record?.id,
                 so_number: record?.so_number,
                 company_id: form.getFieldValue('company_id') || record?.company_id || 1,
                 customer_id: form.getFieldValue('customer_id') || record?.customer_id,

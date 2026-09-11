@@ -2,7 +2,7 @@ import { jsPDF } from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import html2canvas from 'html2canvas'
 import dayjs from 'dayjs'
-import { customerApi, vendorApi, companyApi } from '../api'
+import { customerApi, vendorApi, companyApi, quotationApi, salesOrderApi } from '../api'
 import { computeLineWeightKg } from './glassCalc'
 
 // ── Brand logo assets (Vite-bundled, fingerprinted) ──────
@@ -735,7 +735,7 @@ const drawCustomerCard = (doc, cust, y, shipCust = null, pageW = PAGE_W) => {
     const addrLines = addr ? doc.splitTextToSize(addr, cardW - 8).slice(0, 3) : []
     const pan      = cleanVal(data.pan || data.pan_number)
     const gstin    = cleanVal(data.gstin)
-    const stateStr = cleanVal(getStateStr(gstin, cleanVal(data.state)))
+    const stateStr = cleanVal(getStateStr(gstin, cleanVal(data.state || data.state_name)))
     return 11.5 + 4.5
       + addrLines.length * 3.5
       + 3.5                            // Tel / Email — always drawn
@@ -791,7 +791,7 @@ const drawCustomerCard = (doc, cust, y, shipCust = null, pageW = PAGE_W) => {
     if (gstin) { drawText(doc, `GSTIN: ${gstin}`, startX + 4, ly); ly += 3.5 }
 
     // Code / State — only when derivable from GSTIN or state field
-    const stateStr = cleanVal(getStateStr(gstin, cleanVal(data.state)))
+    const stateStr = cleanVal(getStateStr(gstin, cleanVal(data.state || data.state_name)))
     if (stateStr) { drawText(doc, `Code / State : ${stateStr}`, startX + 4, ly) }
   }
 
@@ -2026,30 +2026,63 @@ export const generateQuotationPDF = async (quotation) => {
       preloadBrandLogos(),
     ])
 
+    let customerId = quotation.customer_id
+    if (!customerId && quotation.id) {
+      try {
+        const qRes = await quotationApi.get(quotation.id)
+        const qData = qRes?.data || qRes
+        if (qData?.customer_id) {
+          customerId = qData.customer_id
+        }
+      } catch (err) {
+        console.error('Failed to fetch full quotation for customer_id:', err)
+      }
+    }
+
     let cust = {
       name: quotation.customer_name || '',
-      address: '', phone: quotation.customer_phone || '', gstin: quotation.customer_gstin || ''
+      address: quotation.delivery_address || '',
+      city: quotation.customer_city || '',
+      state: quotation.customer_state || quotation.customer_state_name || '',
+      state_name: quotation.customer_state || quotation.customer_state_name || '',
+      pincode: quotation.customer_pincode || '',
+      phone: quotation.customer_phone || '',
+      gstin: quotation.customer_gstin || '',
+      email: quotation.customer_email || '',
+      pan: quotation.customer_pan || quotation.customer_pan_number || '',
     }
-    if (quotation.customer_id) {
+    if (customerId) {
       try {
-        const res = await customerApi.get(quotation.customer_id)
+        const res = await customerApi.get(customerId)
         const c = res.data || res
         if (c) cust = {
           name: c.name || quotation.customer_name || '',
-          address: [c.address, c.city, c.state, c.pincode].filter(Boolean).join(', '),
+          address: [c.address, c.city, c.state, c.pincode].filter(Boolean).join(', ') || c.address || '',
+          city: c.city || '',
+          state: c.state || c.state_name || '',
+          state_name: c.state || c.state_name || '',
+          pincode: c.pincode || '',
           phone: c.phone || c.mobile || quotation.customer_phone || '',
           gstin: c.gstin || quotation.customer_gstin || '',
+          email: c.email || '',
+          pan: c.pan_number || c.pan || '',
         }
       } catch (err) {
         // Backend unreachable — legacy localStorage cache as fallback
         try {
           const all = JSON.parse(localStorage.getItem('customers') || '[]')
-          const c = all.find(x => x.id === quotation.customer_id)
+          const c = all.find(x => x.id === customerId)
           if (c) cust = {
             name: c.name,
-            address: [c.address, c.city].filter(Boolean).join(', '),
+            address: [c.address, c.city, c.state, c.pincode].filter(Boolean).join(', ') || c.address || '',
+            city: c.city || '',
+            state: c.state || c.state_name || '',
+            state_name: c.state || c.state_name || '',
+            pincode: c.pincode || '',
             phone: c.phone || c.mobile || '',
             gstin: c.gstin || '',
+            email: c.email || '',
+            pan: c.pan_number || c.pan || '',
           }
         } catch { }
       }
@@ -2390,34 +2423,66 @@ export const generateSOPDF = async (so) => {
       preloadBrandLogos(),
     ])
     
-    let cust = { name: so.customer_name || '', address: '', phone: so.customer_phone || '', gstin: so.customer_gstin || '', email: '', pan: '' }
-    if (so.customer_id) {
+    let customerId = so.customer_id
+    if (!customerId && so.id) {
       try {
-        const res = await customerApi.get(so.customer_id)
+        const soRes = await salesOrderApi.get(so.id)
+        const soData = soRes?.data || soRes
+        if (soData?.customer_id) {
+          customerId = soData.customer_id
+        }
+      } catch (err) {
+        console.error('Failed to fetch full sales order for customer_id:', err)
+      }
+    }
+
+    let cust = {
+      name: so.customer_name || '',
+      address: so.delivery_address || '',
+      city: so.customer_city || '',
+      state: so.customer_state || so.customer_state_name || '',
+      state_name: so.customer_state || so.customer_state_name || '',
+      pincode: so.customer_pincode || '',
+      phone: so.customer_phone || '',
+      gstin: so.customer_gstin || '',
+      email: so.customer_email || '',
+      pan: so.customer_pan || so.customer_pan_number || '',
+    }
+    if (customerId) {
+      try {
+        const res = await customerApi.get(customerId)
         const c = res.data || res
         if (c) {
           cust = {
             name: c.name || so.customer_name || '',
-            address: [c.address, c.city, c.state, c.pincode].filter(Boolean).join(', '),
+            address: [c.address, c.city, c.state, c.pincode].filter(Boolean).join(', ') || c.address || '',
+            city: c.city || '',
+            state: c.state || c.state_name || '',
+            state_name: c.state || c.state_name || '',
+            pincode: c.pincode || '',
             phone: c.phone || c.mobile || so.customer_phone || '',
             gstin: c.gstin || so.customer_gstin || '',
             email: c.email || '',
-            pan: c.pan_number || c.pan || ''
+            pan: c.pan_number || c.pan || '',
           }
         }
       } catch (err) {
         console.error('Failed to fetch customer for SO PDF:', err)
         try {
           const all = JSON.parse(localStorage.getItem('customers') || '[]')
-          const c = all.find(x => x.id === so.customer_id)
+          const c = all.find(x => x.id === customerId)
           if (c) {
             cust = {
               name: c.name,
-              address: [c.address, c.city].filter(Boolean).join(', '),
+              address: [c.address, c.city, c.state, c.pincode].filter(Boolean).join(', ') || c.address || '',
+              city: c.city || '',
+              state: c.state || c.state_name || '',
+              state_name: c.state || c.state_name || '',
+              pincode: c.pincode || '',
               phone: c.phone || c.mobile || '',
               gstin: c.gstin || '',
               email: c.email || '',
-              pan: c.pan_number || c.pan || ''
+              pan: c.pan_number || c.pan || '',
             }
           }
         } catch { }
@@ -3056,9 +3121,15 @@ export const generateDeliveryChallanPDF = async (dc) => {
         const c = res.data || res
         if (c) cust = {
           name: c.name || dc.customer_name || '',
-          address: [c.address, c.city, c.state, c.pincode].filter(Boolean).join(', '),
+          address: [c.address, c.city, c.state, c.pincode].filter(Boolean).join(', ') || c.address || '',
+          city: c.city || '',
+          state: c.state || c.state_name || '',
+          state_name: c.state || c.state_name || '',
+          pincode: c.pincode || '',
           phone: c.phone || c.mobile || dc.customer_phone || '',
           gstin: c.gstin || dc.customer_gstin || '',
+          email: c.email || '',
+          pan: c.pan_number || c.pan || '',
         }
       } catch (err) {
         try {
@@ -3066,9 +3137,15 @@ export const generateDeliveryChallanPDF = async (dc) => {
           const c = all.find(x => x.id === dc.customer_id)
           if (c) cust = {
             name: c.name,
-            address: [c.address, c.city].filter(Boolean).join(', '),
+            address: [c.address, c.city, c.state, c.pincode].filter(Boolean).join(', ') || c.address || '',
+            city: c.city || '',
+            state: c.state || c.state_name || '',
+            state_name: c.state || c.state_name || '',
+            pincode: c.pincode || '',
             phone: c.phone || c.mobile || '',
             gstin: c.gstin || '',
+            email: c.email || '',
+            pan: c.pan_number || c.pan || '',
           }
         } catch { }
       }

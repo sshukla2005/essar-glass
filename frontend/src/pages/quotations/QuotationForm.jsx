@@ -2177,6 +2177,8 @@ const QuotationForm = () => {
             onImportExcel={() => fileInputRef.current?.click()}
             onCostAnalysis={openGlobalComparison}
             onGeneratePDF={() => generateQuotationPDF({
+              id: record?.id,
+              customer_id: form.getFieldValue('customer_id') || record?.customer_id,
               quote_number: record?.quote_number,
               quote_date: form.getFieldValue('quote_date')?.format?.('YYYY-MM-DD') || form.getFieldValue('quote_date'),
               valid_until: form.getFieldValue('valid_until')?.format?.('YYYY-MM-DD') || form.getFieldValue('valid_until'),
