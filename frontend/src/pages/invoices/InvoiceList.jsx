@@ -10,6 +10,8 @@ const STATUS_COLORS = {
   paid: 'green',
   overdue: 'red',
   cancelled: 'default',
+  partially_paid: 'orange',
+  unpaid: 'volcano',
 }
 
 const InvoiceList = () => {

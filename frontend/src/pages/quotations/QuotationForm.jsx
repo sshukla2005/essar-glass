@@ -198,7 +198,7 @@ const calcRateFromMatrix = (category, thickness) => {
 }
 
 const STATUS_STEPS = ['draft', 'sent', 'confirmed', 'converted']
-const STATUS_IDX = { draft: 0, sent: 1, confirmed: 2, converted: 3, cancelled: 0 }
+const STATUS_IDX = { draft: 0, sent: 1, confirmed: 2, converted: 3, cancelled: 0, lost: 0 }
 
 const emptySize = () => ({
   size_key: Date.now() + Math.random(),
@@ -1453,6 +1453,53 @@ const QuotationForm = () => {
     }
   })
 
+  const [isMarkingLost, setIsMarkingLost] = useState(false)
+  const [isReopening, setIsReopening] = useState(false)
+
+  const handleMarkLost = async (reason) => {
+    if (!id) {
+      message.warning('Please save first.')
+      await handleSave(false)
+      return
+    }
+    try {
+      setIsMarkingLost(true)
+      const lostAt = new Date().toISOString()
+      await quotationApi.update(id, {
+        lost_reason: reason,
+        lost_at: lostAt,
+      })
+      await quotationApi.changeStatus(id, 'lost')
+      form.setFieldsValue({ lost_reason: reason, lost_at: lostAt })
+      setIsDirty(false)
+      message.success('Quotation marked as lost')
+      queryClient.invalidateQueries({ queryKey: ['quotations'] })
+      queryClient.invalidateQueries({ queryKey: ['quotations', id] })
+    } catch (err) {
+      console.error(err)
+      message.error('Failed to mark quotation as lost')
+    } finally {
+      setIsMarkingLost(false)
+    }
+  }
+
+  const handleReopen = async () => {
+    if (!id) return
+    try {
+      setIsReopening(true)
+      await quotationApi.changeStatus(id, 'draft')
+      setIsDirty(false)
+      message.success('Quotation returned to draft')
+      queryClient.invalidateQueries({ queryKey: ['quotations'] })
+      queryClient.invalidateQueries({ queryKey: ['quotations', id] })
+    } catch (err) {
+      console.error(err)
+      message.error('Failed to reopen quotation')
+    } finally {
+      setIsReopening(false)
+    }
+  }
+
   // \u2500\u2500 Dirty watcher \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
   // Fires whenever any reactive slice changes. hydratedRef gates it so that
   // programmatic population from the loaded record is transparent.
@@ -2152,8 +2199,8 @@ const QuotationForm = () => {
   return (
     <MasterForm title="Quotation" isEdit={isEdit} isLoading={isLoading} isSaving={saveMutation.isPending}
       breadcrumbs={[{ label: 'Sales' }, { label: 'Quotations', path: '/quotations' }, { label: isEdit ? record?.quote_number || 'Edit' : 'New' }]}
-      onSave={status === 'converted' ? null : () => handleSave(false)}
-      onSaveNew={status === 'converted' ? null : () => handleSave(true)}
+      onSave={status === 'converted' || status === 'lost' ? null : () => handleSave(false)}
+      onSaveNew={status === 'converted' || status === 'lost' ? null : () => handleSave(true)}
       onDiscard={() => guardedNavigate('/quotations')}
       onBack={() => guardedNavigate('/quotations')}>
 
@@ -2164,6 +2211,68 @@ const QuotationForm = () => {
         <div style={{ background: '#ecfdf5', border: '1px solid #10b981', padding: '12px 20px', borderRadius: 12, marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Space><CheckCircleOutlined style={{ color: '#10b981', fontSize: 18 }} /><span style={{ color: '#065f46', fontWeight: 600, fontSize: 15 }}>Converted to Sales Order</span></Space>
           <Button type="primary" onClick={() => navigate(linkedSoId ? `/sales-orders/${linkedSoId}/edit` : '/sales-orders')} style={{ background: '#10b981', borderColor: '#10b981', borderRadius: 8 }}>View Sales Order →</Button>
+        </div>
+      )}
+
+      {/* ── Lost Banner ── */}
+      {status === 'lost' && (
+        <div style={{
+          background: '#fff5f5',
+          border: '1px solid #fca5a5',
+          padding: '14px 20px',
+          borderRadius: 12,
+          marginBottom: 20,
+          boxShadow: '0 1px 3px rgba(0,0,0,0.03)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <span style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: 22,
+              height: 22,
+              borderRadius: '50%',
+              background: '#fee2e2',
+              color: '#dc2626',
+              fontWeight: 700,
+              fontSize: 13
+            }}>✕</span>
+            <span style={{ color: '#991b1b', fontWeight: 600, fontSize: 15 }}>Quotation Marked as Lost</span>
+            {(record?.lost_at || form.getFieldValue('lost_at')) && (
+              <span style={{ color: '#6b7280', fontSize: 13, marginLeft: 'auto' }}>
+                Lost on {dayjs(record?.lost_at || form.getFieldValue('lost_at')).format('DD MMM YYYY, hh:mm A')}
+              </span>
+            )}
+          </div>
+          <div style={{
+            background: '#ffffff',
+            border: '1px solid #fecaca',
+            borderRadius: 8,
+            padding: '10px 14px',
+            color: '#374151',
+            fontSize: 14,
+            lineHeight: 1.5,
+            whiteSpace: 'pre-wrap'
+          }}>
+            <strong style={{ color: '#991b1b', marginRight: 8 }}>Reason:</strong>
+            {record?.lost_reason || form.getFieldValue('lost_reason') || '—'}
+          </div>
+        </div>
+      )}
+
+      {/* Retained history if reopened to draft or other status */}
+      {status !== 'lost' && (record?.lost_reason || form.getFieldValue('lost_reason')) && (
+        <div style={{
+          background: '#f8fafc',
+          border: '1px solid #e2e8f0',
+          padding: '10px 16px',
+          borderRadius: 8,
+          marginBottom: 16,
+          fontSize: 13,
+          color: '#64748b'
+        }}>
+          <span style={{ fontWeight: 600, color: '#475569' }}>Previous Lost Reason (History):</span> {record?.lost_reason || form.getFieldValue('lost_reason')}
+          {(record?.lost_at || form.getFieldValue('lost_at')) && ` (on ${dayjs(record?.lost_at || form.getFieldValue('lost_at')).format('DD MMM YYYY, hh:mm A')})`}
         </div>
       )}
 
@@ -2221,6 +2330,10 @@ const QuotationForm = () => {
               })
             }}
             isConfirming={confirmMutation.isPending}
+            onMarkLost={handleMarkLost}
+            isMarkingLost={isMarkingLost}
+            onReopen={handleReopen}
+            isReopening={isReopening}
           />
         </div>
         <Button
@@ -2243,7 +2356,7 @@ const QuotationForm = () => {
         </Button>
       </div>
 
-      <Form form={form} layout="vertical" disabled={status === 'converted'}
+      <Form form={form} layout="vertical" disabled={status === 'converted' || status === 'lost'}
         onValuesChange={() => { if (hydratedRef.current) setIsDirty(true) }}>
         <Form.Item name="crm_lead_id" hidden><input type="hidden" /></Form.Item>
         <CompanySelector form={form} />

@@ -1,5 +1,5 @@
-import React from 'react'
-import { Steps, Space, Button, Tag, Popconfirm } from 'antd'
+import React, { useState } from 'react'
+import { Steps, Space, Button, Tag, Popconfirm, Modal, Input } from 'antd'
 import { 
   UploadOutlined, 
   LineChartOutlined, 
@@ -11,9 +11,10 @@ import {
   CarOutlined,
   DollarOutlined
 } from '@ant-design/icons'
+import { useAuth } from '../../../hooks/useAuth'
 
 const QUOTE_STATUS_STEPS = ['draft', 'sent', 'confirmed', 'converted']
-const QUOTE_STATUS_IDX = { draft: 0, sent: 1, confirmed: 2, converted: 3, cancelled: 0 }
+const QUOTE_STATUS_IDX = { draft: 0, sent: 1, confirmed: 2, converted: 3, cancelled: 0, lost: 0 }
 
 // Client rename — DISPLAY ONLY. Stored values stay 'confirmed'/'converted'.
 // Applies to QUOTATIONS ONLY; the SO stepper keeps its own labels.
@@ -22,6 +23,7 @@ export const QUOTE_STATUS_LABELS = {
   sent: 'SENT',
   confirmed: 'SUBMITTED',
   converted: 'CONFIRMED',
+  lost: 'LOST',
 }
 
 const SO_STATUS_STEPS = ['draft', 'confirmed', 'in_production', 'ready', 'delivered']
@@ -40,6 +42,10 @@ const ActionToolbar = ({
   onCancel,
   onConfirm,
   isConfirming = false,
+  onMarkLost,
+  isMarkingLost = false,
+  onReopen,
+  isReopening = false,
   // SO-specific props
   onCreatePO,
   isCreatingPO = false,
@@ -53,6 +59,9 @@ const ActionToolbar = ({
   isCreatingInvoice = false,
   queryClient
 }) => {
+  const { isSuperAdmin } = useAuth()
+  const [lostModalOpen, setLostModalOpen] = useState(false)
+  const [lostReason, setLostReason] = useState('')
   const isSO = type === 'sales_order'
   const steps = isSO ? SO_STATUS_STEPS : QUOTE_STATUS_STEPS
   const currentIdx = isSO ? (SO_STATUS_IDX[status] ?? 0) : (QUOTE_STATUS_IDX[status] ?? 0)
@@ -285,6 +294,55 @@ const ActionToolbar = ({
               </Button>
             )}
 
+            {['draft', 'sent', 'confirmed'].includes(status) && (
+              <Button 
+                danger 
+                onClick={() => {
+                  setLostReason('')
+                  setLostModalOpen(true)
+                }}
+                style={{ 
+                  borderColor: '#ef4444',
+                  color: '#dc2626',
+                  borderRadius: 8,
+                  height: 38,
+                  fontWeight: 500,
+                  display: 'flex',
+                  alignItems: 'center',
+                }}
+              >
+                Mark as Lost
+              </Button>
+            )}
+
+            {status === 'lost' && (
+              <>
+                <Tag color="red" style={{ padding: '6px 16px', fontSize: 13, borderRadius: 8, border: '1px solid #fca5a5', fontWeight: 600 }}>
+                  LOST
+                </Tag>
+                {isSuperAdmin && (
+                  <Popconfirm
+                    title="Reopen this quotation?"
+                    description="This will return the quotation to draft status. Existing lost reason will be retained in history."
+                    onConfirm={onReopen}
+                    okText="Yes, Reopen"
+                    cancelText="No"
+                  >
+                    <Button
+                      style={{
+                        borderRadius: 8,
+                        height: 38,
+                        fontWeight: 500,
+                      }}
+                      loading={isReopening}
+                    >
+                      Reopen
+                    </Button>
+                  </Popconfirm>
+                )}
+              </>
+            )}
+
             {status === 'cancelled' && (
               <Tag color="red" style={{ padding: '6px 16px', fontSize: 13, borderRadius: 8, border: '1px solid #fca5a5', fontWeight: 600 }}>
                 CANCELLED
@@ -293,6 +351,55 @@ const ActionToolbar = ({
           </>
         )}
       </Space>
+
+      <Modal
+        title="Reason for losing this quotation"
+        open={lostModalOpen}
+        onCancel={() => {
+          setLostModalOpen(false)
+          setLostReason('')
+        }}
+        footer={[
+          <Button
+            key="cancel"
+            onClick={() => {
+              setLostModalOpen(false)
+              setLostReason('')
+            }}
+          >
+            Cancel
+          </Button>,
+          <Button
+            key="submit"
+            type="primary"
+            danger
+            disabled={!lostReason || !lostReason.trim()}
+            loading={isMarkingLost}
+            onClick={async () => {
+              if (!lostReason.trim()) return
+              if (onMarkLost) {
+                await onMarkLost(lostReason.trim())
+              }
+              setLostModalOpen(false)
+              setLostReason('')
+            }}
+          >
+            Mark as Lost
+          </Button>,
+        ]}
+      >
+        <div style={{ marginTop: 16 }}>
+          <label style={{ display: 'block', marginBottom: 8, fontWeight: 500, color: '#374151' }}>
+            Reason for losing this quotation <span style={{ color: '#ef4444' }}>*</span>
+          </label>
+          <Input.TextArea
+            rows={3}
+            placeholder="Enter reason why the quotation was lost..."
+            value={lostReason}
+            onChange={(e) => setLostReason(e.target.value)}
+          />
+        </div>
+      </Modal>
     </div>
   )
 }

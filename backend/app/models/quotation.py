@@ -1,5 +1,5 @@
 from sqlalchemy import (Column, Integer, String, Boolean,
-                        Float, ForeignKey, Text, JSON)
+                        Float, ForeignKey, Text, JSON, DateTime)
 from app.database import Base
 from app.models.base import TimestampMixin, SoftDeleteMixin
 
@@ -18,6 +18,8 @@ class Quotation(Base, TimestampMixin, SoftDeleteMixin):
     payment_terms    = Column(String(50),  nullable=True)
     delivery_address = Column(Text,        nullable=True)
     status           = Column(String(30),  default="draft", index=True)
+    lost_reason      = Column(Text,        nullable=True)
+    lost_at          = Column(DateTime(timezone=True), nullable=True)
     # Glass calc settings snapshot
     ceiling_default  = Column(Integer,     default=6)
     is_inter_state   = Column(Boolean,     default=False)

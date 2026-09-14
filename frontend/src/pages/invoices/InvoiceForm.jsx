@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import {
   Form, Input, InputNumber, Select, Row, Col, Divider,
   DatePicker, Button, Table, Steps, Space, Tag, Switch,
-  App, Typography, Modal, Radio, Tabs, Tooltip
+  App, Typography, Modal, Radio, Tabs, Tooltip, Popconfirm
 } from 'antd'
 import {
   PlusOutlined, DeleteOutlined, SendOutlined,
@@ -20,6 +20,7 @@ import CompanySelector from '../../components/common/CompanySelector'
 import { settingsApi } from '../../api/settingsApi'
 import RecordPaymentModal from './RecordPaymentModal'
 import { notBefore } from '../../utils/dateRules'
+import { useAuth } from '../../hooks/useAuth'
 
 const { TextArea } = Input
 const { Text } = Typography
@@ -40,7 +41,7 @@ const PAYMENT_MODES = [
 ]
 
 const STATUS_STEPS = ['draft', 'sent', 'paid']
-const STATUS_IDX   = { draft: 0, sent: 1, paid: 2, cancelled: 0 }
+const STATUS_IDX   = { draft: 0, sent: 1, partially_paid: 1, unpaid: 1, paid: 2, cancelled: 0 }
 
 const emptyLine = () => ({
   key:         Date.now() + Math.random(),
@@ -67,7 +68,9 @@ const InvoiceForm = () => {
   const watchedInvoiceDate = Form.useWatch('invoice_date', form)
   const [payForm]   = Form.useForm()
   const navigate    = useNavigate()
-  const qc          = useQueryClient()
+  const queryClient = useQueryClient()
+  const qc          = queryClient
+  const { isSuperAdmin } = useAuth()
 
   const [lines,          setLines]          = useState([emptyLine()])
   const [gstMode,        setGstMode]        = useState('cgst_sgst')
@@ -81,7 +84,7 @@ const InvoiceForm = () => {
   const [customerNotes,  setCustomerNotes]  = useState('')
 
   // ── Queries ────────────────────────────────────────────────
-  const { data: record, isLoading } = useQuery({
+  const { data: record, isLoading, refetch } = useQuery({
     queryKey: ['invoices', id],
     queryFn:  () => invoiceApi.get(id).then(r => r.data),
     enabled:  isEdit,
@@ -118,7 +121,14 @@ const InvoiceForm = () => {
     queryFn:  () => paymentApi.invoicePayments(id).then(r => r.data),
     enabled:  isEdit && Boolean(id),
   })
-  const payments = paymentsRaw?.items || []
+  const paymentsRawItems = paymentsRaw?.items || []
+  const payments = useMemo(() => {
+    return paymentsRawItems.map(p => ({
+      ...p,
+      id: p.id || p.payment_id,
+      amount: p.amount !== undefined ? p.amount : (p.allocated_amount ?? p.payment_total ?? 0),
+    }))
+  }, [paymentsRawItems])
 
   // Load payment accounts from settings
   useEffect(() => {
@@ -429,6 +439,29 @@ const InvoiceForm = () => {
     onError: () => message.error('Failed to record payment'),
   })
 
+  // ── Payment delete ─────────────────────────────────────────
+  const deletePaymentMutation = useMutation({
+    mutationFn: (paymentId) => paymentApi.delete(paymentId),
+    onSuccess: () => {
+      message.success('Payment removed and invoice balance updated')
+      refetchPayments()
+      refetch?.()
+      queryClient.invalidateQueries({ queryKey: ['invoices', id] })
+      queryClient.invalidateQueries({ queryKey: ['invoices'] })
+      queryClient.invalidateQueries({ queryKey: ['invoice', id] })
+      queryClient.invalidateQueries({ queryKey: ['payments-inv', id] })
+      queryClient.invalidateQueries({ queryKey: ['receivables-summary'] })
+      queryClient.invalidateQueries({ queryKey: ['receivables-customers'] })
+      if (record?.customer_id) {
+        queryClient.invalidateQueries({ queryKey: ['customer-ledger', record.customer_id] })
+        queryClient.invalidateQueries({ queryKey: ['customer-ledger', String(record.customer_id)] })
+      }
+    },
+    onError: (err) => {
+      message.error(err?.response?.data?.detail || 'Could not remove payment')
+    },
+  })
+
   const handleSave = async (andNew = false) => {
     if (saveMutation.isPending) return
     try {
@@ -597,6 +630,29 @@ const InvoiceForm = () => {
         <Text strong style={{ color: '#16a34a' }}>{fmt(v)}</Text>
       ),
     },
+    ...(isSuperAdmin ? [{
+      title: '',
+      key: 'action',
+      width: 50,
+      align: 'center',
+      render: (_, record) => (
+        <Popconfirm
+          title="Remove payment?"
+          description="The invoice paid amount and balance will be recalculated. This cannot be undone."
+          okText="Remove"
+          okButtonProps={{ danger: true }}
+          onConfirm={() => deletePaymentMutation.mutate(record.id)}
+        >
+          <Button
+            type="text"
+            danger
+            size="small"
+            icon={<DeleteOutlined />}
+            disabled={deletePaymentMutation.isPending}
+          />
+        </Popconfirm>
+      ),
+    }] : []),
   ]
 
   // ── RENDER ─────────────────────────────────────────────────
@@ -669,7 +725,7 @@ const InvoiceForm = () => {
                 Send / Print
               </Button>
             )}
-            {['draft', 'sent'].includes(status) && isEdit && (
+            {['draft', 'sent', 'partially_paid', 'unpaid'].includes(status) && isEdit && totals.balanceDue > 0 && (
               <Button
                 type="primary"
                 icon={<DollarOutlined />}
@@ -682,6 +738,16 @@ const InvoiceForm = () => {
             {status === 'paid' && (
               <Tag color="green" style={{ padding: '6px 16px', fontSize: 14 }}>
                 ✅ PAID
+              </Tag>
+            )}
+            {status === 'partially_paid' && (
+              <Tag color="orange" style={{ padding: '6px 16px', fontSize: 14 }}>
+                🟡 PARTIALLY PAID
+              </Tag>
+            )}
+            {status === 'unpaid' && (
+              <Tag color="volcano" style={{ padding: '6px 16px', fontSize: 14 }}>
+                UNPAID
               </Tag>
             )}
           </Space>

@@ -90,12 +90,14 @@ def make_crud_router(
                 status_q = status_q.filter(model.customer_id == customer_id)
 
             grouped = dict(status_q.group_by(model.status).all())
-            active_cnt = sum(cnt for st, cnt in grouped.items() if st not in ('converted', 'cancelled'))
+            inactive_statuses = ('converted', 'cancelled', 'lost') if getattr(model, '__tablename__', None) == 'quotations' else ('converted', 'cancelled')
+            active_cnt = sum(cnt for st, cnt in grouped.items() if st not in inactive_statuses)
             converted_cnt = grouped.get('converted', 0)
             all_cnt = sum(grouped.values())
             counts = {
                 "active": active_cnt,
                 "converted": converted_cnt,
+                "lost": grouped.get('lost', 0),
                 "all": all_cnt
             }
 
@@ -162,7 +164,8 @@ def make_crud_router(
 
         if status is not None and hasattr(model, 'status'):
             if status.lower() == 'active':
-                q = q.filter(model.status.notin_(['converted', 'cancelled']))
+                inactive_statuses = ['converted', 'cancelled', 'lost'] if getattr(model, '__tablename__', None) == 'quotations' else ['converted', 'cancelled']
+                q = q.filter(model.status.notin_(inactive_statuses))
             elif status.lower() in ('all', 'any'):
                 pass
             else:

@@ -206,6 +206,7 @@ app.include_router(ai_router.router, prefix="/api/v1")
 
 from app.schemas.customer import CustomerCreate, CustomerUpdate, CustomerResponse
 from app.schemas.vendor import VendorCreate, VendorUpdate, VendorResponse
+from app.schemas.quotation import QuotationCreate, QuotationUpdate, QuotationResponse
 
 # Auto CRUD routers
 ROUTER_CONFIGS = [
@@ -216,7 +217,7 @@ ROUTER_CONFIGS = [
     {"prefix": "/employees",       "tag": "Employees",       "model": Employee,        "code_prefix": "EMP",  "code_field": "employee_code", "module": "employees"},
     {"prefix": "/crm/stages",      "tag": "CRM Stages",      "model": CRMStage,        "code_prefix": None,   "code_field": None, "module": "stages"},
     {"prefix": "/crm/leads",       "tag": "CRM Leads",       "model": CRMLead,         "code_prefix": "OPP",  "code_field": "lead_number", "module": "leads"},
-    {"prefix": "/quotations",      "tag": "Quotations",      "model": Quotation,       "code_prefix": "QT",   "code_field": "quote_number", "module": "quotations"},
+    {"prefix": "/quotations",      "tag": "Quotations",      "model": Quotation,       "code_prefix": "QT",   "code_field": "quote_number", "module": "quotations", "create_schema": QuotationCreate, "update_schema": QuotationUpdate, "response_schema": QuotationResponse},
     {"prefix": "/sales-orders",    "tag": "Sales Orders",    "model": SalesOrder,      "code_prefix": "SO",   "code_field": "so_number", "module": "sales_orders"},
     {"prefix": "/purchase-orders", "tag": "PO",              "model": PurchaseOrder,   "code_prefix": "PO",   "code_field": "po_number", "module": "purchase_orders"},
     {"prefix": "/delivery",        "tag": "Delivery",        "model": DeliveryChallan, "code_prefix": "DC",   "code_field": "dc_number", "module": "delivery_challans"},

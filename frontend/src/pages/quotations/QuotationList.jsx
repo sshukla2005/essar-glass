@@ -10,7 +10,7 @@ import CuttingListImportModal from '../../components/CuttingListImportModal'
 
 const { Text } = Typography
 
-const STATUS_COLORS = { draft: 'blue', sent: 'orange', confirmed: 'green', converted: 'purple', cancelled: 'red' }
+const STATUS_COLORS = { draft: 'blue', sent: 'orange', confirmed: 'green', converted: 'purple', cancelled: 'red', lost: 'red' }
 
 const QuotationList = () => {
   const [searchParams] = useSearchParams()
@@ -24,6 +24,7 @@ const QuotationList = () => {
   const tabs = [
     { key: 'active', label: 'Active', count: counts?.active },
     { key: 'converted', label: 'Confirmed', count: counts?.converted },
+    { key: 'lost', label: 'Lost', count: counts?.lost },
     { key: 'all', label: 'All', count: counts?.all },
   ]
 

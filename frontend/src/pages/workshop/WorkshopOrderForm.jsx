@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { Form, Input, Select, Row, Col, Divider, DatePicker, Button, Table, Steps, Space, Tag, Checkbox, Card, Badge, App, Typography, InputNumber, Switch, Modal, Alert } from 'antd'
-import { PlusOutlined, DeleteOutlined, ToolOutlined, FireOutlined, FileTextOutlined, CheckCircleOutlined, DownloadOutlined, SwapOutlined, LinkOutlined, PlayCircleOutlined } from '@ant-design/icons'
+import { Form, Input, Select, Row, Col, Divider, DatePicker, Button, Table, Steps, Space, Tag, Checkbox, Card, Badge, App, Typography, InputNumber, Switch, Modal, Alert, Popconfirm } from 'antd'
+import { PlusOutlined, DeleteOutlined, ToolOutlined, FireOutlined, FileTextOutlined, CheckCircleOutlined, DownloadOutlined, SwapOutlined, LinkOutlined, PlayCircleOutlined, RollbackOutlined } from '@ant-design/icons'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import dayjs from 'dayjs'
@@ -826,9 +826,10 @@ const WorkshopOrderForm = () => {
     },
     onSuccess: (_res, variables) => {
       const newStatus = typeof variables === 'string' ? variables : variables?.status
+      const isRevert = typeof variables === 'object' && Boolean(variables?.isRevert)
       const chosenFormat = (typeof variables === 'object' && variables?.format) || exportFormatRef.current || exportFormat || 'excel'
       queryClient.invalidateQueries({ queryKey: ['workshop_orders', id] })
-      if (newStatus === 'in_progress') {
+      if (newStatus === 'in_progress' && !isRevert) {
         setLines(prev => prev.map(l => {
           const qty = Number(l.qty || l.quantity || 1)
           return { ...l, qty_cut: qty }
@@ -1045,6 +1046,11 @@ const WorkshopOrderForm = () => {
   }
 
   const status = record?.status || 'draft'
+  const prevStatus = (() => {
+    const idx = STATUS_IDX[status]
+    if (idx === undefined || idx <= 0) return null
+    return STATUS_STEPS[idx - 1]
+  })()
 
   const generateWOPdf = async () => {
     try {
@@ -1518,6 +1524,22 @@ const WorkshopOrderForm = () => {
               >
                 Link to Supplier Co.
               </Button>
+            )}
+            {isSuperAdmin && isEdit && prevStatus && (
+              <Popconfirm
+                title="Revert stage?"
+                description={`Move this Workshop Order back to ${String(prevStatus).replace(/_/g, ' ').toUpperCase()}. Cut quantities and timestamps are NOT cleared.`}
+                okText="Revert"
+                okButtonProps={{ danger: true }}
+                onConfirm={() => statusMutation.mutate({ status: prevStatus, isRevert: true })}
+              >
+                <Button
+                  icon={<RollbackOutlined />}
+                  style={{ borderColor: '#f59e0b', color: '#f59e0b', fontWeight: 500 }}
+                >
+                  Revert Stage
+                </Button>
+              </Popconfirm>
             )}
             {/* Always-available download — works at every status, like the quotation */}
             <Button

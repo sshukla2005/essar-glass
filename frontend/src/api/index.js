@@ -32,6 +32,11 @@ const createApi = (endpoint, codeField = null) => ({
     return { data: res.data }
   },
 
+  delete: async (id) => {
+    const res = await api.delete(`/api/v1/${endpoint}/${id}`)
+    return { data: res.data }
+  },
+
   archive: async (id) => {
     const res = await api.patch(`/api/v1/${endpoint}/${id}/archive`)
     return { data: res.data }
@@ -118,6 +123,10 @@ export const hsnApi = createLocalApi('hsn_codes')
 export const currencyApi = createLocalApi('currencies')
 export const paymentApi = {
   ...createApi('payments'),
+  delete: async (id) => {
+    const res = await api.delete(`/api/v1/payments/${id}`)
+    return { data: res.data }
+  },
   invoicePayments: async (invoiceId) => {
     const res = await api.get(`/api/v1/payments/invoice/${invoiceId}`)
     return { data: res.data }
