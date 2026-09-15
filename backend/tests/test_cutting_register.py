@@ -3,6 +3,7 @@ import sys
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
+from datetime import date
 from dotenv import load_dotenv
 
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
@@ -278,6 +279,63 @@ def test_cutting_progress_and_status_derivation(cutting_test_env):
     # Clean up both orders
     client.delete(f"/api/v1/workshop/{wo_id}", headers=headers)
     client.delete(f"/api/v1/workshop/{wo_id2}", headers=headers)
+
+
+def test_workshop_order_revert_and_general_save_preserves_status(cutting_test_env, db_session: Session):
+    """Test that reverting a completed WO to in_progress and saving via PUT without status preserves in_progress."""
+    headers = cutting_test_env["headers"]
+
+    # 1. Create a workshop order
+    payload = {
+        "customer_name": "Revert Test Customer",
+        "order_date": date.today().isoformat(),
+        "status": "draft",
+        "lines": [
+            {
+                "description": "Test Glass 8mm",
+                "thickness": 8,
+                "act_w_in": 30.0,
+                "act_h_in": 60.0,
+                "qty": 2,
+                "qty_cut": 2.0,
+            }
+        ]
+    }
+    res = client.post("/api/v1/workshop/", json=payload, headers=headers)
+    assert res.status_code == 201
+    wo_id = res.json()["id"]
+
+    # 2. Mark complete via status PATCH
+    res = client.patch(f"/api/v1/workshop/{wo_id}/status", json={"status": "completed"}, headers=headers)
+    assert res.status_code == 200
+    assert res.json()["status"] == "completed"
+
+    # 3. Revert stage to in_progress via status PATCH
+    res = client.patch(f"/api/v1/workshop/{wo_id}/status", json={"status": "in_progress"}, headers=headers)
+    assert res.status_code == 200
+    assert res.json()["status"] == "in_progress"
+
+    # 4. General save (PUT) WITHOUT status field (matches delete values.status in frontend save handler)
+    put_payload = {
+        "customer_name": "Revert Test Customer Edited",
+        "lines": res.json()["lines"]
+    }
+    res = client.put(f"/api/v1/workshop/{wo_id}", json=put_payload, headers=headers)
+    assert res.status_code == 200
+    assert res.json()["status"] == "in_progress"
+
+    # Verify directly in DB
+    db_session.expire_all()
+    wo_in_db = db_session.query(WorkshopOrder).filter(WorkshopOrder.id == wo_id).first()
+    assert wo_in_db.status == "in_progress"
+
+    # 5. Moving stage forward to completed still works
+    res = client.patch(f"/api/v1/workshop/{wo_id}/status", json={"status": "completed"}, headers=headers)
+    assert res.status_code == 200
+    assert res.json()["status"] == "completed"
+
+    # Cleanup
+    client.delete(f"/api/v1/workshop/{wo_id}", headers=headers)
 
 
 def test_cutting_register_filters_and_hydration(cutting_test_env, db_session: Session):

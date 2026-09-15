@@ -553,34 +553,35 @@ def make_crud_router(
                             line["cut_completed_at"] = None
                 update_data["lines"] = lines
 
-            desired_status = update_data.get("status", item.status or "draft")
-            if desired_status == "completed":
-                if isinstance(lines, list) and len(lines) > 0:
-                    all_complete = all(
-                        float(l.get("qty_cut") or 0) >= float(l.get("qty") or l.get("quantity") or 1)
-                        and float(l.get("qty") or l.get("quantity") or 1) > 0
-                        for l in lines if isinstance(l, dict)
-                    )
-                    if not all_complete:
-                        raise HTTPException(status_code=400, detail="Cannot mark workshop order as completed when lines are uncut.")
+            if "status" in update_data:
+                desired_status = update_data.get("status", item.status or "draft")
+                if desired_status == "completed":
+                    if isinstance(lines, list) and len(lines) > 0:
+                        all_complete = all(
+                            float(l.get("qty_cut") or 0) >= float(l.get("qty") or l.get("quantity") or 1)
+                            and float(l.get("qty") or l.get("quantity") or 1) > 0
+                            for l in lines if isinstance(l, dict)
+                        )
+                        if not all_complete:
+                            raise HTTPException(status_code=400, detail="Cannot mark workshop order as completed when lines are uncut.")
 
-            if desired_status != "cancelled":
-                if isinstance(lines, list) and len(lines) > 0:
-                    all_complete = all(
-                        float(l.get("qty_cut") or 0) >= float(l.get("qty") or l.get("quantity") or 1)
-                        and float(l.get("qty") or l.get("quantity") or 1) > 0
-                        for l in lines if isinstance(l, dict)
-                    )
-                    any_started = any(
-                        bool(l.get("cut_started_at")) or float(l.get("qty_cut") or 0) > 0
-                        for l in lines if isinstance(l, dict)
-                    )
-                    if all_complete:
-                        update_data["status"] = "completed"
-                    elif any_started:
-                        update_data["status"] = "in_progress"
-                    else:
-                        update_data["status"] = "draft"
+                if desired_status != "cancelled":
+                    if isinstance(lines, list) and len(lines) > 0:
+                        all_complete = all(
+                            float(l.get("qty_cut") or 0) >= float(l.get("qty") or l.get("quantity") or 1)
+                            and float(l.get("qty") or l.get("quantity") or 1) > 0
+                            for l in lines if isinstance(l, dict)
+                        )
+                        any_started = any(
+                            bool(l.get("cut_started_at")) or float(l.get("qty_cut") or 0) > 0
+                            for l in lines if isinstance(l, dict)
+                        )
+                        if all_complete:
+                            update_data["status"] = "completed"
+                        elif any_started:
+                            update_data["status"] = "in_progress"
+                        else:
+                            update_data["status"] = "draft"
 
         update_data = stash_extra_fields(model, update_data)
         if 'extra_data' in update_data:

@@ -815,6 +815,7 @@ const WorkshopOrderForm = () => {
       message.success(`Workshop Order ${isEdit ? 'updated' : 'created'}`)
       setIsDirty(false)
       queryClient.invalidateQueries({ queryKey: ['workshop_orders'] })
+      queryClient.invalidateQueries({ queryKey: ['workshop_orders', id] })
       if (!isEdit && res?.data?.id) navigate(`/workshop/orders/${res.data.id}/edit`)
     },
   })
@@ -1009,6 +1010,8 @@ const WorkshopOrderForm = () => {
         values.so_number = so?.so_number || ''
         values.lines = stamped.map(({ key, ...rest }) => rest)
         values.jobwork_vendor = selectedJobworkVendor || null
+        // Status transitions go through changeStatus only — general save must not write status
+        delete values.status
         const cleanMaps = artworkMaps.filter(m => m.image || (m.panels || []).length > 0)
         values.artwork_panels = cleanMaps
         values.artwork_image = cleanMaps[0]?.image || null
@@ -1034,6 +1037,8 @@ const WorkshopOrderForm = () => {
       values.so_number = so?.so_number || ''
       values.lines = lines.map(({ key, ...rest }) => rest)
       values.jobwork_vendor = selectedJobworkVendor || null
+      // Status transitions go through changeStatus only — general save must not write status
+      delete values.status
       // Poora maps array artwork_panels JSON mein; artwork_image mein pehli
       // map ki image (backward compatibility ke liye)
       const cleanMaps = artworkMaps.filter(m => m.image || (m.panels || []).length > 0)
