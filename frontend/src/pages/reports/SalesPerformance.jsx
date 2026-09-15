@@ -2,14 +2,15 @@ import React, { useState, useMemo } from 'react'
 import {
   Row, Col, Card, Table, Tag, Button, DatePicker,
   Space, Typography, Progress, App, Empty, Tooltip,
-  Alert, Select, Input, Skeleton, Result, Badge
+  Alert, Select, Input, Skeleton, Result, Badge, Tabs
 } from 'antd'
 import {
   BarChartOutlined, DownloadOutlined, ReloadOutlined,
   UserOutlined, FileTextOutlined, CheckCircleOutlined,
   DollarOutlined, RiseOutlined, ArrowUpOutlined, ArrowDownOutlined,
   MinusOutlined, WarningOutlined, FunnelPlotOutlined, SearchOutlined,
-  TeamOutlined, ShoppingCartOutlined, CalendarOutlined, InfoCircleOutlined
+  TeamOutlined, ShoppingCartOutlined, CalendarOutlined, InfoCircleOutlined,
+  CloseCircleOutlined, ClockCircleOutlined, ProjectOutlined
 } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
 import dayjs from 'dayjs'
@@ -20,7 +21,7 @@ import {
   ResponsiveContainer, Cell, Legend
 } from 'recharts'
 import api from '../../api/axios'
-import { companyApi } from '../../api'
+import { companyApi, quotationApi, customerApi } from '../../api'
 import { useAuth } from '../../hooks/useAuth'
 import * as XLSX from 'xlsx'
 
@@ -248,12 +249,189 @@ const SalesPerformance = () => {
     staleTime: 30000,
   })
 
-  const period      = data?.period      || {}
-  const summary     = data?.summary     || {}
-  const previous    = data?.previous    || {}
-  const funnel      = data?.funnel      || []
+  // ── Quotation Pipeline Query ──────────────────────────────────────────────
+  const quotationPipelineParams = useMemo(() => {
+    const p = {
+      page: 1,
+      page_size: 1000,
+      status: 'all',
+    }
+    if (dateRange && dateRange[0]) p.from = dateRange[0].format('YYYY-MM-DD')
+    if (dateRange && dateRange[1]) p.to = dateRange[1].format('YYYY-MM-DD')
+    return p
+  }, [dateRange])
+
+  const {
+    data: quotationsData,
+    isLoading: quotationsLoading,
+    isFetching: quotationsFetching,
+    refetch: refetchQuotations,
+  } = useQuery({
+    queryKey: ['quotations-pipeline', quotationPipelineParams],
+    queryFn: async () => {
+      const res = await quotationApi.list(quotationPipelineParams)
+      return res.data
+    },
+    staleTime: 30000,
+  })
+
+  // Customer dropdown query for resolving customer_name from customer_id
+  const { data: customers = [] } = useQuery({
+    queryKey: ['customers-dd'],
+    queryFn: () => customerApi.dropdown().then(r => r.data),
+    staleTime: 60000,
+  })
+
+  const customerMap = useMemo(() => {
+    const map = {}
+      ; (customers || []).forEach(c => {
+        if (c.id) map[c.id] = c.name
+      })
+    return map
+  }, [customers])
+
+  // Quotation Pipeline State & Derivations
+  const [pipelineTab, setPipelineTab] = useState('all')
+
+  // Scoped quotations matching the exact same date criteria as the report
+  const allScopedQuotations = useMemo(() => {
+    const rawItems = Array.isArray(quotationsData) ? quotationsData : (quotationsData?.items || [])
+    const fStr = reportParams.from
+    const tStr = reportParams.to
+
+    return rawItems.filter(q => {
+      if (q.is_active === false) return false
+      const qDate = q.quote_date || (q.created_at ? q.created_at.slice(0, 10) : '')
+      if (fStr && qDate && qDate < fStr) return false
+      if (tStr && qDate && qDate > tStr) return false
+      return true
+    })
+  }, [quotationsData, reportParams.from, reportParams.to])
+
+  const cancelledQuotesCount = useMemo(() => {
+    return allScopedQuotations.filter(q => q.status === 'cancelled').length
+  }, [allScopedQuotations])
+
+  // Pipeline quotations: Won (converted), Lost (lost), Pending (draft, sent, confirmed)
+  // 'cancelled' belongs to none of the three — excluded
+  const wonQuotes = useMemo(() => {
+    return allScopedQuotations.filter(q => q.status === 'converted')
+  }, [allScopedQuotations])
+
+  const lostQuotes = useMemo(() => {
+    return allScopedQuotations.filter(q => q.status === 'lost')
+  }, [allScopedQuotations])
+
+  const pendingQuotes = useMemo(() => {
+    return allScopedQuotations.filter(q => ['draft', 'sent', 'confirmed'].includes(q.status))
+  }, [allScopedQuotations])
+
+  const pipelineQuotations = useMemo(() => {
+    return allScopedQuotations.filter(q => ['converted', 'lost', 'draft', 'sent', 'confirmed'].includes(q.status))
+  }, [allScopedQuotations])
+
+  const wonValue = useMemo(() => {
+    return wonQuotes.reduce((sum, q) => sum + (Number(q.total_amount) || 0), 0)
+  }, [wonQuotes])
+
+  const lostValue = useMemo(() => {
+    return lostQuotes.reduce((sum, q) => sum + (Number(q.total_amount) || 0), 0)
+  }, [lostQuotes])
+
+  const pendingValue = useMemo(() => {
+    return pendingQuotes.reduce((sum, q) => sum + (Number(q.total_amount) || 0), 0)
+  }, [pendingQuotes])
+
+  const wonCount = wonQuotes.length
+  const lostCount = lostQuotes.length
+  const pendingCount = pendingQuotes.length
+  const decidedCount = wonCount + lostCount
+
+  // Conversion rate: won / (won + lost) as a percentage, with "—" when both are zero
+  const conversionRate = decidedCount > 0 ? ((wonCount / decidedCount) * 100).toFixed(1) : null
+
+  // Filtered quotations for active tab
+  const displayedPipelineQuotes = useMemo(() => {
+    if (pipelineTab === 'won') return wonQuotes
+    if (pipelineTab === 'lost') return lostQuotes
+    if (pipelineTab === 'pending') return pendingQuotes
+    return pipelineQuotations
+  }, [pipelineTab, pipelineQuotations, wonQuotes, lostQuotes, pendingQuotes])
+
+  // Quotation Pipeline Table Columns
+  const pipelineColumns = [
+    {
+      title: 'Quote No',
+      dataIndex: 'quote_number',
+      key: 'quote_number',
+      width: 140,
+      render: (v, r) => (
+        <Link to={`/quotations/${r.id}/edit`}>
+          <Text strong style={{ color: '#3b82f6' }}>{v}</Text>
+        </Link>
+      ),
+    },
+    {
+      title: 'Date',
+      dataIndex: 'quote_date',
+      key: 'date',
+      width: 120,
+      render: (v, r) => v || (r.created_at ? r.created_at.slice(0, 10) : '—'),
+    },
+    {
+      title: 'Customer',
+      dataIndex: 'customer_name',
+      key: 'customer_name',
+      ellipsis: true,
+      render: (v, r) => v || (r.customer_id ? customerMap[r.customer_id] : null) || r.customer?.name || '—',
+    },
+    {
+      title: 'Amount',
+      dataIndex: 'total_amount',
+      key: 'amount',
+      width: 140,
+      align: 'right',
+      render: v => <Text strong>{fmtINR(v)}</Text>,
+    },
+    {
+      title: 'Status',
+      dataIndex: 'status',
+      key: 'status',
+      width: 130,
+      render: (v) => {
+        let color = 'default'
+        if (v === 'converted') color = 'green'
+        else if (v === 'lost') color = 'red'
+        else if (v === 'confirmed') color = 'cyan'
+        else if (v === 'sent') color = 'blue'
+        else if (v === 'draft') color = 'gold'
+        return <Tag color={color} style={{ fontWeight: 600, textTransform: 'capitalize' }}>{v}</Tag>
+      },
+    },
+    {
+      title: 'Reason',
+      dataIndex: 'lost_reason',
+      key: 'reason',
+      ellipsis: true,
+      render: (v, r) => {
+        if (r.status === 'lost') {
+          return v ? (
+            <Text style={{ color: '#dc2626' }}>{v}</Text>
+          ) : (
+            <Text type="secondary" italic>No reason recorded</Text>
+          )
+        }
+        return <Text type="secondary">—</Text>
+      },
+    },
+  ]
+
+  const period = data?.period || {}
+  const summary = data?.summary || {}
+  const previous = data?.previous || {}
+  const funnel = data?.funnel || []
   const salespeople = data?.salespeople || []
-  const monthly     = data?.monthly     || []
+  const monthly = data?.monthly || []
   const dataQuality = data?.data_quality || {}
 
   const historyItems = historyData?.items || []
@@ -765,8 +943,8 @@ const SalesPerformance = () => {
           />
           <Button
             icon={<ReloadOutlined />}
-            onClick={() => { refetch(); refetchHistory(); }}
-            loading={isFetching}
+            onClick={() => { refetch(); refetchHistory(); refetchQuotations(); }}
+            loading={isFetching || quotationsFetching}
             style={{ borderRadius: 8 }}
           >
             Refresh
@@ -960,7 +1138,7 @@ const SalesPerformance = () => {
                       const maxVal = Math.max(...funnel.map(f => f.value), 1)
                       const pct = Math.min(100, Math.round((item.value / maxVal) * 100))
                       const prevStage = idx > 0 ? funnel[idx - 1] : null
-                      
+
                       let convRate = null
                       if (prevStage && prevStage.count > 0) {
                         const convertedFromPrev = item.converted_from_prev != null ? item.converted_from_prev : item.count
@@ -1016,7 +1194,7 @@ const SalesPerformance = () => {
                   <BarChart data={monthly} margin={{ left: 10, right: 10, top: 10, bottom: 10 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                     <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-                    <YAxis tickFormatter={v => `₹${(v/1000).toFixed(0)}k`} tick={{ fontSize: 11 }} />
+                    <YAxis tickFormatter={v => `₹${(v / 1000).toFixed(0)}k`} tick={{ fontSize: 11 }} />
                     <RechartsTooltip
                       formatter={(value) => [fmtINR(value)]}
                       contentStyle={{ borderRadius: 8, border: '1px solid #E2E8F0', fontSize: 12 }}
@@ -1060,6 +1238,250 @@ const SalesPerformance = () => {
           </div>
         </>
       )}
+
+      {/* ── Quotation Pipeline Section ── */}
+      <div id="quotation-pipeline-section" style={{
+        background: '#fff', borderRadius: 14, border: '1px solid #E2E8F0',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.04)', overflow: 'hidden', marginBottom: 24,
+      }}>
+        {/* Section Header */}
+        <div style={{
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          padding: '16px 24px', borderBottom: '1px solid #F1F5F9', background: '#FAFBFD',
+          flexWrap: 'wrap', gap: 12,
+        }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Text strong style={{ fontSize: 16, color: '#0f172a' }}>
+                Quotation Pipeline
+              </Text>
+              <Tag color="blue" style={{ fontWeight: 600, borderRadius: 12 }}>
+                {pipelineQuotations.length} Quotation{pipelineQuotations.length !== 1 ? 's' : ''}
+              </Tag>
+            </div>
+            <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 2 }}>
+              Won (converted), Lost, and Pending pipeline analysis for the selected periodm k
+            </Text>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            {cancelledQuotesCount > 0 && (
+              <Tag color="default" style={{ borderRadius: 10, fontSize: 11, padding: '2px 8px' }}>
+                {cancelledQuotesCount} cancelled excluded
+              </Tag>
+            )}
+          </div>
+        </div>
+
+        <div style={{ padding: '20px 24px' }}>
+          {/* Conversion Rate Line */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            background: '#F8FAFC',
+            border: '1px solid #E2E8F0',
+            borderRadius: 12,
+            padding: '12px 20px',
+            marginBottom: 20,
+            flexWrap: 'wrap',
+            gap: 12,
+          }}>
+            <Space align="center" size="middle" wrap>
+              <Text strong style={{ fontSize: 13, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                Quotation Conversion Rate:
+              </Text>
+              <span style={{
+                fontSize: 22,
+                fontWeight: 800,
+                color: conversionRate != null ? '#10b981' : '#64748b',
+                lineHeight: 1,
+              }}>
+                {conversionRate != null ? `${conversionRate}%` : '—'}
+              </span>
+              <Text type="secondary" style={{ fontSize: 13 }}>
+                ({wonCount} won / {decidedCount} closed [won + lost])
+              </Text>
+            </Space>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              Calculated as Won / (Won + Lost) • Excludes pending and cancelled quotations
+            </Text>
+          </div>
+
+          {/* Three Tiles Row: Won (Green), Lost (Red), Pending (Amber) */}
+          <Row gutter={[16, 16]} style={{ marginBottom: 20 }}>
+            {/* Won Tile */}
+            <Col xs={24} sm={8}>
+              <div style={{
+                background: '#fff',
+                borderRadius: 14,
+                border: '1px solid #E2E8F0',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+                padding: '18px 20px',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between',
+                height: '100%',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 }}>
+                  <div style={{
+                    width: 44, height: 44, borderRadius: 12,
+                    background: '#10b98115',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 20, color: '#10b981', flexShrink: 0,
+                  }}>
+                    <CheckCircleOutlined />
+                  </div>
+                  <Tag color="green" style={{ fontWeight: 700, borderRadius: 12, padding: '2px 10px', fontSize: 12 }}>
+                    {wonCount} Won
+                  </Tag>
+                </div>
+                <div>
+                  <div style={{ fontSize: 12, color: '#64748b', fontWeight: 600, marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Won (Converted)
+                  </div>
+                  {quotationsLoading ? (
+                    <Skeleton.Button active size="small" style={{ width: 100, height: 28 }} />
+                  ) : (
+                    <div>
+                      <div style={{ fontSize: 22, fontWeight: 700, color: '#0f172a', lineHeight: 1.2 }}>
+                        {fmtINR(wonValue)}
+                      </div>
+                      <div style={{ fontSize: 11, color: '#10b981', marginTop: 4, fontWeight: 500 }}>
+                        {wonCount} quotation{wonCount !== 1 ? 's' : ''} converted to sales orders
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </Col>
+
+            {/* Lost Tile */}
+            <Col xs={24} sm={8}>
+              <div style={{
+                background: '#fff',
+                borderRadius: 14,
+                border: '1px solid #E2E8F0',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+                padding: '18px 20px',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between',
+                height: '100%',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 }}>
+                  <div style={{
+                    width: 44, height: 44, borderRadius: 12,
+                    background: '#ef444415',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 20, color: '#ef4444', flexShrink: 0,
+                  }}>
+                    <CloseCircleOutlined />
+                  </div>
+                  <Tag color="red" style={{ fontWeight: 700, borderRadius: 12, padding: '2px 10px', fontSize: 12 }}>
+                    {lostCount} Lost
+                  </Tag>
+                </div>
+                <div>
+                  <div style={{ fontSize: 12, color: '#64748b', fontWeight: 600, marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Lost
+                  </div>
+                  {quotationsLoading ? (
+                    <Skeleton.Button active size="small" style={{ width: 100, height: 28 }} />
+                  ) : (
+                    <div>
+                      <div style={{ fontSize: 22, fontWeight: 700, color: '#0f172a', lineHeight: 1.2 }}>
+                        {fmtINR(lostValue)}
+                      </div>
+                      <div style={{ fontSize: 11, color: '#ef4444', marginTop: 4, fontWeight: 500 }}>
+                        {lostCount} quotation{lostCount !== 1 ? 's' : ''} marked as lost
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </Col>
+
+            {/* Pending Tile */}
+            <Col xs={24} sm={8}>
+              <div style={{
+                background: '#fff',
+                borderRadius: 14,
+                border: '1px solid #E2E8F0',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+                padding: '18px 20px',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between',
+                height: '100%',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 }}>
+                  <div style={{
+                    width: 44, height: 44, borderRadius: 12,
+                    background: '#f59e0b15',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 20, color: '#f59e0b', flexShrink: 0,
+                  }}>
+                    <ClockCircleOutlined />
+                  </div>
+                  <Tag color="gold" style={{ fontWeight: 700, borderRadius: 12, padding: '2px 10px', fontSize: 12 }}>
+                    {pendingCount} Pending
+                  </Tag>
+                </div>
+                <div>
+                  <div style={{ fontSize: 12, color: '#64748b', fontWeight: 600, marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Pending (Open)
+                  </div>
+                  {quotationsLoading ? (
+                    <Skeleton.Button active size="small" style={{ width: 100, height: 28 }} />
+                  ) : (
+                    <div>
+                      <div style={{ fontSize: 22, fontWeight: 700, color: '#0f172a', lineHeight: 1.2 }}>
+                        {fmtINR(pendingValue)}
+                      </div>
+                      <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4, fontWeight: 500 }}>
+                        {pendingCount} quotation{pendingCount !== 1 ? 's' : ''} in draft, sent, or confirmed
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </Col>
+          </Row>
+
+          {/* Filter Tabs */}
+          <Tabs
+            activeKey={pipelineTab}
+            onChange={setPipelineTab}
+            items={[
+              { key: 'all', label: `All (${pipelineQuotations.length})` },
+              { key: 'won', label: `Won (${wonCount})` },
+              { key: 'lost', label: `Lost (${lostCount})` },
+              { key: 'pending', label: `Pending (${pendingCount})` },
+            ]}
+            style={{ marginBottom: 12 }}
+          />
+
+          {/* Pipeline Quotations Table */}
+          <Table
+            dataSource={displayedPipelineQuotes}
+            columns={pipelineColumns}
+            rowKey="id"
+            loading={quotationsLoading}
+            pagination={{
+              pageSize: 10,
+              showSizeChanger: true,
+              pageSizeOptions: ['10', '25', '50', '100'],
+              showTotal: (total) => `Total ${total} quotations`
+            }}
+            size="small"
+            scroll={{ x: 850 }}
+            locale={{
+              emptyText: <Empty description={`No ${pipelineTab === 'all' ? '' : pipelineTab + ' '}quotations found in this period`} />
+            }}
+          />
+        </div>
+      </div>
 
       {/* ── Document-Centric History Table ── */}
       <div style={{
