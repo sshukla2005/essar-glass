@@ -1470,15 +1470,31 @@ const QuotationForm = () => {
       try {
         const blob = await buildQuotationPdfBlob()
         const res = await quotationApi.shareFile(id, blob, `${record.quote_number}.pdf`)
-        try {
-          const waRes = await quotationApi.sendWhatsApp(id, res.data.url)
-          if (waRes.data?.sent) {
-            message.success('Quotation sent on WhatsApp')
-          } else {
-            message.info(`WhatsApp not sent: ${waRes.data?.reason || 'unknown'}`)
-          }
-        } catch (waErr) {
-          message.warning('WhatsApp notification failed')
+        const cust = customers.find(c => c.id === (form.getFieldValue('customer_id') || record?.customer?.id || record?.customer_id)) || record?.customer
+        const customerName = cust?.name || record?.customer_name || 'Customer'
+        const rawPhone = cust?.phone || cust?.mobile || record?.customer_phone || ''
+        const customerPhone = (typeof rawPhone === 'string' ? rawPhone : String(rawPhone || '')).trim()
+        const hasPhone = Boolean(customerPhone && customerPhone !== 'null' && customerPhone !== 'undefined' && customerPhone !== 'None')
+
+        if (hasPhone) {
+          Modal.confirm({
+            title: 'Send quotation on WhatsApp?',
+            content: `${record.quote_number} will be sent to ${customerName} on WhatsApp with the PDF attached.`,
+            okText: 'Send',
+            cancelText: 'Not now',
+            onOk: async () => {
+              try {
+                const waRes = await quotationApi.sendWhatsApp(id, res.data.url)
+                if (waRes.data?.sent) {
+                  message.success('Quotation sent on WhatsApp')
+                } else {
+                  message.info(`WhatsApp not sent: ${waRes.data?.reason || 'unknown'}`)
+                }
+              } catch (waErr) {
+                message.warning('WhatsApp notification failed')
+              }
+            },
+          })
         }
       } catch (err) {
         message.warning('Quotation confirmed, but the PDF could not be uploaded for sharing')
