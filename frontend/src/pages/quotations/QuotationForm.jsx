@@ -1437,10 +1437,52 @@ const QuotationForm = () => {
     }
   })
 
+  const buildQuotationPdfBlob = async () => {
+    const cust = customers.find(c => c.id === (form.getFieldValue('customer_id') || record?.customer_id))
+    const doc = await generateQuotationPDF({
+      id: record?.id || id,
+      customer_id: form.getFieldValue('customer_id') || record?.customer_id,
+      quote_number: record?.quote_number,
+      quote_date: form.getFieldValue('quote_date')?.format?.('YYYY-MM-DD') || form.getFieldValue('quote_date'),
+      valid_until: form.getFieldValue('valid_until')?.format?.('YYYY-MM-DD') || form.getFieldValue('valid_until'),
+      salesperson: form.getFieldValue('salesperson'),
+      payment_terms: form.getFieldValue('payment_terms'),
+      delivery_address: form.getFieldValue('delivery_address'),
+      company_id: form.getFieldValue('company_id'),
+      customer_name: cust?.name || record?.customer_name || '',
+      customer_phone: cust?.phone || record?.customer_phone || '',
+      customer_gstin: cust?.gstin || record?.customer_gstin || '',
+      advance_received: advanceRec || 0,
+      unit_mode: unit,
+      groups,
+      totals,
+      lines: getFlatLines(),
+      hardware_items: hardwareItems,
+      labor_items: laborItems,
+    }, { save: false })
+    return doc ? doc.output('blob') : null
+  }
+
   const confirmMutation = useMutation({
     mutationFn: async () => {
       await handleSave(false)
       await quotationApi.changeStatus(id, 'confirmed')
+      try {
+        const blob = await buildQuotationPdfBlob()
+        const res = await quotationApi.shareFile(id, blob, `${record.quote_number}.pdf`)
+        try {
+          const waRes = await quotationApi.sendWhatsApp(id, res.data.url)
+          if (waRes.data?.sent) {
+            message.success('Quotation sent on WhatsApp')
+          } else {
+            message.info(`WhatsApp not sent: ${waRes.data?.reason || 'unknown'}`)
+          }
+        } catch (waErr) {
+          message.warning('WhatsApp notification failed')
+        }
+      } catch (err) {
+        message.warning('Quotation confirmed, but the PDF could not be uploaded for sharing')
+      }
     },
     onSuccess: () => {
       message.success('\u2705 Quotation confirmed successfully!')

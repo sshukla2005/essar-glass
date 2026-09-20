@@ -2037,7 +2037,7 @@ const buildArtworkPageHTML = (group, gi, company) => {
   </div></body></html>`
 }
 
-export const generateQuotationPDF = async (quotation) => {
+export const generateQuotationPDF = async (quotation, { save = true } = {}) => {
   try {
     const { hardware_items = [], labor_items = [], wastage_items = [] } = quotation
     const doc = new jsPDF('p', 'mm', 'a4')
@@ -2298,7 +2298,10 @@ export const generateQuotationPDF = async (quotation) => {
       }
     }
 
-    doc.save(makePdfFilename(quotation.quote_number || 'QT', cust.name, 'Customer'))
+    if (save) {
+      doc.save(makePdfFilename(quotation.quote_number || 'QT', cust.name, 'Customer'))
+    }
+    return doc
   } catch (e) {
     console.error('PDF error:', e)
     alert('PDF failed: ' + e.message)

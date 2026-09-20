@@ -71,7 +71,19 @@ export const productApi = createApi('products', 'internal_ref')
 export const employeeApi = createApi('employees', 'employee_code')
 export const crmStageApi = createApi('crm/stages')
 export const crmLeadApi = createApi('crm/leads', 'lead_number')
-export const quotationApi = createApi('quotations', 'quote_number')
+export const quotationApi = {
+  ...createApi('quotations', 'quote_number'),
+  shareFile: (id, blob, filename) => {
+    const fd = new FormData()
+    fd.append('file', blob, filename)
+    return api.post(`/api/v1/quotations/${id}/share-file`, fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
+  sendWhatsApp: (id, document_url) => {
+    return api.post(`/api/v1/quotations/${id}/send-whatsapp`, { document_url })
+  },
+}
 export const salesOrderApi = createApi('sales-orders', 'so_number')
 export const purchaseOrderApi = createApi('purchase-orders', 'po_number')
 export const deliveryChallanApi = createApi('delivery', 'dc_number')

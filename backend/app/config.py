@@ -20,6 +20,13 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: str = ""
     ANTHROPIC_MODEL: str = "claude-sonnet-4-5"
 
+    # WhatsApp (1automations / Meta Cloud API)
+    WHATSAPP_API_URL: str = "https://crmapi.1automations.com/api/meta/v19.0"
+    WHATSAPP_PHONE_NUMBER_ID: str = ""
+    WHATSAPP_TOKEN: str = ""
+    WHATSAPP_TEMPLATE_QUOTATION: str = "quotation_confirmed"
+    PUBLIC_BASE_URL: str = ""
+
     # ── Company isolation flags ──────────────────────────────────────────
     # ASSUMPTION 1: Read-only-on-switch applies to ALL roles including
     # Super Admin.  Set to True to allow superadmin to edit cross-company.

@@ -79,7 +79,7 @@ const TougheningForm = () => {
       const rawItems = record.items?.length ? record.items : (record.lines || [])
       if (rawItems.length) {
         setItems(rawItems.map((it, i) => {
-          const qty = it.qty || it.quantity || 1
+          const qty = it.quantity || it.qty || 1
           let qty_received = typeof it.qty_received === 'number' ? it.qty_received : 0
           let qty_posted = typeof it.qty_posted === 'number' ? it.qty_posted : 0
           let qty_short = typeof it.qty_short === 'number' ? it.qty_short : 0
@@ -339,7 +339,7 @@ const TougheningForm = () => {
       } else {
         values.vendor_name = vendor?.name || record?.vendor_name || ''
       }
-      values.lines = items.map(({ key, ...rest }) => rest)
+      values.lines = items.map(({ key, ...rest }) => ({ ...rest, qty: rest.quantity }))
       values.total_sqmt = totals.total_sqmt
       values.total_amount = totals.total_amount
       await saveMutation.mutateAsync(values)
@@ -402,7 +402,16 @@ const TougheningForm = () => {
     { title: 'Description', width: 200, dataIndex: 'description', render: v => <Text strong style={{ fontSize: 12 }}>{v}</Text> },
     { title: 'W(mm)', width: 70, dataIndex: 'width_mm', align: 'center' },
     { title: 'H(mm)', width: 70, dataIndex: 'height_mm', align: 'center' },
-    { title: 'Qty', width: 50, dataIndex: 'quantity', align: 'center' },
+    { title: 'Qty', width: 70, dataIndex: 'quantity', align: 'center',
+      render: (v, r) => (
+        <InputNumber
+          size="small"
+          min={1}
+          value={v}
+          style={{ width: '100%' }}
+          onChange={val => updateItem(r.key, 'quantity', val || 1)}
+        />
+      ) },
     { title: 'Chg W(mm)', width: 90, dataIndex: 'charged_w_mm', align: 'center', render: v => <Text type="secondary">{v}</Text> },
     { title: 'Chg H(mm)', width: 90, dataIndex: 'charged_h_mm', align: 'center', render: v => <Text type="secondary">{v}</Text> },
     { title: 'Sqmt', width: 100, dataIndex: 'charged_sqmt', align: 'right', render: v => <Text strong>{v?.toFixed(4) || '—'}</Text> },

@@ -599,6 +599,138 @@ async def upload_wo_file(
     return {"url": f"/uploads/wo/{filename}"}
 
 
+@app.post("/api/v1/quotations/{quotation_id}/share-file")
+async def upload_quotation_file(
+    quotation_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    ext = None
+    filename_lower = (file.filename or "").lower()
+    if filename_lower.endswith(".pdf"):
+        ext = "pdf"
+    elif file.content_type:
+        ct = file.content_type.lower()
+        if ct == "application/pdf":
+            ext = "pdf"
+
+    if not ext:
+        raise HTTPException(status_code=400, detail="Only .pdf files are allowed")
+
+    contents = await file.read()
+    if len(contents) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File size exceeds 5 MB limit")
+
+    quotations_dir = os.path.join(settings.UPLOAD_DIR, "quotations")
+    os.makedirs(quotations_dir, exist_ok=True)
+
+    # Delete existing file for this quotation_id to prevent accumulation regardless of extension
+    existing_pattern = os.path.join(quotations_dir, f"QT{quotation_id}_*")
+    for old_file in glob.glob(existing_pattern):
+        if os.path.isfile(old_file):
+            try:
+                os.remove(old_file)
+            except Exception:
+                pass
+
+    token = secrets.token_urlsafe(8)
+    filename = f"QT{quotation_id}_{token}.pdf"
+    filepath = os.path.join(quotations_dir, filename)
+
+    with open(filepath, "wb") as f:
+        f.write(contents)
+
+    return {"url": f"/uploads/quotations/{filename}"}
+
+
+class SendWhatsAppRequest(BaseModel):
+    document_url: str
+
+
+def format_indian_currency(amount: Optional[float]) -> str:
+    if amount is None:
+        return "0.00"
+    try:
+        val = float(amount)
+    except (ValueError, TypeError):
+        return "0.00"
+
+    is_negative = val < 0
+    val = abs(val)
+
+    s = f"{val:.2f}"
+    int_part, dec_part = s.split(".")
+
+    if len(int_part) <= 3:
+        formatted_int = int_part
+    else:
+        last3 = int_part[-3:]
+        remaining = int_part[:-3]
+        groups = []
+        while len(remaining) > 2:
+            groups.insert(0, remaining[-2:])
+            remaining = remaining[:-2]
+        if remaining:
+            groups.insert(0, remaining)
+        formatted_int = ",".join(groups) + "," + last3
+
+    res = f"{formatted_int}.{dec_part}"
+    return f"-{res}" if is_negative else res
+
+
+@app.post("/api/v1/quotations/{quotation_id}/send-whatsapp")
+def send_quotation_whatsapp(
+    quotation_id: int,
+    payload: SendWhatsAppRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from app.utils.helpers import apply_company_filter, apply_scope_filter
+    from app.services.whatsapp_service import send_quotation_confirmed
+
+    query = db.query(Quotation).filter(Quotation.id == quotation_id)
+    query = apply_company_filter(query, Quotation, current_user.active_company_id)
+    query = apply_scope_filter(query, Quotation, current_user, "quotations")
+    quotation = query.first()
+    if not quotation:
+        raise HTTPException(status_code=404, detail="Quotation not found")
+
+    customer = (
+        db.query(Customer).filter(Customer.id == quotation.customer_id).first()
+        if quotation.customer_id
+        else None
+    )
+    customer_phone = (customer.phone or customer.mobile) if customer else None
+    if not customer_phone or not str(customer_phone).strip():
+        return {"sent": False, "reason": "customer has no phone"}
+
+    if not settings.PUBLIC_BASE_URL or not settings.PUBLIC_BASE_URL.strip():
+        return {"sent": False, "reason": "PUBLIC_BASE_URL not configured"}
+
+    doc_url = payload.document_url.strip()
+    if not doc_url.startswith("/"):
+        doc_url = f"/{doc_url}"
+    absolute_document_url = f"{settings.PUBLIC_BASE_URL.rstrip('/')}{doc_url}"
+
+    company = (
+        db.query(Company).filter(Company.id == quotation.company_id).first()
+        if quotation.company_id
+        else None
+    )
+    company_name = company.name if company and company.name else settings.APP_NAME
+
+    return send_quotation_confirmed(
+        to_number=customer_phone,
+        document_url=absolute_document_url,
+        customer_name=customer.name if customer else "Customer",
+        quote_number=quotation.quote_number or f"QT{quotation.id}",
+        quote_date=str(quotation.quote_date or ""),
+        total_amount=format_indian_currency(quotation.total_amount),
+        company_name=company_name,
+    )
+
+
 for cfg in ROUTER_CONFIGS:
     r = make_crud_router(
         prefix=f"{PREFIX}{cfg['prefix']}",
