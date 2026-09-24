@@ -32,6 +32,14 @@ from app.utils.helpers import apply_company_filter, apply_scope_filter
 router = APIRouter(prefix="/api/v1/reports", tags=["Reports"])
 
 _UNASSIGNED = "Unassigned"
+# Quotation pipeline buckets: won = 'converted', lost = 'lost', pending = open statuses below.
+_PENDING_QUOTE_STATUSES = ('draft', 'sent', 'confirmed')
+
+
+def _conversion_rate(won: int, lost: int) -> Optional[float]:
+    """Won / (Won + Lost) as a percentage; None when nothing has been decided yet."""
+    decided = won + lost
+    return round(won / decided * 100.0, 1) if decided > 0 else None
 
 
 def _clean_str(val: Optional[str]) -> str:
@@ -142,6 +150,14 @@ def _calc_summary(
     quotes_won_q = quotes_q.filter(Quotation.status == 'converted')
     quotes_won = quotes_won_q.count()
     quotes_won_value = round(float(quotes_won_q.with_entities(func.sum(Quotation.total_amount)).scalar() or 0.0), 2)
+
+    # Lost / Pending quotes (cancelled already excluded by quotes_q)
+    quotes_lost_q = quotes_q.filter(Quotation.status == 'lost')
+    quotes_lost = quotes_lost_q.count()
+    quotes_lost_value = round(float(quotes_lost_q.with_entities(func.sum(Quotation.total_amount)).scalar() or 0.0), 2)
+    quotes_pending_q = quotes_q.filter(Quotation.status.in_(_PENDING_QUOTE_STATUSES))
+    quotes_pending = quotes_pending_q.count()
+    quotes_pending_value = round(float(quotes_pending_q.with_entities(func.sum(Quotation.total_amount)).scalar() or 0.0), 2)
 
     # Leads with at least 1 quotation created
     leads_with_q = (
@@ -272,6 +288,11 @@ def _calc_summary(
         "quotes_won_value": quotes_won_value,
         "win_rate_count": win_rate_count,
         "win_rate_value": win_rate_value,
+        "quotes_lost": quotes_lost,
+        "quotes_lost_value": quotes_lost_value,
+        "quotes_pending": quotes_pending,
+        "quotes_pending_value": quotes_pending_value,
+        "conversion_rate": _conversion_rate(quotes_won, quotes_lost),
         "lead_conversion_rate": lead_conversion_rate,
         "so_count": so_count,
         "so_value": so_value,
@@ -336,6 +357,10 @@ def sales_performance(
                 "quotes_value": 0.0,
                 "quotes_won": 0,
                 "quotes_won_value": 0.0,
+                "quotes_lost": 0,
+                "quotes_lost_value": 0.0,
+                "quotes_pending": 0,
+                "quotes_pending_value": 0.0,
                 "so_count": 0,
                 "so_value": 0.0,
                 "so_with_cost_count": 0,
@@ -393,6 +418,10 @@ def sales_performance(
             func.sum(Quotation.total_amount).label("amt"),
             func.count(case((Quotation.status == 'converted', Quotation.id))).label("won_cnt"),
             func.sum(case((Quotation.status == 'converted', Quotation.total_amount), else_=0.0)).label("won_amt"),
+            func.count(case((Quotation.status == 'lost', Quotation.id))).label("lost_cnt"),
+            func.sum(case((Quotation.status == 'lost', Quotation.total_amount), else_=0.0)).label("lost_amt"),
+            func.count(case((Quotation.status.in_(_PENDING_QUOTE_STATUSES), Quotation.id))).label("pending_cnt"),
+            func.sum(case((Quotation.status.in_(_PENDING_QUOTE_STATUSES), Quotation.total_amount), else_=0.0)).label("pending_amt"),
         )
         .group_by(q_sp_expr)
         .all()
@@ -403,6 +432,10 @@ def sales_performance(
         sp_map[n]["quotes_value"] += float(row.amt or 0.0)
         sp_map[n]["quotes_won"] += row.won_cnt
         sp_map[n]["quotes_won_value"] += float(row.won_amt or 0.0)
+        sp_map[n]["quotes_lost"] += row.lost_cnt
+        sp_map[n]["quotes_lost_value"] += float(row.lost_amt or 0.0)
+        sp_map[n]["quotes_pending"] += row.pending_cnt
+        sp_map[n]["quotes_pending_value"] += float(row.pending_amt or 0.0)
 
     # Leads with quotation per salesperson
     leads_q_rows = (
@@ -563,6 +596,10 @@ def sales_performance(
         qv = round(data_rec["quotes_value"], 2)
         qw = data_rec["quotes_won"]
         qwv = round(data_rec["quotes_won_value"], 2)
+        ql = data_rec["quotes_lost"]
+        qlv = round(data_rec["quotes_lost_value"], 2)
+        qp = data_rec["quotes_pending"]
+        qpv = round(data_rec["quotes_pending_value"], 2)
         soc = data_rec["so_count"]
         sov = round(data_rec["so_value"], 2)
         inv_v = round(data_rec["invoiced_value"], 2)
@@ -582,6 +619,11 @@ def sales_performance(
             "quotes_won_value": qwv,
             "win_rate_count": round(qw / qc * 100.0, 1) if qc > 0 else None,
             "win_rate_value": round(qwv / qv * 100.0, 1) if qv > 0 else None,
+            "quotes_lost": ql,
+            "quotes_lost_value": qlv,
+            "quotes_pending": qp,
+            "quotes_pending_value": qpv,
+            "conversion_rate": _conversion_rate(qw, ql),
             "so_count": soc,
             "so_value": sov,
             "profit_amount": sp_prof_amt,
