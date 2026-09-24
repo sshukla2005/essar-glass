@@ -330,26 +330,6 @@ const SalesPerformance = () => {
     return allScopedQuotations.filter(q => ['converted', 'lost', 'draft', 'sent', 'confirmed'].includes(q.status))
   }, [allScopedQuotations])
 
-  const wonValue = useMemo(() => {
-    return wonQuotes.reduce((sum, q) => sum + (Number(q.total_amount) || 0), 0)
-  }, [wonQuotes])
-
-  const lostValue = useMemo(() => {
-    return lostQuotes.reduce((sum, q) => sum + (Number(q.total_amount) || 0), 0)
-  }, [lostQuotes])
-
-  const pendingValue = useMemo(() => {
-    return pendingQuotes.reduce((sum, q) => sum + (Number(q.total_amount) || 0), 0)
-  }, [pendingQuotes])
-
-  const wonCount = wonQuotes.length
-  const lostCount = lostQuotes.length
-  const pendingCount = pendingQuotes.length
-  const decidedCount = wonCount + lostCount
-
-  // Conversion rate: won / (won + lost) as a percentage, with "—" when both are zero
-  const conversionRate = decidedCount > 0 ? ((wonCount / decidedCount) * 100).toFixed(1) : null
-
   // Filtered quotations for active tab
   const displayedPipelineQuotes = useMemo(() => {
     if (pipelineTab === 'won') return wonQuotes
@@ -428,6 +408,19 @@ const SalesPerformance = () => {
 
   const period = data?.period || {}
   const summary = data?.summary || {}
+
+  // Pipeline tile figures come from the report summary (server-side, no row limit)
+  // so they agree with the per-salesperson table. The list query above only feeds the table.
+  const wonCount = summary.quotes_won || 0
+  const lostCount = summary.quotes_lost || 0
+  const pendingCount = summary.quotes_pending || 0
+  const wonValue = summary.quotes_won_value || 0
+  const lostValue = summary.quotes_lost_value || 0
+  const pendingValue = summary.quotes_pending_value || 0
+  const decidedCount = wonCount + lostCount
+  const pipelineTotalCount = wonCount + lostCount + pendingCount
+  // Conversion rate: won / (won + lost) as a percentage, with "—" when both are zero
+  const conversionRate = summary.conversion_rate != null ? Number(summary.conversion_rate).toFixed(1) : null
   const previous = data?.previous || {}
   const funnel = data?.funnel || []
   const salespeople = data?.salespeople || []
@@ -533,6 +526,11 @@ const SalesPerformance = () => {
         'Quotes Won Value (₹)': sp.quotes_won_value,
         'Win Rate Count %': sp.win_rate_count != null ? `${sp.win_rate_count}%` : '—',
         'Win Rate Value %': sp.win_rate_value != null ? `${sp.win_rate_value}%` : '—',
+        'Quotes Lost': sp.quotes_lost ?? 0,
+        'Quotes Lost Value (₹)': sp.quotes_lost_value ?? 0,
+        'Quotes Pending': sp.quotes_pending ?? 0,
+        'Quotes Pending Value (₹)': sp.quotes_pending_value ?? 0,
+        'Conversion Rate % (Won / Won + Lost)': sp.conversion_rate != null ? `${sp.conversion_rate}%` : '—',
         'SO Count': sp.so_count,
         'SO Value (₹)': sp.so_value,
         'Profit (₹)': sp.profit_amount ?? '—',
@@ -683,6 +681,61 @@ const SalesPerformance = () => {
           <Tag color={v >= 50 ? 'green' : v >= 25 ? 'gold' : 'volcano'} style={{ fontWeight: 700 }}>
             {v}%
           </Tag>
+        )
+      },
+    },
+    {
+      title: 'Lost',
+      dataIndex: 'quotes_lost',
+      key: 'quotes_lost',
+      align: 'center',
+      width: 80,
+      sorter: (a, b) => (a.quotes_lost || 0) - (b.quotes_lost || 0),
+      render: v => <Text style={{ color: v > 0 ? '#dc2626' : undefined }}>{v || 0}</Text>,
+    },
+    {
+      title: 'Lost ₹',
+      dataIndex: 'quotes_lost_value',
+      key: 'quotes_lost_value',
+      align: 'right',
+      width: 130,
+      sorter: (a, b) => (a.quotes_lost_value || 0) - (b.quotes_lost_value || 0),
+      render: v => <Text strong style={{ color: '#ef4444' }}>{fmtINR(v || 0)}</Text>,
+    },
+    {
+      title: 'Pending',
+      key: 'quotes_pending',
+      align: 'right',
+      width: 130,
+      sorter: (a, b) => (a.quotes_pending_value || 0) - (b.quotes_pending_value || 0),
+      render: (_, r) => (
+        <div>
+          <Text strong style={{ color: '#f59e0b' }}>{fmtINR(r.quotes_pending_value || 0)}</Text>
+          <div style={{ fontSize: 11, color: '#64748b' }}>{r.quotes_pending || 0} open</div>
+        </div>
+      ),
+    },
+    {
+      title: 'Conv %',
+      dataIndex: 'conversion_rate',
+      key: 'conversion_rate',
+      width: 100,
+      align: 'center',
+      sorter: (a, b) => (a.conversion_rate ?? -1) - (b.conversion_rate ?? -1),
+      render: (v) => {
+        if (v == null) {
+          return (
+            <Tooltip title="No won or lost quotations for this salesperson in this period.">
+              <Text type="secondary">—</Text>
+            </Tooltip>
+          )
+        }
+        return (
+          <Tooltip title="Won / (Won + Lost)">
+            <Tag color={v >= 50 ? 'green' : v >= 25 ? 'gold' : 'volcano'} style={{ fontWeight: 700 }}>
+              {v}%
+            </Tag>
+          </Tooltip>
         )
       },
     },
@@ -1232,7 +1285,7 @@ const SalesPerformance = () => {
               loading={isLoading}
               pagination={false}
               size="middle"
-              scroll={{ x: 1200 }}
+              scroll={{ x: 1640 }}
               locale={{ emptyText: <Empty description="No salesperson data found" /> }}
             />
           </div>
@@ -1256,7 +1309,7 @@ const SalesPerformance = () => {
                 Quotation Pipeline
               </Text>
               <Tag color="blue" style={{ fontWeight: 600, borderRadius: 12 }}>
-                {pipelineQuotations.length} Quotation{pipelineQuotations.length !== 1 ? 's' : ''}
+                {pipelineTotalCount} Quotation{pipelineTotalCount !== 1 ? 's' : ''}
               </Tag>
             </div>
             <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 2 }}>
@@ -1340,7 +1393,7 @@ const SalesPerformance = () => {
                   <div style={{ fontSize: 12, color: '#64748b', fontWeight: 600, marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                     Won (Converted)
                   </div>
-                  {quotationsLoading ? (
+                  {isLoading ? (
                     <Skeleton.Button active size="small" style={{ width: 100, height: 28 }} />
                   ) : (
                     <div>
@@ -1386,7 +1439,7 @@ const SalesPerformance = () => {
                   <div style={{ fontSize: 12, color: '#64748b', fontWeight: 600, marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                     Lost
                   </div>
-                  {quotationsLoading ? (
+                  {isLoading ? (
                     <Skeleton.Button active size="small" style={{ width: 100, height: 28 }} />
                   ) : (
                     <div>
@@ -1432,7 +1485,7 @@ const SalesPerformance = () => {
                   <div style={{ fontSize: 12, color: '#64748b', fontWeight: 600, marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                     Pending (Open)
                   </div>
-                  {quotationsLoading ? (
+                  {isLoading ? (
                     <Skeleton.Button active size="small" style={{ width: 100, height: 28 }} />
                   ) : (
                     <div>
@@ -1455,9 +1508,9 @@ const SalesPerformance = () => {
             onChange={setPipelineTab}
             items={[
               { key: 'all', label: `All (${pipelineQuotations.length})` },
-              { key: 'won', label: `Won (${wonCount})` },
-              { key: 'lost', label: `Lost (${lostCount})` },
-              { key: 'pending', label: `Pending (${pendingCount})` },
+              { key: 'won', label: `Won (${wonQuotes.length})` },
+              { key: 'lost', label: `Lost (${lostQuotes.length})` },
+              { key: 'pending', label: `Pending (${pendingQuotes.length})` },
             ]}
             style={{ marginBottom: 12 }}
           />

@@ -15,7 +15,7 @@ import {
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import dayjs from 'dayjs'
 import { useAuth } from '../hooks/useAuth'
 
@@ -116,11 +116,69 @@ const ProductionTile = ({ title, data, color, bgColor }) => {
   )
 }
 
+const RegisterTile = ({ title, data, color, bgColor }) => {
+  return (
+    <Card
+      style={{
+        borderRadius: 16,
+        border: `1px solid ${color}30`,
+        backgroundColor: bgColor,
+        padding: '12px 16px',
+        height: '100%',
+        boxShadow: '0 4px 12px rgba(0,0,0,0.02)',
+      }}
+      bodyStyle={{ padding: 0 }}
+    >
+      <div style={{ fontWeight: 600, color: '#334155', fontSize: 13, marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span>{title}</span>
+        <Tag color={color} style={{ margin: 0, fontSize: 11, borderRadius: 4, fontWeight: 700 }}>
+          {data?.batches || 0} Batch{(data?.batches || 0) !== 1 ? 'es' : ''}
+        </Tag>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
+          <span style={{ color: '#64748b' }}>Pieces:</span>
+          <span style={{ fontWeight: 600, color: '#1e293b' }}>{Number(data?.pieces || 0).toLocaleString('en-IN')}</span>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
+          <span style={{ color: '#64748b' }}>Sqmt:</span>
+          <span style={{ fontWeight: 600, color: '#1e293b' }}>{Number(data?.sqmt || 0).toFixed(2)} sqmt</span>
+        </div>
+      </div>
+    </Card>
+  )
+}
+
+const TOUGHENING_TILE_STYLE = {
+  draft: { color: 'blue', bgColor: '#eff6ff' },
+  sent: { color: 'orange', bgColor: '#fffbeb' },
+  partial_received: { color: 'purple', bgColor: '#faf5ff' },
+  received: { color: 'green', bgColor: '#f0fdf4' },
+}
+
+const TOUGHENING_STATUS_PILL = {
+  draft: { bg: '#fef3c7', color: '#b45309', border: '#fde047' },
+  sent: { bg: '#fecaca', color: '#dc2626', border: '#fca5a5' },
+  partial_received: { bg: '#e9d5ff', color: '#7e22ce', border: '#d8b4fe' },
+  received: { bg: '#bbf7d0', color: '#15803d', border: '#86efac' },
+}
+
+const fmtShortDate = (v) => {
+  if (!v) return '—'
+  try {
+    const d = new Date(v)
+    if (isNaN(d)) return v
+    return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
+  } catch { return v }
+}
+
 const Dashboard = () => {
   const [timeRange, setTimeRange] = useState('yearly')
   const [cuttingPreset, setCuttingPreset] = useState('today')
   const [cuttingDate, setCuttingDate] = useState(dayjs())
   const [viewMode, setViewMode] = useState('active')
+  const [tougheningPreset, setTougheningPreset] = useState('today')
+  const [tougheningDate, setTougheningDate] = useState(dayjs())
   const { activeCompanyId, user } = useAuth()
   const isSales = user?.role === 'sales'
   const navigate = useNavigate()
@@ -177,6 +235,15 @@ const Dashboard = () => {
     queryFn: () => workshopOrderApi.cuttingRegister({
       preset: cuttingPreset,
       date: cuttingDate ? cuttingDate.format('YYYY-MM-DD') : undefined
+    }).then(r => r.data),
+    staleTime: 30000,
+    enabled: !isSales,
+  })
+  const { data: tougheningRegisterData } = useQuery({
+    queryKey: ['dashboard-toughening-register', tougheningPreset, tougheningDate?.format('YYYY-MM-DD')],
+    queryFn: () => workshopOrderApi.tougheningRegister({
+      preset: tougheningPreset,
+      date: tougheningDate ? tougheningDate.format('YYYY-MM-DD') : undefined
     }).then(r => r.data),
     staleTime: 30000,
     enabled: !isSales,
@@ -720,7 +787,177 @@ const Dashboard = () => {
         </>
       )}
 
+      {/* ── Toughening Register ──────────────────────────────── */}
+      {!isSales && (
+        <>
+          <Card
+            bordered={false}
+            style={{ borderRadius: 16, boxShadow: '0 4px 20px rgba(0,0,0,0.04)', overflow: 'hidden', marginTop: 24 }}
+            bodyStyle={{ padding: 0 }}
+          >
+            {/* Header */}
+            <div style={{
+              padding: '16px 24px',
+              borderBottom: '1px solid #f0f0f0',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: 12,
+              background: '#fff',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{
+                  background: '#fee2e2', padding: 8, borderRadius: 8,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center'
+                }}>
+                  <span style={{ fontSize: 20 }}>🔥</span>
+                </div>
+                <div>
+                  <Title level={4} style={{ margin: 0, fontWeight: 700 }}>Toughening Register</Title>
+                  <Text type="secondary" style={{ fontSize: 13 }}>Toughening batches — glass at vendor</Text>
+                </div>
+              </div>
+              <Space wrap>
+                <Radio.Group
+                  value={tougheningPreset}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setTougheningPreset(val);
+                    if (val === 'today') setTougheningDate(dayjs());
+                    if (val === 'yesterday') setTougheningDate(dayjs().subtract(1, 'day'));
+                  }}
+                  size="small"
+                >
+                  <Radio.Button value="today">Today</Radio.Button>
+                  <Radio.Button value="yesterday">Yesterday</Radio.Button>
+                  <Radio.Button value="this_week">This Week</Radio.Button>
+                </Radio.Group>
+                <DatePicker
+                  size="small"
+                  value={tougheningDate}
+                  onChange={(val) => {
+                    if (val) {
+                      setTougheningDate(val);
+                      setTougheningPreset('custom');
+                    }
+                  }}
+                  style={{ width: 120 }}
+                />
+                <Button size="small" onClick={() => navigate('/workshop/toughening')}>View All Batches</Button>
+              </Space>
+            </div>
+
+            {/* Status Tiles + Overdue */}
+            <div style={{ padding: '16px 24px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+              <Row gutter={[16, 16]}>
+                {(tougheningRegisterData?.statuses || []).map(s => {
+                  const tileStyle = TOUGHENING_TILE_STYLE[s.status] || { color: 'default', bgColor: '#f8fafc' }
+                  return (
+                    <Col key={s.status} xs={24} sm={12} flex="1 1 180px">
+                      <RegisterTile title={s.label} data={s} color={tileStyle.color} bgColor={tileStyle.bgColor} />
+                    </Col>
+                  )
+                })}
+                <Col xs={24} sm={12} flex="1 1 180px">
+                  <RegisterTile
+                    title={
+                      <AntTooltip title="Batches still at the vendor (Sent / Partial Received) past their expected return date, as of today — regardless of the selected period">
+                        <span>Overdue <InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 11 }} /></span>
+                      </AntTooltip>
+                    }
+                    data={{
+                      batches: tougheningRegisterData?.overdue,
+                      pieces: tougheningRegisterData?.overdue_pieces,
+                      sqmt: tougheningRegisterData?.overdue_sqmt,
+                    }}
+                    color={tougheningRegisterData?.overdue > 0 ? 'red' : 'default'}
+                    bgColor={tougheningRegisterData?.overdue > 0 ? '#fef2f2' : '#f8fafc'}
+                  />
+                </Col>
+              </Row>
+            </div>
+
+            {/* Table */}
+            <Table
+              dataSource={tougheningRegisterData?.items || []}
+              pagination={{ pageSize: 15, size: 'small' }}
+              size="small"
+              locale={{ emptyText: 'No toughening batches in this period, and none overdue' }}
+              rowClassName={(record) => (record.is_overdue ? 'toughening-overdue-row' : '')}
+              onRow={(record) => ({
+                style: { cursor: 'pointer' },
+                onClick: () => navigate(`/workshop/toughening/${record.id}/edit`)
+              })}
+              columns={[
+                {
+                  title: 'TB No', dataIndex: 'tb_number', width: 110,
+                  render: (v, record) => (
+                    <Link to={`/workshop/toughening/${record.id}/edit`} onClick={e => e.stopPropagation()}>
+                      <Text strong style={{ color: '#6366f1' }}>{v}</Text>
+                    </Link>
+                  )
+                },
+                {
+                  title: 'Vendor', dataIndex: 'vendor_name', width: 180,
+                  render: v => <Text strong>{v}</Text>
+                },
+                { title: 'Sent', dataIndex: 'sent_date', width: 90, render: fmtShortDate },
+                {
+                  title: 'Expected Return', dataIndex: 'expected_return', width: 140,
+                  render: (v, record) => (
+                    <span>
+                      {fmtShortDate(v)}
+                      {record.is_overdue && (
+                        <Text strong style={{ color: '#dc2626', fontSize: 11, marginLeft: 6 }}>
+                          {record.days_overdue}d overdue
+                        </Text>
+                      )}
+                    </span>
+                  )
+                },
+                {
+                  title: 'Pieces', dataIndex: 'total_pieces', width: 80, align: 'right',
+                  render: v => <Text style={{ fontSize: 13, fontWeight: 600, color: '#334155' }}>{v || 0}</Text>
+                },
+                {
+                  title: 'Sqmt', dataIndex: 'total_sqmt', width: 90, align: 'right',
+                  render: v => (
+                    <Text strong style={{ color: '#1d4ed8' }}>
+                      {Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                    </Text>
+                  )
+                },
+                {
+                  title: 'STATUS', dataIndex: 'status_label', width: 130,
+                  render: (v, record) => {
+                    const style = TOUGHENING_STATUS_PILL[record.status] || { bg: '#e2e8f0', color: '#64748b', border: '#cbd5e1' }
+                    return (
+                      <span style={{
+                        background: style.bg,
+                        color: style.color,
+                        border: `1px solid ${style.border}`,
+                        borderRadius: 4,
+                        padding: '2px 8px',
+                        fontSize: 11,
+                        fontWeight: 700,
+                        letterSpacing: 0.5,
+                        textTransform: 'uppercase',
+                      }}>
+                        {v}
+                      </span>
+                    )
+                  }
+                },
+              ]}
+            />
+          </Card>
+        </>
+      )}
+
       <style>{`
+        .toughening-overdue-row > td { background-color: #fef2f2 !important; }
+        .toughening-overdue-row:hover > td { background-color: #fee2e2 !important; }
         .operational-tracking-row:hover > td { background-color: #fafafa !important; }
         .ant-table-thead > tr > th { background-color: #fafafa; color: #595959; font-weight: 600; text-transform: uppercase; font-size: 12px; letter-spacing: 0.5px; padding: 16px 24px !important; }
         .ant-table-tbody > tr > td { padding: 16px 24px !important; border-bottom: 1px solid #f0f0f0; }

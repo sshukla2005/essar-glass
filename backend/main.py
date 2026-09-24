@@ -510,6 +510,149 @@ def get_cutting_register(
     }
 
 
+@app.get("/api/v1/workshop/toughening-register")
+def get_toughening_register(
+    target_date: Optional[str] = Query(None, alias="date"),
+    preset: Optional[str] = Query("today"),
+    db: Session = Depends(get_db),
+    user = Depends(get_current_user),
+):
+    """Pre-aggregated Toughening Register for Dashboard.
+
+    Status tiles count batches whose period date (sent_date, else batch_date, else
+    created_at) falls in the selected range. Overdue is as of today and ignores the
+    range: any batch still at the vendor whose expected_return has passed.
+    """
+    from datetime import datetime, date, timedelta
+    from app.models.workshop import TougheningBatch
+    from app.utils.helpers import apply_company_filter, apply_scope_filter
+
+    today_d = date.today()
+    if target_date:
+        try:
+            parsed_d = datetime.strptime(target_date, "%Y-%m-%d").date()
+        except ValueError:
+            parsed_d = today_d
+    else:
+        parsed_d = today_d
+
+    if preset == "yesterday":
+        start_d = today_d - timedelta(days=1)
+        end_d = today_d - timedelta(days=1)
+    elif preset == "this_week":
+        start_d = today_d - timedelta(days=today_d.weekday())
+        end_d = today_d
+    else:
+        start_d = parsed_d
+        end_d = parsed_d
+
+    query = db.query(TougheningBatch).filter(TougheningBatch.is_active == True)
+    query = apply_company_filter(query, TougheningBatch, user.active_company_id)
+    query = apply_scope_filter(query, TougheningBatch, user, "toughening")
+    batches = query.order_by(TougheningBatch.id.desc()).all()
+
+    # Known lifecycle (TougheningForm STATUS_STEPS); 'partially_received' is an
+    # alternate spelling written by older/demo data. Anything else gets its own bucket.
+    status_labels = {
+        "draft": "Draft",
+        "sent": "Sent",
+        "partial_received": "Partial Received",
+        "received": "Received",
+    }
+    status_aliases = {"partially_received": "partial_received"}
+    # Glass is still at the vendor in these statuses.
+    outstanding_statuses = {"sent", "partial_received"}
+
+    def parse_d(val):
+        if not val:
+            return None
+        try:
+            return datetime.strptime(str(val)[:10], "%Y-%m-%d").date()
+        except ValueError:
+            return None
+
+    def batch_pieces(tb):
+        if tb.total_pieces:
+            return int(tb.total_pieces)
+        total = 0
+        for line in tb.lines or []:
+            if isinstance(line, dict):
+                try:
+                    total += int(float(line.get("quantity") or line.get("qty") or line.get("qty_sent") or 0))
+                except (ValueError, TypeError):
+                    pass
+        return total
+
+    buckets = {s: {"batches": 0, "pieces": 0, "sqmt": 0.0} for s in status_labels}
+    overdue = {"batches": 0, "pieces": 0, "sqmt": 0.0}
+    rows = []
+
+    for tb in batches:
+        status = (tb.status or "draft").strip().lower() or "draft"
+        status = status_aliases.get(status, status)
+
+        period_d = parse_d(tb.sent_date) or parse_d(tb.batch_date) or (tb.created_at.date() if tb.created_at else None)
+        in_period = period_d is not None and start_d <= period_d <= end_d
+
+        expected_d = parse_d(tb.expected_return)
+        is_overdue = status in outstanding_statuses and expected_d is not None and expected_d < today_d
+
+        pieces = batch_pieces(tb)
+        sqmt = float(tb.total_sqmt or 0.0)
+
+        if in_period:
+            b = buckets.setdefault(status, {"batches": 0, "pieces": 0, "sqmt": 0.0})
+            b["batches"] += 1
+            b["pieces"] += pieces
+            b["sqmt"] += sqmt
+        if is_overdue:
+            overdue["batches"] += 1
+            overdue["pieces"] += pieces
+            overdue["sqmt"] += sqmt
+
+        # Table: batches in the selected range, plus every overdue batch so it can't hide.
+        if in_period or is_overdue:
+            rows.append({
+                "key": tb.id,
+                "id": tb.id,
+                "tb_number": tb.tb_number or f"TB-{tb.id}",
+                "vendor_name": tb.vendor_name or "—",
+                "sent_date": tb.sent_date or None,
+                "expected_return": tb.expected_return or None,
+                "total_pieces": pieces,
+                "total_sqmt": round(sqmt, 4),
+                "status": status,
+                "status_label": status_labels.get(status, status.replace("_", " ").title()),
+                "is_overdue": is_overdue,
+                "days_overdue": (today_d - expected_d).days if is_overdue else 0,
+                "in_period": in_period,
+            })
+
+    rows.sort(key=lambda r: (not r["is_overdue"], -r["days_overdue"], -r["id"]))
+
+    return {
+        "items": rows,
+        "statuses": [
+            {
+                "status": s,
+                "label": status_labels.get(s, s.replace("_", " ").title()),
+                "batches": b["batches"],
+                "pieces": b["pieces"],
+                "sqmt": round(b["sqmt"], 4),
+            }
+            for s, b in buckets.items()
+        ],
+        "overdue": overdue["batches"],
+        "overdue_pieces": overdue["pieces"],
+        "overdue_sqmt": round(overdue["sqmt"], 4),
+        "outstanding_statuses": sorted(outstanding_statuses),
+        "selected_date": start_d.strftime("%Y-%m-%d"),
+        "start_date": start_d.strftime("%Y-%m-%d"),
+        "end_date": end_d.strftime("%Y-%m-%d"),
+        "preset": preset,
+    }
+
+
 @app.get("/api/v1/workshop/by-so/{so_id}")
 def get_wo_by_so(
     so_id: int,
