@@ -96,6 +96,10 @@ export const workshopOrderApi = {
     const res = await api.get('/api/v1/workshop/cutting-register', { params })
     return { data: res.data }
   },
+  tougheningRegister: async (params) => {
+    const res = await api.get('/api/v1/workshop/toughening-register', { params })
+    return { data: res.data }
+  },
   shareFile: async (woId, formData) => {
     const res = await api.post(`/api/v1/workshop/${woId}/share-file`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' }
