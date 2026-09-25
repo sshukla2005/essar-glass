@@ -116,7 +116,7 @@ const ProductionTile = ({ title, data, color, bgColor }) => {
   )
 }
 
-const RegisterTile = ({ title, data, color, bgColor }) => {
+const ToughDemandTile = ({ title, data, color, bgColor, unclassified }) => {
   return (
     <Card
       style={{
@@ -132,7 +132,7 @@ const RegisterTile = ({ title, data, color, bgColor }) => {
       <div style={{ fontWeight: 600, color: '#334155', fontSize: 13, marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <span>{title}</span>
         <Tag color={color} style={{ margin: 0, fontSize: 11, borderRadius: 4, fontWeight: 700 }}>
-          {data?.batches || 0} Batch{(data?.batches || 0) !== 1 ? 'es' : ''}
+          {Number(data?.sqft || 0).toFixed(1)} Sq Ft
         </Tag>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -140,27 +140,15 @@ const RegisterTile = ({ title, data, color, bgColor }) => {
           <span style={{ color: '#64748b' }}>Pieces:</span>
           <span style={{ fontWeight: 600, color: '#1e293b' }}>{Number(data?.pieces || 0).toLocaleString('en-IN')}</span>
         </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
-          <span style={{ color: '#64748b' }}>Sqmt:</span>
-          <span style={{ fontWeight: 600, color: '#1e293b' }}>{Number(data?.sqmt || 0).toFixed(2)} sqmt</span>
-        </div>
+        {unclassified?.pieces > 0 && (
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
+            <span style={{ color: '#64748b' }}>Unclassified:</span>
+            <span style={{ fontWeight: 600, color: '#f97316' }}>{unclassified.pieces} pcs · {Number(unclassified.sqft || 0).toFixed(1)} sqft</span>
+          </div>
+        )}
       </div>
     </Card>
   )
-}
-
-const TOUGHENING_TILE_STYLE = {
-  draft: { color: 'blue', bgColor: '#eff6ff' },
-  sent: { color: 'orange', bgColor: '#fffbeb' },
-  partial_received: { color: 'purple', bgColor: '#faf5ff' },
-  received: { color: 'green', bgColor: '#f0fdf4' },
-}
-
-const TOUGHENING_STATUS_PILL = {
-  draft: { bg: '#fef3c7', color: '#b45309', border: '#fde047' },
-  sent: { bg: '#fecaca', color: '#dc2626', border: '#fca5a5' },
-  partial_received: { bg: '#e9d5ff', color: '#7e22ce', border: '#d8b4fe' },
-  received: { bg: '#bbf7d0', color: '#15803d', border: '#86efac' },
 }
 
 const fmtShortDate = (v) => {
@@ -815,7 +803,7 @@ const Dashboard = () => {
                 </div>
                 <div>
                   <Title level={4} style={{ margin: 0, fontWeight: 700 }}>Toughening Register</Title>
-                  <Text type="secondary" style={{ fontSize: 13 }}>Toughening batches — glass at vendor</Text>
+                  <Text type="secondary" style={{ fontSize: 13 }}>Confirmed sales orders — glass to be toughened</Text>
                 </div>
               </div>
               <Space wrap>
@@ -844,35 +832,36 @@ const Dashboard = () => {
                   }}
                   style={{ width: 120 }}
                 />
-                <Button size="small" onClick={() => navigate('/workshop/toughening')}>View All Batches</Button>
+                <Button size="small" onClick={() => navigate('/sales-orders?status=confirmed')}>View Confirmed SOs</Button>
               </Space>
             </div>
 
-            {/* Status Tiles + Overdue */}
+            {/* Thin / Thick / Total Tiles */}
             <div style={{ padding: '16px 24px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
               <Row gutter={[16, 16]}>
-                {(tougheningRegisterData?.statuses || []).map(s => {
-                  const tileStyle = TOUGHENING_TILE_STYLE[s.status] || { color: 'default', bgColor: '#f8fafc' }
-                  return (
-                    <Col key={s.status} xs={24} sm={12} flex="1 1 180px">
-                      <RegisterTile title={s.label} data={s} color={tileStyle.color} bgColor={tileStyle.bgColor} />
-                    </Col>
-                  )
-                })}
-                <Col xs={24} sm={12} flex="1 1 180px">
-                  <RegisterTile
-                    title={
-                      <AntTooltip title="Batches still at the vendor (Sent / Partial Received) past their expected return date, as of today — regardless of the selected period">
-                        <span>Overdue <InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 11 }} /></span>
-                      </AntTooltip>
-                    }
-                    data={{
-                      batches: tougheningRegisterData?.overdue,
-                      pieces: tougheningRegisterData?.overdue_pieces,
-                      sqmt: tougheningRegisterData?.overdue_sqmt,
-                    }}
-                    color={tougheningRegisterData?.overdue > 0 ? 'red' : 'default'}
-                    bgColor={tougheningRegisterData?.overdue > 0 ? '#fef2f2' : '#f8fafc'}
+                <Col xs={24} sm={12} lg={8}>
+                  <ToughDemandTile
+                    title="Thin (<8mm)"
+                    data={tougheningRegisterData?.thin}
+                    color="green"
+                    bgColor="#f0fdf4"
+                  />
+                </Col>
+                <Col xs={24} sm={12} lg={8}>
+                  <ToughDemandTile
+                    title="Thick (≥8mm)"
+                    data={tougheningRegisterData?.thick}
+                    color="blue"
+                    bgColor="#eff6ff"
+                  />
+                </Col>
+                <Col xs={24} sm={12} lg={8}>
+                  <ToughDemandTile
+                    title="Total"
+                    data={tougheningRegisterData?.total}
+                    unclassified={tougheningRegisterData?.unclassified}
+                    color="purple"
+                    bgColor="#faf5ff"
                   />
                 </Col>
               </Row>
@@ -883,71 +872,48 @@ const Dashboard = () => {
               dataSource={tougheningRegisterData?.items || []}
               pagination={{ pageSize: 15, size: 'small' }}
               size="small"
-              locale={{ emptyText: 'No toughening batches in this period, and none overdue' }}
-              rowClassName={(record) => (record.is_overdue ? 'toughening-overdue-row' : '')}
+              locale={{ emptyText: 'No confirmed sales orders with toughened glass in this period' }}
               onRow={(record) => ({
                 style: { cursor: 'pointer' },
-                onClick: () => navigate(`/workshop/toughening/${record.id}/edit`)
+                onClick: () => navigate(`/sales-orders/${record.id}/edit`)
               })}
               columns={[
                 {
-                  title: 'TB No', dataIndex: 'tb_number', width: 110,
+                  title: 'SO No', dataIndex: 'so_number', width: 110,
                   render: (v, record) => (
-                    <Link to={`/workshop/toughening/${record.id}/edit`} onClick={e => e.stopPropagation()}>
+                    <Link to={`/sales-orders/${record.id}/edit`} onClick={e => e.stopPropagation()}>
                       <Text strong style={{ color: '#6366f1' }}>{v}</Text>
                     </Link>
                   )
                 },
                 {
-                  title: 'Vendor', dataIndex: 'vendor_name', width: 180,
+                  title: 'Customer', dataIndex: 'customer_name', width: 200,
                   render: v => <Text strong>{v}</Text>
                 },
-                { title: 'Sent', dataIndex: 'sent_date', width: 90, render: fmtShortDate },
+                { title: 'Date', dataIndex: 'order_date', width: 90, render: fmtShortDate },
                 {
-                  title: 'Expected Return', dataIndex: 'expected_return', width: 140,
-                  render: (v, record) => (
-                    <span>
-                      {fmtShortDate(v)}
-                      {record.is_overdue && (
-                        <Text strong style={{ color: '#dc2626', fontSize: 11, marginLeft: 6 }}>
-                          {record.days_overdue}d overdue
-                        </Text>
-                      )}
-                    </span>
-                  )
+                  title: 'Thin Sqft', dataIndex: 'thin_sqft', width: 100, align: 'right',
+                  render: v => v ? (
+                    <Text strong style={{ color: '#16a34a' }}>
+                      {Number(v).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                    </Text>
+                  ) : null
+                },
+                {
+                  title: 'Thick Sqft', dataIndex: 'thick_sqft', width: 100, align: 'right',
+                  render: v => v ? (
+                    <Text strong style={{ color: '#1d4ed8' }}>
+                      {Number(v).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                    </Text>
+                  ) : null
                 },
                 {
                   title: 'Pieces', dataIndex: 'total_pieces', width: 80, align: 'right',
-                  render: v => <Text style={{ fontSize: 13, fontWeight: 600, color: '#334155' }}>{v || 0}</Text>
-                },
-                {
-                  title: 'Sqmt', dataIndex: 'total_sqmt', width: 90, align: 'right',
-                  render: v => (
-                    <Text strong style={{ color: '#1d4ed8' }}>
-                      {Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
-                    </Text>
+                  render: (v, record) => (
+                    <AntTooltip title={record.unclassified_sqft ? `Includes ${record.unclassified_sqft} sqft of glass with no thickness set` : undefined}>
+                      <Text style={{ fontSize: 13, fontWeight: 600, color: record.unclassified_sqft ? '#ea580c' : '#334155' }}>{v || 0}</Text>
+                    </AntTooltip>
                   )
-                },
-                {
-                  title: 'STATUS', dataIndex: 'status_label', width: 130,
-                  render: (v, record) => {
-                    const style = TOUGHENING_STATUS_PILL[record.status] || { bg: '#e2e8f0', color: '#64748b', border: '#cbd5e1' }
-                    return (
-                      <span style={{
-                        background: style.bg,
-                        color: style.color,
-                        border: `1px solid ${style.border}`,
-                        borderRadius: 4,
-                        padding: '2px 8px',
-                        fontSize: 11,
-                        fontWeight: 700,
-                        letterSpacing: 0.5,
-                        textTransform: 'uppercase',
-                      }}>
-                        {v}
-                      </span>
-                    )
-                  }
                 },
               ]}
             />
@@ -956,8 +922,6 @@ const Dashboard = () => {
       )}
 
       <style>{`
-        .toughening-overdue-row > td { background-color: #fef2f2 !important; }
-        .toughening-overdue-row:hover > td { background-color: #fee2e2 !important; }
         .operational-tracking-row:hover > td { background-color: #fafafa !important; }
         .ant-table-thead > tr > th { background-color: #fafafa; color: #595959; font-weight: 600; text-transform: uppercase; font-size: 12px; letter-spacing: 0.5px; padding: 16px 24px !important; }
         .ant-table-tbody > tr > td { padding: 16px 24px !important; border-bottom: 1px solid #f0f0f0; }
