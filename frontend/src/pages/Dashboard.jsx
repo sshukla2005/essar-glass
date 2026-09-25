@@ -219,19 +219,19 @@ const Dashboard = () => {
     staleTime: 30000,
   })
   const { data: cuttingRegisterData } = useQuery({
-    queryKey: ['dashboard-cutting-register', cuttingPreset, cuttingDate?.format('YYYY-MM-DD')],
+    queryKey: ['dashboard-cutting-register', cuttingPreset, cuttingPreset === 'all_time' ? null : cuttingDate?.format('YYYY-MM-DD')],
     queryFn: () => workshopOrderApi.cuttingRegister({
       preset: cuttingPreset,
-      date: cuttingDate ? cuttingDate.format('YYYY-MM-DD') : undefined
+      date: cuttingPreset !== 'all_time' && cuttingDate ? cuttingDate.format('YYYY-MM-DD') : undefined
     }).then(r => r.data),
     staleTime: 30000,
     enabled: !isSales,
   })
   const { data: tougheningRegisterData } = useQuery({
-    queryKey: ['dashboard-toughening-register', tougheningPreset, tougheningDate?.format('YYYY-MM-DD')],
+    queryKey: ['dashboard-toughening-register', tougheningPreset, tougheningPreset === 'all_time' ? null : tougheningDate?.format('YYYY-MM-DD')],
     queryFn: () => workshopOrderApi.tougheningRegister({
       preset: tougheningPreset,
-      date: tougheningDate ? tougheningDate.format('YYYY-MM-DD') : undefined
+      date: tougheningPreset !== 'all_time' && tougheningDate ? tougheningDate.format('YYYY-MM-DD') : undefined
     }).then(r => r.data),
     staleTime: 30000,
     enabled: !isSales,
@@ -589,10 +589,13 @@ const Dashboard = () => {
                   <Radio.Button value="today">Today</Radio.Button>
                   <Radio.Button value="yesterday">Yesterday</Radio.Button>
                   <Radio.Button value="this_week">This Week</Radio.Button>
+                  <Radio.Button value="all_time">All Time</Radio.Button>
                 </Radio.Group>
                 <DatePicker
                   size="small"
-                  value={cuttingDate}
+                  value={cuttingPreset === 'all_time' ? null : cuttingDate}
+                  disabled={cuttingPreset === 'all_time'}
+                  placeholder="All dates"
                   onChange={(val) => {
                     if (val) {
                       setCuttingDate(val);
@@ -610,7 +613,7 @@ const Dashboard = () => {
               <Row gutter={[16, 16]}>
                 <Col xs={24} sm={12} lg={6}>
                   <ProductionTile
-                    title={cuttingPreset === 'this_week' ? "Cut This Week" : "Cut Selected Day"}
+                    title={cuttingPreset === 'all_time' ? "Cut (All Time)" : cuttingPreset === 'this_week' ? "Cut This Week" : "Cut Selected Day"}
                     data={stats.cut_today}
                     color="green"
                     bgColor="#f0fdf4"
@@ -820,10 +823,13 @@ const Dashboard = () => {
                   <Radio.Button value="today">Today</Radio.Button>
                   <Radio.Button value="yesterday">Yesterday</Radio.Button>
                   <Radio.Button value="this_week">This Week</Radio.Button>
+                  <Radio.Button value="all_time">All Time</Radio.Button>
                 </Radio.Group>
                 <DatePicker
                   size="small"
-                  value={tougheningDate}
+                  value={tougheningPreset === 'all_time' ? null : tougheningDate}
+                  disabled={tougheningPreset === 'all_time'}
+                  placeholder="All dates"
                   onChange={(val) => {
                     if (val) {
                       setTougheningDate(val);

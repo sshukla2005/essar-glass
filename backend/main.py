@@ -344,20 +344,16 @@ def _glass_line_sqft(line):
     return sqft, is_charged
 
 
-# ── Specific Workshop endpoints (MUST be defined before generic CRUD /{item_id} router) ──
-@app.get("/api/v1/workshop/cutting-register")
-def get_cutting_register(
-    target_date: Optional[str] = Query(None, alias="date"),
-    preset: Optional[str] = Query("today"),
-    db: Session = Depends(get_db),
-    user = Depends(get_current_user),
-):
-    """Pre-aggregated Daily Cutting Register for Dashboard."""
-    import re
+def _register_date_range(preset, target_date):
+    """Resolve a dashboard register preset to (start_date, end_date), inclusive.
+
+    today / yesterday / this_week are relative to today; any other preset uses
+    target_date (YYYY-MM-DD, default today). all_time returns (None, None): no date filter.
+    """
     from datetime import datetime, date, timedelta
-    from app.models.workshop import WorkshopOrder
-    from app.models.product import Product
-    from app.utils.helpers import apply_company_filter, apply_scope_filter
+
+    if preset == "all_time":
+        return None, None
 
     today_d = date.today()
     if target_date:
@@ -377,6 +373,25 @@ def get_cutting_register(
     else:
         start_d = parsed_d
         end_d = parsed_d
+    return start_d, end_d
+
+
+# ── Specific Workshop endpoints (MUST be defined before generic CRUD /{item_id} router) ──
+@app.get("/api/v1/workshop/cutting-register")
+def get_cutting_register(
+    target_date: Optional[str] = Query(None, alias="date"),
+    preset: Optional[str] = Query("today"),
+    db: Session = Depends(get_db),
+    user = Depends(get_current_user),
+):
+    """Pre-aggregated Daily Cutting Register for Dashboard."""
+    import re
+    from datetime import datetime, date, timedelta
+    from app.models.workshop import WorkshopOrder
+    from app.models.product import Product
+    from app.utils.helpers import apply_company_filter, apply_scope_filter
+
+    start_d, end_d = _register_date_range(preset, target_date)
 
     query = db.query(WorkshopOrder).filter(WorkshopOrder.is_active == True)
     query = apply_company_filter(query, WorkshopOrder, user.active_company_id)
@@ -458,7 +473,7 @@ def get_cutting_register(
             if comp_at:
                 try:
                     c_date = datetime.fromisoformat(str(comp_at).replace("Z", "+00:00")).date()
-                    if start_d <= c_date <= end_d:
+                    if start_d is None or start_d <= c_date <= end_d:
                         tile_data["cut_today"][cat] += unit_sqft * qty_cut
                 except Exception:
                     pass
@@ -522,7 +537,9 @@ def get_cutting_register(
         "total_unclassified_sqft": cut_today_res["unclassified_sqft"],
         "total_all_sqft": cut_today_res["total_sqft"],
         "fallback_line_count": fallback_line_count,
-        "selected_date": start_d.strftime("%Y-%m-%d"),
+        "selected_date": start_d.strftime("%Y-%m-%d") if start_d else None,
+        "start_date": start_d.strftime("%Y-%m-%d") if start_d else None,
+        "end_date": end_d.strftime("%Y-%m-%d") if end_d else None,
         "preset": preset,
     }
 
@@ -570,30 +587,12 @@ def get_toughening_register(
     whose order_date (else created_at) falls in the selected period. Thin/thick
     and sqft use the same helpers as the Cutting Register.
     """
-    from datetime import datetime, date, timedelta
     from sqlalchemy import func
     from app.models.sales_order import SalesOrder
     from app.models.customer import Customer
     from app.utils.helpers import apply_company_filter, apply_scope_filter
 
-    today_d = date.today()
-    if target_date:
-        try:
-            parsed_d = datetime.strptime(target_date, "%Y-%m-%d").date()
-        except ValueError:
-            parsed_d = today_d
-    else:
-        parsed_d = today_d
-
-    if preset == "yesterday":
-        start_d = today_d - timedelta(days=1)
-        end_d = today_d - timedelta(days=1)
-    elif preset == "this_week":
-        start_d = today_d - timedelta(days=today_d.weekday())
-        end_d = today_d
-    else:
-        start_d = parsed_d
-        end_d = parsed_d
+    start_d, end_d = _register_date_range(preset, target_date)
 
     so_date_expr = func.coalesce(
         func.nullif(SalesOrder.order_date, ''),
@@ -602,9 +601,9 @@ def get_toughening_register(
     query = db.query(SalesOrder).filter(
         SalesOrder.is_active == True,
         SalesOrder.status == 'confirmed',
-        so_date_expr >= start_d.isoformat(),
-        so_date_expr <= end_d.isoformat(),
     )
+    if start_d is not None:
+        query = query.filter(so_date_expr >= start_d.isoformat(), so_date_expr <= end_d.isoformat())
     query = apply_company_filter(query, SalesOrder, user.active_company_id)
     query = apply_scope_filter(query, SalesOrder, user, "sales_orders")
     sos = query.order_by(SalesOrder.id.desc()).all()
@@ -666,9 +665,9 @@ def get_toughening_register(
         "unclassified": fmt(totals["unclassified"]),
         "total": total,
         "so_count": len(rows),
-        "selected_date": start_d.strftime("%Y-%m-%d"),
-        "start_date": start_d.strftime("%Y-%m-%d"),
-        "end_date": end_d.strftime("%Y-%m-%d"),
+        "selected_date": start_d.strftime("%Y-%m-%d") if start_d else None,
+        "start_date": start_d.strftime("%Y-%m-%d") if start_d else None,
+        "end_date": end_d.strftime("%Y-%m-%d") if end_d else None,
         "preset": preset,
     }
 

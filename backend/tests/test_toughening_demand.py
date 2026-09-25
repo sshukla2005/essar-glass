@@ -119,3 +119,25 @@ def test_toughening_demand_from_confirmed_sales_orders(db_session: Session, dema
     # Outside the period: none of today's SOs
     far = _get(headers, preset="custom", date=(date.today() - timedelta(days=400)).isoformat())
     assert not {i["so_number"] for i in far["items"]} & set(SO_NUMBERS)
+
+
+def test_register_all_time_preset_skips_date_filter(db_session: Session, demand_env):
+    headers = demand_env
+    old = (date.today() - timedelta(days=400)).isoformat()
+    db_session.add(SalesOrder(so_number="SO-TD-OLD", status="confirmed", order_date=old, company_id=1, is_active=True,
+                              customer_name="TD Customer", lines=[],
+                              groups=[_group(10, True, {"width_inch": 24, "height_inch": 24, "quantity": 7})]))
+    db_session.commit()
+
+    all_time = _get(headers, preset="all_time")
+    assert all_time["start_date"] is None and all_time["end_date"] is None and all_time["selected_date"] is None
+    assert "SO-TD-OLD" in {i["so_number"] for i in all_time["items"]}
+    assert "SO-TD-OLD" not in {i["so_number"] for i in _get(headers, preset="today")["items"]}
+    assert "SO-TD-OLD" in {i["so_number"] for i in _get(headers, preset="custom", date=old)["items"]}
+
+    cut = client.get("/api/v1/workshop/cutting-register", params={"preset": "all_time"}, headers=headers)
+    assert cut.status_code == 200, cut.text
+    cut = cut.json()
+    assert cut["start_date"] is None and cut["end_date"] is None and cut["selected_date"] is None
+    cut_today = client.get("/api/v1/workshop/cutting-register", params={"preset": "today"}, headers=headers).json()
+    assert cut["cut_today"]["total_sqft"] >= cut_today["cut_today"]["total_sqft"]
