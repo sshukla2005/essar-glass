@@ -2,6 +2,7 @@ import hmac
 import os
 import secrets
 import glob
+import re
 from fastapi import FastAPI, Depends, Request, Response, Query, Body, HTTPException, UploadFile, File
 from fastapi.responses import JSONResponse
 from typing import Optional, List
@@ -253,20 +254,106 @@ def force_logout_user(
     db.commit()
     return {"ok": True}
 
-# ── Specific Workshop endpoints (MUST be defined before generic CRUD /{item_id} router) ──
-@app.get("/api/v1/workshop/cutting-register")
-def get_cutting_register(
-    target_date: Optional[str] = Query(None, alias="date"),
-    preset: Optional[str] = Query("today"),
-    db: Session = Depends(get_db),
-    user = Depends(get_current_user),
-):
-    """Pre-aggregated Daily Cutting Register for Dashboard."""
-    import re
-    from datetime import datetime, date, timedelta
-    from app.models.workshop import WorkshopOrder
+# ── Glass line measurement shared by the workshop registers ──────────────────
+def _glass_product_thickness_map(db) -> dict:
+    """product_id -> thickness, used as a fallback by _glass_line_thickness."""
     from app.models.product import Product
-    from app.utils.helpers import apply_company_filter, apply_scope_filter
+    product_thick_map = {}
+    products = db.query(Product).filter(Product.is_active == True).all()
+    for p in products:
+        if getattr(p, "thickness", None) is not None:
+            try:
+                product_thick_map[p.id] = float(p.thickness)
+            except (ValueError, TypeError):
+                pass
+    return product_thick_map
+
+
+def _glass_line_thickness(line, product_thick_map):
+    """Thickness in mm from the line, its product, or an 'NN mm' description; None if unknown."""
+    thick = line.get("thickness") if line.get("thickness") is not None else line.get("glass_thickness")
+    if isinstance(thick, (int, float)):
+        return float(thick)
+    if isinstance(thick, str):
+        try:
+            return float(thick)
+        except ValueError:
+            pass
+    prod_thick = line.get("product_thickness")
+    if isinstance(prod_thick, (int, float)):
+        return float(prod_thick)
+    if isinstance(prod_thick, str):
+        try:
+            return float(prod_thick)
+        except ValueError:
+            pass
+
+    pid = line.get("product_id")
+    if pid and pid in product_thick_map:
+        return product_thick_map[pid]
+
+    desc = str(line.get("description") or "")
+    match = re.search(r'(\d+(?:\.\d+)?)\s*mm', desc, re.IGNORECASE)
+    if match:
+        try:
+            return float(match.group(1))
+        except ValueError:
+            pass
+    return None
+
+
+def _classify_glass(thickness):
+    """Thin is < 8mm, thick is >= 8mm; 'unclassified' when thickness is unknown."""
+    if thickness is None:
+        return "unclassified"
+    if thickness < 8:
+        return "thin"
+    return "thick"
+
+
+def _glass_line_sqft(line):
+    """(sqft for the line's full qty, is_charged): charged dims if present, else actual dims."""
+    chg_w = line.get("chg_w_in") or line.get("charged_w") or line.get("charged_w_in") or line.get("charged_w_inch") or line.get("ceiling_w_inches")
+    chg_h = line.get("chg_h_in") or line.get("charged_h") or line.get("charged_h_in") or line.get("charged_h_inch") or line.get("ceiling_h_inches")
+
+    if chg_w is None and line.get("charged_w_mm"):
+        chg_w = line.get("charged_w_mm") / 25.4
+    if chg_h is None and line.get("charged_h_mm"):
+        chg_h = line.get("charged_h_mm") / 25.4
+
+    is_charged = True
+    if chg_w is None or chg_h is None:
+        is_charged = False
+        act_w = line.get("act_w_in") or line.get("width_inch") or line.get("width_in")
+        act_h = line.get("act_h_in") or line.get("height_inch") or line.get("height_in")
+        if act_w is None and line.get("width_mm"):
+            act_w = line.get("width_mm") / 25.4
+        if act_h is None and line.get("height_mm"):
+            act_h = line.get("height_mm") / 25.4
+        w, h = act_w or 0, act_h or 0
+    else:
+        w, h = chg_w, chg_h
+
+    qty = line.get("qty") or line.get("quantity") or 1
+    try:
+        w, h, qty = float(w), float(h), float(qty)
+    except (ValueError, TypeError):
+        w, h, qty = 0, 0, 1
+
+    sqft = (w * h * qty) / 144.0
+    return sqft, is_charged
+
+
+def _register_date_range(preset, target_date):
+    """Resolve a dashboard register preset to (start_date, end_date), inclusive.
+
+    today / yesterday / this_week are relative to today; any other preset uses
+    target_date (YYYY-MM-DD, default today). all_time returns (None, None): no date filter.
+    """
+    from datetime import datetime, date, timedelta
+
+    if preset == "all_time":
+        return None, None
 
     today_d = date.today()
     if target_date:
@@ -286,90 +373,35 @@ def get_cutting_register(
     else:
         start_d = parsed_d
         end_d = parsed_d
+    return start_d, end_d
+
+
+# ── Specific Workshop endpoints (MUST be defined before generic CRUD /{item_id} router) ──
+@app.get("/api/v1/workshop/cutting-register")
+def get_cutting_register(
+    target_date: Optional[str] = Query(None, alias="date"),
+    preset: Optional[str] = Query("today"),
+    db: Session = Depends(get_db),
+    user = Depends(get_current_user),
+):
+    """Pre-aggregated Daily Cutting Register for Dashboard."""
+    import re
+    from datetime import datetime, date, timedelta
+    from app.models.workshop import WorkshopOrder
+    from app.models.product import Product
+    from app.utils.helpers import apply_company_filter, apply_scope_filter
+
+    start_d, end_d = _register_date_range(preset, target_date)
 
     query = db.query(WorkshopOrder).filter(WorkshopOrder.is_active == True)
     query = apply_company_filter(query, WorkshopOrder, user.active_company_id)
     query = apply_scope_filter(query, WorkshopOrder, user, "workshop_orders")
     wos = query.order_by(WorkshopOrder.id.desc()).all()
 
-    # Pre-cache product thickness map
-    product_thick_map = {}
-    products = db.query(Product).filter(Product.is_active == True).all()
-    for p in products:
-        if getattr(p, "thickness", None) is not None:
-            try:
-                product_thick_map[p.id] = float(p.thickness)
-            except (ValueError, TypeError):
-                pass
-
-    def parse_thickness(line):
-        thick = line.get("thickness") if line.get("thickness") is not None else line.get("glass_thickness")
-        if isinstance(thick, (int, float)):
-            return float(thick)
-        if isinstance(thick, str):
-            try:
-                return float(thick)
-            except ValueError:
-                pass
-        prod_thick = line.get("product_thickness")
-        if isinstance(prod_thick, (int, float)):
-            return float(prod_thick)
-        if isinstance(prod_thick, str):
-            try:
-                return float(prod_thick)
-            except ValueError:
-                pass
-
-        pid = line.get("product_id")
-        if pid and pid in product_thick_map:
-            return product_thick_map[pid]
-
-        desc = str(line.get("description") or "")
-        match = re.search(r'(\d+(?:\.\d+)?)\s*mm', desc, re.IGNORECASE)
-        if match:
-            try:
-                return float(match.group(1))
-            except ValueError:
-                pass
-        return None
-
-    def classify_glass(thickness):
-        if thickness is None:
-            return "unclassified"
-        if thickness < 8:
-            return "thin"
-        return "thick"
-
-    def calc_line_sqft(line):
-        chg_w = line.get("chg_w_in") or line.get("charged_w") or line.get("charged_w_in") or line.get("charged_w_inch") or line.get("ceiling_w_inches")
-        chg_h = line.get("chg_h_in") or line.get("charged_h") or line.get("charged_h_in") or line.get("charged_h_inch") or line.get("ceiling_h_inches")
-
-        if chg_w is None and line.get("charged_w_mm"):
-            chg_w = line.get("charged_w_mm") / 25.4
-        if chg_h is None and line.get("charged_h_mm"):
-            chg_h = line.get("charged_h_mm") / 25.4
-
-        is_charged = True
-        if chg_w is None or chg_h is None:
-            is_charged = False
-            act_w = line.get("act_w_in") or line.get("width_inch") or line.get("width_in")
-            act_h = line.get("act_h_in") or line.get("height_inch") or line.get("height_in")
-            if act_w is None and line.get("width_mm"):
-                act_w = line.get("width_mm") / 25.4
-            if act_h is None and line.get("height_mm"):
-                act_h = line.get("height_mm") / 25.4
-            w, h = act_w or 0, act_h or 0
-        else:
-            w, h = chg_w, chg_h
-
-        qty = line.get("qty") or line.get("quantity") or 1
-        try:
-            w, h, qty = float(w), float(h), float(qty)
-        except (ValueError, TypeError):
-            w, h, qty = 0, 0, 1
-
-        sqft = (w * h * qty) / 144.0
-        return sqft, is_charged
+    product_thick_map = _glass_product_thickness_map(db)
+    parse_thickness = lambda line: _glass_line_thickness(line, product_thick_map)
+    classify_glass = _classify_glass
+    calc_line_sqft = _glass_line_sqft
 
     status_map = {
         "draft": "PENDING",
@@ -441,7 +473,7 @@ def get_cutting_register(
             if comp_at:
                 try:
                     c_date = datetime.fromisoformat(str(comp_at).replace("Z", "+00:00")).date()
-                    if start_d <= c_date <= end_d:
+                    if start_d is None or start_d <= c_date <= end_d:
                         tile_data["cut_today"][cat] += unit_sqft * qty_cut
                 except Exception:
                     pass
@@ -505,9 +537,41 @@ def get_cutting_register(
         "total_unclassified_sqft": cut_today_res["unclassified_sqft"],
         "total_all_sqft": cut_today_res["total_sqft"],
         "fallback_line_count": fallback_line_count,
-        "selected_date": start_d.strftime("%Y-%m-%d"),
+        "selected_date": start_d.strftime("%Y-%m-%d") if start_d else None,
+        "start_date": start_d.strftime("%Y-%m-%d") if start_d else None,
+        "end_date": end_d.strftime("%Y-%m-%d") if end_d else None,
         "preset": preset,
     }
+
+
+def _is_true(val) -> bool:
+    return val is True or val == 1 or (isinstance(val, str) and val.strip().lower() == "true")
+
+
+def _toughened_so_lines(so):
+    """Yield one line dict per size in each glass group with is_toughened set.
+
+    The group carries is_toughened, glass_thickness, product_id and description;
+    its sizes carry dimensions and quantity. SOs saved without groups fall back to
+    the flat `lines` list, where the form copies is_toughened onto every line.
+    """
+    groups = so.groups if isinstance(so.groups, list) else []
+    if groups:
+        for g in groups:
+            if not isinstance(g, dict) or not _is_true(g.get("is_toughened")):
+                continue
+            for size in g.get("sizes") or []:
+                if isinstance(size, dict):
+                    yield {
+                        "glass_thickness": g.get("glass_thickness"),
+                        "product_id": g.get("product_id"),
+                        "description": g.get("description"),
+                        **size,
+                    }
+        return
+    for line in so.lines or []:
+        if isinstance(line, dict) and _is_true(line.get("is_toughened")):
+            yield line
 
 
 @app.get("/api/v1/workshop/toughening-register")
@@ -517,138 +581,93 @@ def get_toughening_register(
     db: Session = Depends(get_db),
     user = Depends(get_current_user),
 ):
-    """Pre-aggregated Toughening Register for Dashboard.
+    """Toughening demand from confirmed Sales Orders, for the Dashboard.
 
-    Status tiles count batches whose period date (sent_date, else batch_date, else
-    created_at) falls in the selected range. Overdue is as of today and ignores the
-    range: any batch still at the vendor whose expected_return has passed.
+    Counts every size in a toughened glass group on SOs with status 'confirmed'
+    whose order_date (else created_at) falls in the selected period. Thin/thick
+    and sqft use the same helpers as the Cutting Register.
     """
-    from datetime import datetime, date, timedelta
-    from app.models.workshop import TougheningBatch
+    from sqlalchemy import func
+    from app.models.sales_order import SalesOrder
+    from app.models.customer import Customer
     from app.utils.helpers import apply_company_filter, apply_scope_filter
 
-    today_d = date.today()
-    if target_date:
-        try:
-            parsed_d = datetime.strptime(target_date, "%Y-%m-%d").date()
-        except ValueError:
-            parsed_d = today_d
-    else:
-        parsed_d = today_d
+    start_d, end_d = _register_date_range(preset, target_date)
 
-    if preset == "yesterday":
-        start_d = today_d - timedelta(days=1)
-        end_d = today_d - timedelta(days=1)
-    elif preset == "this_week":
-        start_d = today_d - timedelta(days=today_d.weekday())
-        end_d = today_d
-    else:
-        start_d = parsed_d
-        end_d = parsed_d
+    so_date_expr = func.coalesce(
+        func.nullif(SalesOrder.order_date, ''),
+        func.to_char(SalesOrder.created_at, 'YYYY-MM-DD'),
+    )
+    query = db.query(SalesOrder).filter(
+        SalesOrder.is_active == True,
+        SalesOrder.status == 'confirmed',
+    )
+    if start_d is not None:
+        query = query.filter(so_date_expr >= start_d.isoformat(), so_date_expr <= end_d.isoformat())
+    query = apply_company_filter(query, SalesOrder, user.active_company_id)
+    query = apply_scope_filter(query, SalesOrder, user, "sales_orders")
+    sos = query.order_by(SalesOrder.id.desc()).all()
 
-    query = db.query(TougheningBatch).filter(TougheningBatch.is_active == True)
-    query = apply_company_filter(query, TougheningBatch, user.active_company_id)
-    query = apply_scope_filter(query, TougheningBatch, user, "toughening")
-    batches = query.order_by(TougheningBatch.id.desc()).all()
+    product_thick_map = _glass_product_thickness_map(db)
 
-    # Known lifecycle (TougheningForm STATUS_STEPS); 'partially_received' is an
-    # alternate spelling written by older/demo data. Anything else gets its own bucket.
-    status_labels = {
-        "draft": "Draft",
-        "sent": "Sent",
-        "partial_received": "Partial Received",
-        "received": "Received",
-    }
-    status_aliases = {"partially_received": "partial_received"}
-    # Glass is still at the vendor in these statuses.
-    outstanding_statuses = {"sent", "partial_received"}
+    missing_ids = {so.customer_id for so in sos if not so.customer_name and so.customer_id}
+    customer_names = dict(
+        db.query(Customer.id, Customer.name).filter(Customer.id.in_(missing_ids)).all()
+    ) if missing_ids else {}
 
-    def parse_d(val):
-        if not val:
-            return None
-        try:
-            return datetime.strptime(str(val)[:10], "%Y-%m-%d").date()
-        except ValueError:
-            return None
-
-    def batch_pieces(tb):
-        if tb.total_pieces:
-            return int(tb.total_pieces)
-        total = 0
-        for line in tb.lines or []:
-            if isinstance(line, dict):
-                try:
-                    total += int(float(line.get("quantity") or line.get("qty") or line.get("qty_sent") or 0))
-                except (ValueError, TypeError):
-                    pass
-        return total
-
-    buckets = {s: {"batches": 0, "pieces": 0, "sqmt": 0.0} for s in status_labels}
-    overdue = {"batches": 0, "pieces": 0, "sqmt": 0.0}
+    totals = {cat: {"pieces": 0, "sqft": 0.0} for cat in ("thin", "thick", "unclassified")}
     rows = []
 
-    for tb in batches:
-        status = (tb.status or "draft").strip().lower() or "draft"
-        status = status_aliases.get(status, status)
+    for so in sos:
+        so_sqft = {"thin": 0.0, "thick": 0.0, "unclassified": 0.0}
+        so_pieces = 0
+        line_count = 0
 
-        period_d = parse_d(tb.sent_date) or parse_d(tb.batch_date) or (tb.created_at.date() if tb.created_at else None)
-        in_period = period_d is not None and start_d <= period_d <= end_d
+        for line in _toughened_so_lines(so):
+            cat = _classify_glass(_glass_line_thickness(line, product_thick_map))
+            sqft, _ = _glass_line_sqft(line)
+            try:
+                pieces = int(float(line.get("qty") or line.get("quantity") or 1))
+            except (ValueError, TypeError):
+                pieces = 1
 
-        expected_d = parse_d(tb.expected_return)
-        is_overdue = status in outstanding_statuses and expected_d is not None and expected_d < today_d
+            so_sqft[cat] += sqft
+            so_pieces += pieces
+            line_count += 1
+            totals[cat]["pieces"] += pieces
+            totals[cat]["sqft"] += sqft
 
-        pieces = batch_pieces(tb)
-        sqmt = float(tb.total_sqmt or 0.0)
-
-        if in_period:
-            b = buckets.setdefault(status, {"batches": 0, "pieces": 0, "sqmt": 0.0})
-            b["batches"] += 1
-            b["pieces"] += pieces
-            b["sqmt"] += sqmt
-        if is_overdue:
-            overdue["batches"] += 1
-            overdue["pieces"] += pieces
-            overdue["sqmt"] += sqmt
-
-        # Table: batches in the selected range, plus every overdue batch so it can't hide.
-        if in_period or is_overdue:
+        if line_count:
             rows.append({
-                "key": tb.id,
-                "id": tb.id,
-                "tb_number": tb.tb_number or f"TB-{tb.id}",
-                "vendor_name": tb.vendor_name or "—",
-                "sent_date": tb.sent_date or None,
-                "expected_return": tb.expected_return or None,
-                "total_pieces": pieces,
-                "total_sqmt": round(sqmt, 4),
-                "status": status,
-                "status_label": status_labels.get(status, status.replace("_", " ").title()),
-                "is_overdue": is_overdue,
-                "days_overdue": (today_d - expected_d).days if is_overdue else 0,
-                "in_period": in_period,
+                "key": so.id,
+                "id": so.id,
+                "so_number": so.so_number or f"SO-{so.id}",
+                "customer_name": so.customer_name or customer_names.get(so.customer_id) or "—",
+                "order_date": so.order_date or (so.created_at.strftime("%Y-%m-%d") if so.created_at else None),
+                "thin_sqft": round(so_sqft["thin"], 2) if so_sqft["thin"] > 0 else None,
+                "thick_sqft": round(so_sqft["thick"], 2) if so_sqft["thick"] > 0 else None,
+                "unclassified_sqft": round(so_sqft["unclassified"], 2) if so_sqft["unclassified"] > 0 else None,
+                "total_sqft": round(sum(so_sqft.values()), 2),
+                "total_pieces": so_pieces,
+                "toughened_lines": line_count,
             })
 
-    rows.sort(key=lambda r: (not r["is_overdue"], -r["days_overdue"], -r["id"]))
+    fmt = lambda t: {"pieces": t["pieces"], "sqft": round(t["sqft"], 2)}
+    total = {
+        "pieces": sum(t["pieces"] for t in totals.values()),
+        "sqft": round(sum(t["sqft"] for t in totals.values()), 2),
+    }
 
     return {
         "items": rows,
-        "statuses": [
-            {
-                "status": s,
-                "label": status_labels.get(s, s.replace("_", " ").title()),
-                "batches": b["batches"],
-                "pieces": b["pieces"],
-                "sqmt": round(b["sqmt"], 4),
-            }
-            for s, b in buckets.items()
-        ],
-        "overdue": overdue["batches"],
-        "overdue_pieces": overdue["pieces"],
-        "overdue_sqmt": round(overdue["sqmt"], 4),
-        "outstanding_statuses": sorted(outstanding_statuses),
-        "selected_date": start_d.strftime("%Y-%m-%d"),
-        "start_date": start_d.strftime("%Y-%m-%d"),
-        "end_date": end_d.strftime("%Y-%m-%d"),
+        "thin": fmt(totals["thin"]),
+        "thick": fmt(totals["thick"]),
+        "unclassified": fmt(totals["unclassified"]),
+        "total": total,
+        "so_count": len(rows),
+        "selected_date": start_d.strftime("%Y-%m-%d") if start_d else None,
+        "start_date": start_d.strftime("%Y-%m-%d") if start_d else None,
+        "end_date": end_d.strftime("%Y-%m-%d") if end_d else None,
         "preset": preset,
     }
 
