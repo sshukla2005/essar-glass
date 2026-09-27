@@ -4,6 +4,8 @@ import {
   UploadOutlined, 
   LineChartOutlined, 
   DownloadOutlined, 
+  EyeOutlined,
+  WhatsAppOutlined,
   ShoppingCartOutlined, 
   CheckCircleOutlined,
   SettingOutlined,
@@ -37,6 +39,10 @@ const ActionToolbar = ({
   onImportExcel,
   onCostAnalysis,
   onGeneratePDF,
+  onPreviewPDF,
+  isPreviewingPDF = false,
+  onSendWhatsApp,
+  isSendingWhatsApp = false,
   onConvertToSO,
   isConverting = false,
   onCancel,
@@ -146,6 +152,46 @@ const ActionToolbar = ({
             }}
           >
             {isSO ? 'PDF' : 'Generate PDF'}
+          </Button>
+        )}
+
+        {isEdit && onPreviewPDF && (
+          <Button
+            icon={<EyeOutlined style={{ color: '#64748b' }} />}
+            onClick={onPreviewPDF}
+            loading={isPreviewingPDF}
+            style={{
+              borderColor: '#E2E8F0',
+              color: '#0f172a',
+              borderRadius: 8,
+              height: 38,
+              fontWeight: 500,
+              display: 'flex',
+              alignItems: 'center',
+              boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+            }}
+          >
+            Preview
+          </Button>
+        )}
+
+        {!isSO && isEdit && onSendWhatsApp && ['confirmed', 'converted'].includes(status) && (
+          <Button
+            icon={<WhatsAppOutlined style={{ color: '#25D366' }} />}
+            onClick={onSendWhatsApp}
+            loading={isSendingWhatsApp}
+            style={{
+              borderColor: '#E2E8F0',
+              color: '#0f172a',
+              borderRadius: 8,
+              height: 38,
+              fontWeight: 500,
+              display: 'flex',
+              alignItems: 'center',
+              boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+            }}
+          >
+            Send on WhatsApp
           </Button>
         )}
 

@@ -218,13 +218,13 @@ ROUTER_CONFIGS = [
     {"prefix": "/employees",       "tag": "Employees",       "model": Employee,        "code_prefix": "EMP",  "code_field": "employee_code", "module": "employees"},
     {"prefix": "/crm/stages",      "tag": "CRM Stages",      "model": CRMStage,        "code_prefix": None,   "code_field": None, "module": "stages"},
     {"prefix": "/crm/leads",       "tag": "CRM Leads",       "model": CRMLead,         "code_prefix": "OPP",  "code_field": "lead_number", "module": "leads"},
-    {"prefix": "/quotations",      "tag": "Quotations",      "model": Quotation,       "code_prefix": "QT",   "code_field": "quote_number", "module": "quotations", "create_schema": QuotationCreate, "update_schema": QuotationUpdate, "response_schema": QuotationResponse},
-    {"prefix": "/sales-orders",    "tag": "Sales Orders",    "model": SalesOrder,      "code_prefix": "SO",   "code_field": "so_number", "module": "sales_orders"},
-    {"prefix": "/purchase-orders", "tag": "PO",              "model": PurchaseOrder,   "code_prefix": "PO",   "code_field": "po_number", "module": "purchase_orders"},
+    {"prefix": "/quotations",      "tag": "Quotations",      "model": Quotation,       "code_prefix": "QT",   "code_field": "quote_number", "module": "quotations", "create_schema": QuotationCreate, "update_schema": QuotationUpdate, "response_schema": QuotationResponse, "search_fields": ("quote_number", "salesperson")},
+    {"prefix": "/sales-orders",    "tag": "Sales Orders",    "model": SalesOrder,      "code_prefix": "SO",   "code_field": "so_number", "module": "sales_orders", "search_fields": ("so_number", "salesperson", "customer_name")},
+    {"prefix": "/purchase-orders", "tag": "PO",              "model": PurchaseOrder,   "code_prefix": "PO",   "code_field": "po_number", "module": "purchase_orders", "search_fields": ("po_number",)},
     {"prefix": "/delivery",        "tag": "Delivery",        "model": DeliveryChallan, "code_prefix": "DC",   "code_field": "dc_number", "module": "delivery_challans"},
-    {"prefix": "/invoices",        "tag": "Invoices",        "model": Invoice,         "code_prefix": "INV",  "code_field": "invoice_number", "module": "invoices"},
+    {"prefix": "/invoices",        "tag": "Invoices",        "model": Invoice,         "code_prefix": "INV",  "code_field": "invoice_number", "module": "invoices", "search_fields": ("invoice_number",)},
     {"prefix": "/inventory",       "tag": "Inventory",       "model": StockMovement,   "code_prefix": "SM",   "code_field": "move_number", "module": "stock_movements"},
-    {"prefix": "/workshop",        "tag": "Workshop",        "model": WorkshopOrder,   "code_prefix": "WO",   "code_field": "wo_number", "module": "workshop_orders"},
+    {"prefix": "/workshop",        "tag": "Workshop",        "model": WorkshopOrder,   "code_prefix": "WO",   "code_field": "wo_number", "module": "workshop_orders", "search_fields": ("wo_number", "customer_name")},
     {"prefix": "/toughening",      "tag": "Toughening",      "model": TougheningBatch, "code_prefix": "TB",   "code_field": "tb_number", "module": "toughening"},
     # NOTE: Process Masters are intentionally a shared global catalogue across all companies
     {"prefix": "/process-masters", "tag": "Process Masters", "model": ProcessMaster,  "code_prefix": None,   "code_field": None, "company_scoped": False, "module": "process_masters"},
@@ -907,6 +907,7 @@ for cfg in ROUTER_CONFIGS:
         read_roles=cfg.get("read_roles"),
         write_roles=cfg.get("write_roles"),
         module=cfg.get("module"),
+        search_fields=cfg.get("search_fields"),
     )
     app.include_router(r)
 

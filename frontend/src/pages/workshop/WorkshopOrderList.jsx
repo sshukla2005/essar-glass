@@ -309,7 +309,7 @@ const WorkshopOrderList = () => {
         <Row gutter={12} align="middle">
           <Col flex="auto">
             <Search
-              placeholder="Search workshop orders..."
+              placeholder="Search by WO number or customer..."
               allowClear
               prefix={<SearchOutlined />}
               onSearch={(val) => { setSearch(val); setPage(1) }}

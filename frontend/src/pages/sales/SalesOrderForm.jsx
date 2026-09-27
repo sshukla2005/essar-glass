@@ -8,6 +8,7 @@ import * as XLSX from 'xlsx'
 import MasterForm from '../../components/common/MasterForm'
 import { salesOrderApi, customerApi, productApi, quotationApi, purchaseOrderApi, deliveryChallanApi, invoiceApi, warehouseApi, workshopOrderApi, processMasterApi, employeeApi, settingsApi } from '../../api'
 import { generateSOPDF, makePdfFilename } from '../../utils/pdfGenerator'
+import { openPdfPreview } from '../../utils/pdfPreview'
 import {
   getGroupBaseCostRate as sharedGetGroupBaseCostRate,
   getGroupLoadedCostRate as sharedGetGroupLoadedCostRate,
@@ -151,6 +152,7 @@ const SalesOrderForm = () => {
   // DC dispatch wizard
   const [dcWizardOpen, setDcWizardOpen] = useState(false)
   const [dcWizardRows, setDcWizardRows] = useState([])
+  const [isPreviewingPDF, setIsPreviewingPDF] = useState(false)
 
   const { data: record, isLoading } = useQuery({
     queryKey: ['sales_orders', id], queryFn: () => salesOrderApi.get(id).then(r => r.data), enabled: isEdit,
@@ -1820,6 +1822,43 @@ const SalesOrderForm = () => {
   const invoiceCount = invItems.filter(i => i.so_id === soId).length
   const woCount = woItems.filter(w => w.so_id === soId).length
 
+  // The record the SO PDF is built from; used by both Download and Preview.
+  const getSOPdfData = () => ({
+    ...form.getFieldsValue(),
+    id: record?.id,
+    so_number: record?.so_number,
+    company_id: form.getFieldValue('company_id') || record?.company_id || 1,
+    customer_id: form.getFieldValue('customer_id') || record?.customer_id,
+    customer_name: form.getFieldValue('customer_name') || record?.customer_name,
+    order_date: form.getFieldValue('order_date') || record?.order_date,
+    delivery_date: form.getFieldValue('delivery_date') || record?.delivery_date,
+    salesperson: form.getFieldValue('salesperson') || record?.salesperson,
+    payment_terms: form.getFieldValue('payment_terms') || record?.payment_terms,
+    gst_mode: gstMode,
+    discount_amount: discountAmt,
+    dc_charges: dcCharges,
+    advance_received: advanceRec,
+    unit_mode: unit,
+    lines: getFlatLines(),
+    groups,
+    hardware_items: hardwareItems,
+    labor_items: laborItems,
+    wastage_items: wastageItems,
+    totals,
+    subtotal: totals.subI,
+    tax_amount: totals.cgst + totals.sgst + totals.igst,
+    total_amount: totals.grandTotal
+  })
+
+  const handlePreviewPDF = async () => {
+    setIsPreviewingPDF(true)
+    try {
+      await openPdfPreview(() => generateSOPDF(getSOPdfData(), { save: false }), message)
+    } finally {
+      setIsPreviewingPDF(false)
+    }
+  }
+
   return (
     <MasterForm title="Sales Order" isEdit={isEdit} isLoading={isLoading} isSaving={saveMutation.isPending}
       breadcrumbs={[{ label: 'Sales' }, { label: 'Sales Orders', path: '/sales-orders' }, { label: isEdit ? record?.so_number || 'Edit' : 'New' }]}
@@ -2068,32 +2107,7 @@ const SalesOrderForm = () => {
             isEdit={isEdit}
             onCostAnalysis={openGlobalComparison}
             onGeneratePDF={async () => {
-              const recordData = {
-                ...form.getFieldsValue(),
-                id: record?.id,
-                so_number: record?.so_number,
-                company_id: form.getFieldValue('company_id') || record?.company_id || 1,
-                customer_id: form.getFieldValue('customer_id') || record?.customer_id,
-                customer_name: form.getFieldValue('customer_name') || record?.customer_name,
-                order_date: form.getFieldValue('order_date') || record?.order_date,
-                delivery_date: form.getFieldValue('delivery_date') || record?.delivery_date,
-                salesperson: form.getFieldValue('salesperson') || record?.salesperson,
-                payment_terms: form.getFieldValue('payment_terms') || record?.payment_terms,
-                gst_mode: gstMode,
-                discount_amount: discountAmt,
-                dc_charges: dcCharges,
-                advance_received: advanceRec,
-                unit_mode: unit,
-                lines: getFlatLines(),
-                groups,
-                hardware_items: hardwareItems,
-                labor_items: laborItems,
-                wastage_items: wastageItems,
-                totals,
-                subtotal: totals.subI,
-                tax_amount: totals.cgst + totals.sgst + totals.igst,
-                total_amount: totals.grandTotal
-              }
+              const recordData = getSOPdfData()
               const hide = message.loading('Generating Proforma Invoice PDF...', 0)
               try {
                 await generateSOPDF(recordData)
@@ -2103,6 +2117,8 @@ const SalesOrderForm = () => {
                 hide()
               }
             }}
+            onPreviewPDF={handlePreviewPDF}
+            isPreviewingPDF={isPreviewingPDF}
             onConfirm={() => changeStage('confirmed')}
             isConfirming={statusMutation.isPending && statusMutation.variables === 'confirmed'}
             onCreatePO={() => createPOMutation.mutate()}

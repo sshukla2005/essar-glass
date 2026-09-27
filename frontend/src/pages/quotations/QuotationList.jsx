@@ -1,14 +1,17 @@
 import React, { useState } from 'react'
-import { Tag, Button, Tooltip, Typography, Space } from 'antd'
+import { Tag, Button, Tooltip, Typography, Space, App } from 'antd'
 import { useSearchParams, useNavigate } from 'react-router-dom'
-import { ArrowLeftOutlined, DownloadOutlined, FileImageOutlined } from '@ant-design/icons'
+import { ArrowLeftOutlined, DownloadOutlined, FileImageOutlined, WhatsAppOutlined } from '@ant-design/icons'
 import MasterList from '../../components/common/MasterList'
-import { quotationApi } from '../../api'
+import { quotationApi, customerApi } from '../../api'
 import { generateQuotationPDF } from '../../utils/pdfGenerator'
+import { sendQuotationOnWhatsApp, buildQuotationRecordPdfBlob } from '../../utils/quotationWhatsApp'
 import { QUOTE_STATUS_LABELS } from './components/ActionToolbar'
 import CuttingListImportModal from '../../components/CuttingListImportModal'
 
 const { Text } = Typography
+
+const WHATSAPP_STATUSES = ['confirmed', 'converted']
 
 const STATUS_COLORS = { draft: 'blue', sent: 'orange', confirmed: 'green', converted: 'purple', cancelled: 'red', lost: 'red' }
 
@@ -20,6 +23,33 @@ const QuotationList = () => {
   const [statusTab, setStatusTab] = useState('active')
   const [counts, setCounts] = useState(null)
   const [importModalOpen, setImportModalOpen] = useState(false)
+  const [sendingWhatsAppId, setSendingWhatsAppId] = useState(null)
+  const { message } = App.useApp()
+
+  // The list row is not used for the PDF: fetch the full quotation and its customer first.
+  const handleSendWhatsApp = async (row) => {
+    setSendingWhatsAppId(row.id)
+    try {
+      let quotation, customer
+      try {
+        quotation = (await quotationApi.get(row.id)).data
+        customer = quotation.customer_id ? (await customerApi.get(quotation.customer_id)).data : null
+      } catch (err) {
+        message.error('Could not load the quotation to send it')
+        return
+      }
+      await sendQuotationOnWhatsApp({
+        quotationId: quotation.id,
+        quoteNumber: quotation.quote_number,
+        customer,
+        record: quotation,
+        buildBlob: () => buildQuotationRecordPdfBlob(quotation),
+        message,
+      })
+    } finally {
+      setSendingWhatsAppId(null)
+    }
+  }
 
   const tabs = [
     { key: 'active', label: 'Active', count: counts?.active },
@@ -100,7 +130,7 @@ const QuotationList = () => {
         ]}
         createPath={leadId ? `/quotations/new?lead_id=${leadId}` : '/quotations/new'}
         editPath={(r) => `/quotations/${r.id}/edit`}
-        searchPlaceholder="Search by quote number, salesperson..."
+        searchPlaceholder="Search by quote number or salesperson..."
         extraHeaderActions={
           <Button
             icon={<FileImageOutlined />}
@@ -110,9 +140,25 @@ const QuotationList = () => {
           </Button>
         }
         extraActions={(r) => (
-          <Tooltip title="Download PDF">
-            <Button type="text" size="small" icon={<DownloadOutlined />} style={{ color: '#10b981' }} onClick={() => generateQuotationPDF(r)} />
-          </Tooltip>
+          <>
+            <Tooltip title="Download PDF">
+              <Button type="text" size="small" icon={<DownloadOutlined />} style={{ color: '#10b981' }} onClick={() => generateQuotationPDF(r)} />
+            </Tooltip>
+            {WHATSAPP_STATUSES.includes(r.status) && (
+              <Tooltip title="Send on WhatsApp">
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<WhatsAppOutlined />}
+                  style={{ color: '#25D366' }}
+                  loading={sendingWhatsAppId === r.id}
+                  disabled={sendingWhatsAppId !== null && sendingWhatsAppId !== r.id}
+                  onClick={() => handleSendWhatsApp(r)}
+                  aria-label="Send on WhatsApp"
+                />
+              </Tooltip>
+            )}
+          </>
         )}
       />
       <CuttingListImportModal

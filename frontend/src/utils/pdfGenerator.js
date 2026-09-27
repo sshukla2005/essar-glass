@@ -2440,7 +2440,7 @@ const drawSOGroupCard = (doc, group, groupNo, hasCep, cols, startY, pageNum, so,
 }
 
 
-export const generateSOPDF = async (so) => {
+export const generateSOPDF = async (so, { save = true } = {}) => {
   try {
     const { hardware_items = [], labor_items = [], wastage_items = [] } = so
     const doc = new jsPDF('p', 'mm', 'a4')
@@ -2689,7 +2689,10 @@ export const generateSOPDF = async (so) => {
     drawAnnexurePages(doc, company, 'ANNEXURE II — WARRANTY TERMS', company?.warranty_terms, so.so_number)
 
     addFootersAndPageNumbers(doc, so.so_number || 'SO')
-    doc.save(makePdfFilename(so.so_number || 'SO', cust.name, 'Customer'))
+    if (save) {
+      doc.save(makePdfFilename(so.so_number || 'SO', cust.name, 'Customer'))
+    }
+    return doc
   } catch (e) {
     console.error('SO PDF:', e)
     alert('SO PDF failed: ' + e.message)
