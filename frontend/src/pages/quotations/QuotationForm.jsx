@@ -8,6 +8,7 @@ import * as XLSX from 'xlsx'
 import MasterForm from '../../components/common/MasterForm'
 import { quotationApi, customerApi, productApi, salesOrderApi, processMasterApi, employeeApi, settingsApi } from '../../api'
 import { generateQuotationPDF, makePdfFilename } from '../../utils/pdfGenerator'
+import { openPdfPreview } from '../../utils/pdfPreview'
 import { uploadQuotationPdf, getWhatsAppRecipient, confirmAndSendQuotationWhatsApp, sendQuotationOnWhatsApp } from '../../utils/quotationWhatsApp'
 import {
   getGroupBaseCostRate as sharedGetGroupBaseCostRate,
@@ -1499,6 +1500,33 @@ const QuotationForm = () => {
     }
   })
 
+  // The record the quotation PDF is built from; used by both Download and Preview.
+  const getQuotationPdfData = () => ({
+    id: record?.id,
+    customer_id: form.getFieldValue('customer_id') || record?.customer_id,
+    quote_number: record?.quote_number,
+    quote_date: form.getFieldValue('quote_date')?.format?.('YYYY-MM-DD') || form.getFieldValue('quote_date'),
+    valid_until: form.getFieldValue('valid_until')?.format?.('YYYY-MM-DD') || form.getFieldValue('valid_until'),
+    salesperson: form.getFieldValue('salesperson'), payment_terms: form.getFieldValue('payment_terms'),
+    delivery_address: form.getFieldValue('delivery_address'), company_id: form.getFieldValue('company_id'),
+    customer_name: customers.find(c => c.id === form.getFieldValue('customer_id'))?.name || '',
+    customer_phone: customers.find(c => c.id === form.getFieldValue('customer_id'))?.phone || '',
+    customer_gstin: customers.find(c => c.id === form.getFieldValue('customer_id'))?.gstin || '',
+    advance_received: advanceRec || 0, unit_mode: unit, groups, totals, lines: getFlatLines(),
+    hardware_items: hardwareItems, labor_items: laborItems,
+  })
+
+  const [isPreviewingPDF, setIsPreviewingPDF] = useState(false)
+
+  const handlePreviewPDF = async () => {
+    setIsPreviewingPDF(true)
+    try {
+      await openPdfPreview(() => generateQuotationPDF(getQuotationPdfData(), { save: false }), message)
+    } finally {
+      setIsPreviewingPDF(false)
+    }
+  }
+
   const [isMarkingLost, setIsMarkingLost] = useState(false)
   const [isReopening, setIsReopening] = useState(false)
   const [isSendingWhatsApp, setIsSendingWhatsApp] = useState(false)
@@ -2350,20 +2378,9 @@ const QuotationForm = () => {
             record={record}
             onImportExcel={() => fileInputRef.current?.click()}
             onCostAnalysis={openGlobalComparison}
-            onGeneratePDF={() => generateQuotationPDF({
-              id: record?.id,
-              customer_id: form.getFieldValue('customer_id') || record?.customer_id,
-              quote_number: record?.quote_number,
-              quote_date: form.getFieldValue('quote_date')?.format?.('YYYY-MM-DD') || form.getFieldValue('quote_date'),
-              valid_until: form.getFieldValue('valid_until')?.format?.('YYYY-MM-DD') || form.getFieldValue('valid_until'),
-              salesperson: form.getFieldValue('salesperson'), payment_terms: form.getFieldValue('payment_terms'),
-              delivery_address: form.getFieldValue('delivery_address'), company_id: form.getFieldValue('company_id'),
-              customer_name: customers.find(c => c.id === form.getFieldValue('customer_id'))?.name || '',
-              customer_phone: customers.find(c => c.id === form.getFieldValue('customer_id'))?.phone || '',
-              customer_gstin: customers.find(c => c.id === form.getFieldValue('customer_id'))?.gstin || '',
-              advance_received: advanceRec || 0, unit_mode: unit, groups, totals, lines: getFlatLines(),
-              hardware_items: hardwareItems, labor_items: laborItems,
-            })}
+            onGeneratePDF={() => generateQuotationPDF(getQuotationPdfData())}
+            onPreviewPDF={handlePreviewPDF}
+            isPreviewingPDF={isPreviewingPDF}
             onConvertToSO={() => {
               Modal.confirm({
                 title: 'Convert to Sales Order?',
