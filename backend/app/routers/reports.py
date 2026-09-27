@@ -36,6 +36,19 @@ _UNASSIGNED = "Unassigned"
 _PENDING_QUOTE_STATUSES = ('draft', 'sent', 'confirmed')
 
 
+# Sales orders listed in the "Cost Rate Missing" data-quality alert are capped at this many.
+_SO_MISSING_COST_LIMIT = 100
+
+
+def _has_cost_rate(total_cost) -> bool:
+    """True when an SO has a cost rate filled in: total_cost set and above zero.
+
+    SOs failing this are excluded from profit and margin, counted in
+    so_without_cost_count, and listed in data_quality.so_missing_cost.
+    """
+    return total_cost is not None and float(total_cost) > 0
+
+
 def _conversion_rate(won: int, lost: int) -> Optional[float]:
     """Won / (Won + Lost) as a percentage; None when nothing has been decided yet."""
     decided = won + lost
@@ -200,17 +213,23 @@ def _calc_summary(
         SalesOrder.total_cost,
         SalesOrder.total_amount,
         SalesOrder.tax_amount,
-        SalesOrder.profit_amount
+        SalesOrder.profit_amount,
+        SalesOrder.id,
+        SalesOrder.so_number,
+        SalesOrder.customer_id,
+        SalesOrder.customer_name,
+        so_date_expr.label("so_date"),
+        so_sp_expr.label("sp"),
     ).all()
 
     so_with_cost_count = 0
     so_without_cost_count = 0
     total_profit_sum = 0.0
     total_assessable_value_with_cost = 0.0
+    so_missing_cost_rows = []
 
     for r in so_cost_rows:
-        tc = r.total_cost
-        if tc is not None and float(tc) > 0:
+        if _has_cost_rate(r.total_cost):
             so_with_cost_count += 1
             pa = r.profit_amount if r.profit_amount is not None else 0.0
             tot_amt = float(r.total_amount or 0.0)
@@ -219,6 +238,7 @@ def _calc_summary(
             total_assessable_value_with_cost += max(0.0, tot_amt - tax_amt)
         else:
             so_without_cost_count += 1
+            so_missing_cost_rows.append(r)
 
     overall_profit_amount = round(total_profit_sum, 2) if so_with_cost_count > 0 else None
     overall_profit_percent = round((total_profit_sum / total_assessable_value_with_cost) * 100.0, 2) if (total_assessable_value_with_cost > 0 and so_with_cost_count > 0) else None
@@ -279,7 +299,27 @@ def _calc_summary(
     lead_conversion_rate = round((leads_with_q / leads_created * 100.0), 1) if leads_created > 0 else None
     avg_deal_size = round((so_value / so_count), 2) if so_count > 0 else None
 
+    # SOs missing a cost rate: newest first, capped; the full count is so_without_cost_count.
+    so_missing_cost_rows.sort(key=lambda r: (r.so_date or "", r.id), reverse=True)
+    shown = so_missing_cost_rows[:_SO_MISSING_COST_LIMIT]
+    missing_cust_ids = {r.customer_id for r in shown if not r.customer_name and r.customer_id}
+    cust_names = dict(
+        db.query(Customer.id, Customer.name).filter(Customer.id.in_(missing_cust_ids)).all()
+    ) if missing_cust_ids else {}
+    so_missing_cost = [
+        {
+            "id": r.id,
+            "so_number": r.so_number,
+            "customer_name": r.customer_name or cust_names.get(r.customer_id) or None,
+            "order_date": r.so_date,
+            "total_amount": round(float(r.total_amount or 0.0), 2),
+            "salesperson": _clean_str(r.sp) or None,
+        }
+        for r in shown
+    ]
+
     return {
+        "_so_missing_cost": so_missing_cost,
         "leads_created": leads_created,
         "leads_with_q": leads_with_q,
         "quotes_created": quotes_created,
@@ -334,6 +374,8 @@ def sales_performance(
     prev_to = f_date - timedelta(days=1)
     prev_from = prev_to - timedelta(days=duration_days - 1)
     previous = _calc_summary(prev_from, prev_to, cid, db, user)
+    so_missing_cost = summary.pop("_so_missing_cost")
+    previous.pop("_so_missing_cost", None)
 
     # ── Per-Salesperson Aggregation ──────────────────────────────────────────
     # Dictionary structure keyed by normalized salesperson name
@@ -497,8 +539,7 @@ def sales_performance(
         sp_map[n]["so_count"] += 1
         tot_amt = float(row.total_amount or 0.0)
         sp_map[n]["so_value"] += tot_amt
-        tc = row.total_cost
-        if tc is not None and float(tc) > 0:
+        if _has_cost_rate(row.total_cost):
             sp_map[n]["so_with_cost_count"] += 1
             tax_amt = float(row.tax_amount or 0.0)
             pa = float(row.profit_amount or 0.0)
@@ -764,7 +805,10 @@ def sales_performance(
     data_quality = {
         "blank_salesperson_quotes": blank_q_count,
         "blank_salesperson_sos": blank_so_count,
-        "unmatched_names": sorted(list(unmatched_names_set))
+        "unmatched_names": sorted(list(unmatched_names_set)),
+        "so_missing_cost": so_missing_cost,
+        "so_missing_cost_count": summary["so_without_cost_count"],
+        "so_missing_cost_limit": _SO_MISSING_COST_LIMIT,
     }
 
     eff_scope = getattr(user, "data_scope", "company")

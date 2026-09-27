@@ -181,6 +181,7 @@ const SalesPerformance = () => {
   const [historyDocType, setHistoryDocType] = useState('Sales Order')
   const [historySearch, setHistorySearch] = useState('')
   const [exporting, setExporting] = useState(false)
+  const [showMissingCost, setShowMissingCost] = useState(false)
 
   // Fetch Companies list to find active company name
   const { data: companiesData } = useQuery({
@@ -1055,8 +1056,43 @@ const SalesPerformance = () => {
               <Text style={{ color: '#c2410c' }}>
                 <b>{summary.so_without_cost_count}</b> sales order(s) in this period do not have cost rates filled — they are excluded from profit and margin calculations to prevent inaccurate 100% metrics.
               </Text>
+              {(dataQuality.so_missing_cost || []).length > 0 && (
+                <Button
+                  type="link"
+                  size="small"
+                  onClick={() => setShowMissingCost(v => !v)}
+                  style={{ color: '#9a3412', fontWeight: 600, padding: '0 4px', height: 'auto' }}
+                >
+                  {showMissingCost ? 'Hide orders' : `Show ${summary.so_without_cost_count} order${summary.so_without_cost_count !== 1 ? 's' : ''}`}
+                </Button>
+              )}
             </div>
           }
+          description={showMissingCost ? (
+            <div style={{ marginTop: 4 }}>
+              <Table
+                dataSource={dataQuality.so_missing_cost || []}
+                rowKey="id"
+                size="small"
+                pagination={(dataQuality.so_missing_cost || []).length > 10 ? { pageSize: 10, size: 'small', showSizeChanger: false } : false}
+                style={{ background: '#fff', borderRadius: 8 }}
+                columns={[
+                  {
+                    title: 'SO No', dataIndex: 'so_number', key: 'so_number', width: 130,
+                    render: (v, r) => <Link to={`/sales-orders/${r.id}/edit`}><Text strong style={{ color: '#2563eb' }}>{v}</Text></Link>,
+                  },
+                  { title: 'Customer', dataIndex: 'customer_name', key: 'customer_name', ellipsis: true, render: v => v || '—' },
+                  { title: 'Date', dataIndex: 'order_date', key: 'order_date', width: 110, render: v => v || '—' },
+                  { title: 'Amount', dataIndex: 'total_amount', key: 'total_amount', width: 140, align: 'right', render: v => <Text strong>{fmtINR(v)}</Text> },
+                ]}
+              />
+              {(dataQuality.so_missing_cost_count || 0) > (dataQuality.so_missing_cost || []).length && (
+                <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 8 }}>
+                  Showing the {(dataQuality.so_missing_cost || []).length} most recent of {dataQuality.so_missing_cost_count} sales orders missing cost rates. Narrow the date range to see the rest.
+                </Text>
+              )}
+            </div>
+          ) : null}
         />
       )}
 
