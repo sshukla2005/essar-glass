@@ -293,6 +293,9 @@ const SalesPerformance = () => {
 
   // Quotation Pipeline State & Derivations
   const [pipelineTab, setPipelineTab] = useState('all')
+  // 'all' or a salesperson's sp_key from the report; the label is kept so the choice
+  // still reads correctly after a date change that drops the person from the report.
+  const [pipelineSp, setPipelineSp] = useState({ key: 'all', label: '' })
 
   // Scoped quotations matching the exact same date criteria as the report
   const allScopedQuotations = useMemo(() => {
@@ -313,23 +316,31 @@ const SalesPerformance = () => {
     return allScopedQuotations.filter(q => q.status === 'cancelled').length
   }, [allScopedQuotations])
 
+  // One salesperson: keep the rows the report counted under that person (quote_salesperson_keys
+  // is resolved by the backend with the same fallback and normalisation as the tiles).
+  const spFilteredQuotations = useMemo(() => {
+    if (pipelineSp.key === 'all') return allScopedQuotations
+    const keys = data?.quote_salesperson_keys || {}
+    return allScopedQuotations.filter(q => keys[q.id] === pipelineSp.key)
+  }, [allScopedQuotations, pipelineSp.key, data])
+
   // Pipeline quotations: Won (converted), Lost (lost), Pending (draft, sent, confirmed)
   // 'cancelled' belongs to none of the three — excluded
   const wonQuotes = useMemo(() => {
-    return allScopedQuotations.filter(q => q.status === 'converted')
-  }, [allScopedQuotations])
+    return spFilteredQuotations.filter(q => q.status === 'converted')
+  }, [spFilteredQuotations])
 
   const lostQuotes = useMemo(() => {
-    return allScopedQuotations.filter(q => q.status === 'lost')
-  }, [allScopedQuotations])
+    return spFilteredQuotations.filter(q => q.status === 'lost')
+  }, [spFilteredQuotations])
 
   const pendingQuotes = useMemo(() => {
-    return allScopedQuotations.filter(q => ['draft', 'sent', 'confirmed'].includes(q.status))
-  }, [allScopedQuotations])
+    return spFilteredQuotations.filter(q => ['draft', 'sent', 'confirmed'].includes(q.status))
+  }, [spFilteredQuotations])
 
   const pipelineQuotations = useMemo(() => {
-    return allScopedQuotations.filter(q => ['converted', 'lost', 'draft', 'sent', 'confirmed'].includes(q.status))
-  }, [allScopedQuotations])
+    return spFilteredQuotations.filter(q => ['converted', 'lost', 'draft', 'sent', 'confirmed'].includes(q.status))
+  }, [spFilteredQuotations])
 
   // Filtered quotations for active tab
   const displayedPipelineQuotes = useMemo(() => {
@@ -412,16 +423,30 @@ const SalesPerformance = () => {
 
   // Pipeline tile figures come from the report summary (server-side, no row limit)
   // so they agree with the per-salesperson table. The list query above only feeds the table.
-  const wonCount = summary.quotes_won || 0
-  const lostCount = summary.quotes_lost || 0
-  const pendingCount = summary.quotes_pending || 0
-  const wonValue = summary.quotes_won_value || 0
-  const lostValue = summary.quotes_lost_value || 0
-  const pendingValue = summary.quotes_pending_value || 0
+  const pipelineSpRow = pipelineSp.key === 'all'
+    ? null
+    : (data?.salespeople || []).find(sp => sp.sp_key === pipelineSp.key) || {}
+  const pipelineSource = pipelineSpRow || summary
+  const wonCount = pipelineSource.quotes_won || 0
+  const lostCount = pipelineSource.quotes_lost || 0
+  const pendingCount = pipelineSource.quotes_pending || 0
+  const wonValue = pipelineSource.quotes_won_value || 0
+  const lostValue = pipelineSource.quotes_lost_value || 0
+  const pendingValue = pipelineSource.quotes_pending_value || 0
   const decidedCount = wonCount + lostCount
   const pipelineTotalCount = wonCount + lostCount + pendingCount
   // Conversion rate: won / (won + lost) as a percentage, with "—" when both are zero
-  const conversionRate = summary.conversion_rate != null ? Number(summary.conversion_rate).toFixed(1) : null
+  const conversionRate = pipelineSource.conversion_rate != null ? Number(pipelineSource.conversion_rate).toFixed(1) : null
+  // Salesperson options: the report's own rows (already normalised), A-Z, Unassigned last
+  const pipelineSpOptions = (() => {
+    const opts = (data?.salespeople || [])
+      .map(sp => ({ value: sp.sp_key, label: `${sp.salesperson} (${sp.quotes_created || 0})`, name: sp.salesperson }))
+      .sort((a, b) => (a.value === 'unassigned') - (b.value === 'unassigned') || a.name.localeCompare(b.name))
+    if (pipelineSp.key !== 'all' && !opts.some(o => o.value === pipelineSp.key)) {
+      opts.push({ value: pipelineSp.key, label: `${pipelineSp.label} (none in this period)`, name: pipelineSp.label })
+    }
+    return [{ value: 'all', label: 'All salespeople', name: '' }, ...opts]
+  })()
   const previous = data?.previous || {}
   const funnel = data?.funnel || []
   const salespeople = data?.salespeople || []
@@ -1354,7 +1379,20 @@ const SalesPerformance = () => {
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-            {cancelledQuotesCount > 0 && (
+            <Space size={8}>
+              <Text type="secondary" style={{ fontSize: 12 }}>Salesperson:</Text>
+              <Select
+                value={pipelineSp.key}
+                onChange={(value, option) => setPipelineSp({ key: value, label: option?.name || '' })}
+                options={pipelineSpOptions}
+                showSearch
+                optionFilterProp="label"
+                style={{ minWidth: 220 }}
+                size="middle"
+                disabled={!data}
+              />
+            </Space>
+            {pipelineSp.key === 'all' && cancelledQuotesCount > 0 && (
               <Tag color="default" style={{ borderRadius: 10, fontSize: 11, padding: '2px 8px' }}>
                 {cancelledQuotesCount} cancelled excluded
               </Tag>
@@ -1550,6 +1588,15 @@ const SalesPerformance = () => {
             ]}
             style={{ marginBottom: 12 }}
           />
+
+          {pipelineSp.key !== 'all' && !quotationsLoading && pipelineQuotations.length !== pipelineTotalCount && (
+            <Alert
+              type="info"
+              showIcon
+              style={{ marginBottom: 12, borderRadius: 8 }}
+              message={`The tiles count ${pipelineTotalCount} quotation${pipelineTotalCount !== 1 ? 's' : ''} for ${pipelineSp.label}; the table below lists ${pipelineQuotations.length}. The table only loads the newest 1,000 quotations, so older ones in this period are counted above but not listed.`}
+            />
+          )}
 
           {/* Pipeline Quotations Table */}
           <Table

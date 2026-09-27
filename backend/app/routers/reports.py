@@ -479,6 +479,13 @@ def sales_performance(
         sp_map[n]["quotes_pending"] += row.pending_cnt
         sp_map[n]["quotes_pending_value"] += float(row.pending_amt or 0.0)
 
+    # Which salesperson (sp_key) each quotation above was counted under, so the
+    # frontend can filter a quotation list to one salesperson without re-resolving names.
+    quote_salesperson_keys = {
+        q_id: _normalize_sp(sp)
+        for q_id, sp in quotes_q.with_entities(Quotation.id, q_sp_expr).all()
+    }
+
     # Leads with quotation per salesperson
     leads_q_rows = (
         apply_company_filter(
@@ -653,6 +660,7 @@ def sales_performance(
 
         salespeople.append({
             "salesperson": most_common_name,
+            "sp_key": norm,
             "leads_created": lc,
             "quotes_created": qc,
             "quotes_value": qv,
@@ -826,6 +834,7 @@ def sales_performance(
         "previous": previous,
         "funnel": funnel,
         "salespeople": salespeople,
+        "quote_salesperson_keys": quote_salesperson_keys,
         "monthly": monthly,
         "data_quality": data_quality,
         "is_scoped": is_scoped,
