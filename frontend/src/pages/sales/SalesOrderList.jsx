@@ -71,7 +71,7 @@ const SalesOrderList = () => {
       columns={columns}
       createPath="/sales-orders/new"
       editPath={(r) => `/sales-orders/${r.id}/edit`}
-      searchPlaceholder="Search SO Number..."
+      searchPlaceholder="Search by SO number, salesperson or customer..."
       nameField="so_number"
       apiFilters={selectedStatus ? { status: selectedStatus } : undefined}
       extraFilters={extraFilters}

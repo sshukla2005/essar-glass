@@ -9,6 +9,9 @@ from app.utils.helpers import apply_company_filter, apply_scope_filter, paginate
 
 logger = logging.getLogger(__name__)
 
+# Columns the list endpoint's `search` param matches (ILIKE) when a route sets no search_fields.
+DEFAULT_SEARCH_FIELDS = ("name", "move_number", "reference", "remarks")
+
 
 def _require_permissions(allowed: set[str] | None = None, module: str | None = None):
     def _dep(user = Depends(get_current_user)):
@@ -53,8 +56,14 @@ def make_crud_router(
     read_roles: set[str] | None = None,
     write_roles: set[str] | None = None,
     module: str | None = None,
+    search_fields: tuple[str, ...] | list[str] | None = None,
 ):
     router = APIRouter(prefix=prefix, tags=[tag])
+
+    # Columns `search` matches; names the model doesn't have are skipped.
+    search_columns = [f for f in (search_fields if search_fields is not None else DEFAULT_SEARCH_FIELDS) if hasattr(model, f)]
+    if not search_columns:
+        logger.warning("List search on %s matches no columns; `search` will not filter it.", prefix)
 
 
     @router.get("/")
@@ -172,15 +181,7 @@ def make_crud_router(
                 q = q.filter(model.status == status)
 
         if search:
-            search_filters = []
-            if hasattr(model, "name"):
-                search_filters.append(model.name.ilike(f"%{search}%"))
-            if hasattr(model, "move_number"):
-                search_filters.append(model.move_number.ilike(f"%{search}%"))
-            if hasattr(model, "reference"):
-                search_filters.append(model.reference.ilike(f"%{search}%"))
-            if hasattr(model, "remarks"):
-                search_filters.append(model.remarks.ilike(f"%{search}%"))
+            search_filters = [getattr(model, f).ilike(f"%{search}%") for f in search_columns]
             if search_filters:
                 from sqlalchemy import or_
                 q = q.filter(or_(*search_filters))

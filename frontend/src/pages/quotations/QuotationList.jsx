@@ -130,7 +130,7 @@ const QuotationList = () => {
         ]}
         createPath={leadId ? `/quotations/new?lead_id=${leadId}` : '/quotations/new'}
         editPath={(r) => `/quotations/${r.id}/edit`}
-        searchPlaceholder="Search by quote number, salesperson..."
+        searchPlaceholder="Search by quote number or salesperson..."
         extraHeaderActions={
           <Button
             icon={<FileImageOutlined />}
