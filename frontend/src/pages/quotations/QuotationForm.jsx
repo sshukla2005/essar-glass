@@ -8,6 +8,7 @@ import * as XLSX from 'xlsx'
 import MasterForm from '../../components/common/MasterForm'
 import { quotationApi, customerApi, productApi, salesOrderApi, processMasterApi, employeeApi, settingsApi } from '../../api'
 import { generateQuotationPDF, makePdfFilename } from '../../utils/pdfGenerator'
+import { uploadQuotationPdf, getWhatsAppRecipient, confirmAndSendQuotationWhatsApp, sendQuotationOnWhatsApp } from '../../utils/quotationWhatsApp'
 import {
   getGroupBaseCostRate as sharedGetGroupBaseCostRate,
   getGroupLoadedCostRate as sharedGetGroupLoadedCostRate,
@@ -1463,37 +1464,24 @@ const QuotationForm = () => {
     return doc ? doc.output('blob') : null
   }
 
+  const getSelectedCustomer = () =>
+    customers.find(c => c.id === (form.getFieldValue('customer_id') || record?.customer?.id || record?.customer_id)) || record?.customer
+
   const confirmMutation = useMutation({
     mutationFn: async () => {
       await handleSave(false)
       await quotationApi.changeStatus(id, 'confirmed')
       try {
-        const blob = await buildQuotationPdfBlob()
-        const res = await quotationApi.shareFile(id, blob, `${record.quote_number}.pdf`)
-        const cust = customers.find(c => c.id === (form.getFieldValue('customer_id') || record?.customer?.id || record?.customer_id)) || record?.customer
-        const customerName = cust?.name || record?.customer_name || 'Customer'
-        const rawPhone = cust?.phone || cust?.mobile || record?.customer_phone || ''
-        const customerPhone = (typeof rawPhone === 'string' ? rawPhone : String(rawPhone || '')).trim()
-        const hasPhone = Boolean(customerPhone && customerPhone !== 'null' && customerPhone !== 'undefined' && customerPhone !== 'None')
-
+        // Upload first (as before), then offer to send the uploaded PDF
+        const documentUrl = await uploadQuotationPdf(id, record.quote_number, buildQuotationPdfBlob)
+        const { name, hasPhone } = getWhatsAppRecipient(getSelectedCustomer(), record)
         if (hasPhone) {
-          Modal.confirm({
-            title: 'Send quotation on WhatsApp?',
-            content: `${record.quote_number} will be sent to ${customerName} on WhatsApp with the PDF attached.`,
-            okText: 'Send',
-            cancelText: 'Not now',
-            onOk: async () => {
-              try {
-                const waRes = await quotationApi.sendWhatsApp(id, res.data.url)
-                if (waRes.data?.sent) {
-                  message.success('Quotation sent on WhatsApp')
-                } else {
-                  message.info(`WhatsApp not sent: ${waRes.data?.reason || 'unknown'}`)
-                }
-              } catch (waErr) {
-                message.warning('WhatsApp notification failed')
-              }
-            },
+          confirmAndSendQuotationWhatsApp({
+            quotationId: id,
+            quoteNumber: record.quote_number,
+            customerName: name,
+            getDocumentUrl: () => documentUrl,
+            message,
           })
         }
       } catch (err) {
@@ -1513,6 +1501,23 @@ const QuotationForm = () => {
 
   const [isMarkingLost, setIsMarkingLost] = useState(false)
   const [isReopening, setIsReopening] = useState(false)
+  const [isSendingWhatsApp, setIsSendingWhatsApp] = useState(false)
+
+  const handleSendWhatsApp = async () => {
+    setIsSendingWhatsApp(true)
+    try {
+      await sendQuotationOnWhatsApp({
+        quotationId: id,
+        quoteNumber: record?.quote_number,
+        customer: getSelectedCustomer(),
+        record,
+        buildBlob: buildQuotationPdfBlob,
+        message,
+      })
+    } finally {
+      setIsSendingWhatsApp(false)
+    }
+  }
 
   const handleMarkLost = async (reason) => {
     if (!id) {
@@ -2339,6 +2344,8 @@ const QuotationForm = () => {
         <div style={{ flex: 1, minWidth: 0 }}>
           <ActionToolbar
             status={status}
+            onSendWhatsApp={handleSendWhatsApp}
+            isSendingWhatsApp={isSendingWhatsApp}
             isEdit={isEdit}
             record={record}
             onImportExcel={() => fileInputRef.current?.click()}
