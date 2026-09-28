@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { Card, Typography, Form, Input, Row, Col, Space, Button, App, Divider, Switch, Tag } from 'antd'
+import { Card, Typography, Form, Input, Row, Col, Space, Button, App, Divider, Switch, Tag, Alert } from 'antd'
 import { SaveOutlined, CloseOutlined, UploadOutlined, DeleteOutlined } from '@ant-design/icons'
 import { Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -24,6 +24,14 @@ const CompanyInfo = () => {
     queryFn: () => companyApi.get(companyId).then(r => r.data),
     enabled: !!companyId,
   })
+
+  // WhatsApp credentials are all-or-nothing: Phone Number ID and Token together.
+  // The token field is never pre-filled, so a stored token counts as filled.
+  const waPhoneId = Form.useWatch('whatsapp_phone_number_id', form)
+  const waTokenTyped = Form.useWatch('whatsapp_token', form)
+  const waHasPhone = !!(waPhoneId && waPhoneId.trim())
+  const waHasToken = !!companyData?.whatsapp_token_set || !!(waTokenTyped && waTokenTyped.trim())
+  const waIncomplete = waHasPhone !== waHasToken
 
   useEffect(() => {
     if (companyData) {
@@ -344,6 +352,16 @@ const CompanyInfo = () => {
               </Form.Item>
             </Col>
           </Row>
+          {waIncomplete && (
+            <Alert
+              type="warning"
+              showIcon
+              message="Phone Number ID and Token are required together"
+              description={waHasPhone
+                ? 'A Phone Number ID is set but no token is stored. Add the token, or clear the Phone Number ID to use the server default. WhatsApp will not send for this company until both are set.'
+                : 'A token is set but the Phone Number ID is empty. Add the Phone Number ID. WhatsApp will not send for this company until both are set.'}
+            />
+          )}
         </Form>
       </Card>
     </div>

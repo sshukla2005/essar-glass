@@ -386,3 +386,86 @@ def test_send_endpoint_uses_the_quotation_company_config(db_session: Session, wa
     assert "/WA-TEST-PHONE/messages" in mock_post.call_args.args[0]
     assert mock_post.call_args.kwargs["headers"]["Authorization"] == f"Bearer {SECRET}"
     assert mock_client.call_args.kwargs.get("timeout") == 30.0
+
+
+# ── All-or-nothing credentials: never mix a company credential with a global one ──
+
+GLOBAL_ENV = {
+    "WHATSAPP_TOKEN": "global-token",
+    "WHATSAPP_PHONE_NUMBER_ID": "GLOBAL-PHONE-ID",
+    "WHATSAPP_TEMPLATE_QUOTATION": "global_tpl",
+    "WHATSAPP_API_URL": "https://global.example.com/v19.0",
+}
+
+
+def _send_with_globals(company):
+    """Send with known global settings; returns (result, mocked post)."""
+    patches = [patch.object(settings, k, v) for k, v in GLOBAL_ENV.items()]
+    for p in patches:
+        p.start()
+    try:
+        with patch("app.services.whatsapp_service.httpx.Client") as mock_client:
+            mock_post = mock_client.return_value.__enter__.return_value.post
+            mock_post.return_value = _ok_response()
+            return _send(company), mock_post
+    finally:
+        for p in patches:
+            p.stop()
+
+
+def test_both_credentials_set_uses_company_and_falls_back_for_template_and_url():
+    company = Company(name="Excel Traders", whatsapp_enabled=True,
+                      whatsapp_phone_number_id="CO-PHONE-ID", whatsapp_token="co-token",
+                      whatsapp_template_quotation="", whatsapp_api_url=None)
+    res, post = _send_with_globals(company)
+    assert res["sent"] is True
+    assert post.call_args.args[0] == "https://global.example.com/v19.0/CO-PHONE-ID/messages"
+    assert post.call_args.kwargs["headers"]["Authorization"] == "Bearer co-token"
+    assert post.call_args.kwargs["json"]["template"]["name"] == "global_tpl"
+
+
+def test_neither_credential_set_uses_global_config_entirely():
+    # Company template/URL are ignored without company credentials: global config as a whole
+    company = Company(name="Essar", whatsapp_enabled=True,
+                      whatsapp_phone_number_id="", whatsapp_token=None,
+                      whatsapp_template_quotation="essar_tpl", whatsapp_api_url="https://co.example.com")
+    res, post = _send_with_globals(company)
+    assert res["sent"] is True
+    assert post.call_args.args[0] == "https://global.example.com/v19.0/GLOBAL-PHONE-ID/messages"
+    assert post.call_args.kwargs["headers"]["Authorization"] == "Bearer global-token"
+    assert post.call_args.kwargs["json"]["template"]["name"] == "global_tpl"
+
+
+@pytest.mark.parametrize("phone_id, token", [
+    ("CO-PHONE-ID", None),        # phone number id only
+    ("CO-PHONE-ID", "   "),       # phone number id, blank token
+    (None, "co-secret-token-777"),  # token only
+    ("", "co-secret-token-777"),    # blank phone number id, token
+])
+def test_partial_credentials_do_not_send_and_do_not_log_token(caplog, phone_id, token):
+    company = Company(name="Excel Traders", whatsapp_enabled=True,
+                      whatsapp_phone_number_id=phone_id, whatsapp_token=token)
+    with caplog.at_level("WARNING", logger="app.services.whatsapp_service"):
+        res, post = _send_with_globals(company)
+    assert res == {"sent": False,
+                   "reason": "WhatsApp config incomplete for Excel Traders — set both Phone Number ID and Token"}
+    post.assert_not_called()
+    warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+    assert warnings, "a warning is logged"
+    assert "co-secret-token-777" not in caplog.text
+    assert "global-token" not in caplog.text
+
+
+@pytest.mark.parametrize("phone_id", [None, "", "  ", "CO-PHONE-ID"])
+@pytest.mark.parametrize("token", [None, "", "  ", "co-token"])
+def test_no_combination_mixes_company_and_global_credentials(phone_id, token):
+    company = Company(name="Mix Check", whatsapp_enabled=True,
+                      whatsapp_phone_number_id=phone_id, whatsapp_token=token)
+    res, post = _send_with_globals(company)
+    if not post.called:
+        assert res["sent"] is False
+        return
+    used_phone = post.call_args.args[0].rsplit("/", 2)[-2]
+    used_token = post.call_args.kwargs["headers"]["Authorization"].removeprefix("Bearer ")
+    pair = (used_phone, used_token)
+    assert pair in {("CO-PHONE-ID", "co-token"), ("GLOBAL-PHONE-ID", "global-token")}, pair
