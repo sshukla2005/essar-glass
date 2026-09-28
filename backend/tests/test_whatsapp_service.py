@@ -149,7 +149,7 @@ def test_send_quotation_confirmed_success():
 
 def test_send_whatsapp_endpoint_customer_no_phone(db_session: Session):
     headers = get_auth_headers(db_session)
-    company = db_session.query(Company).first()
+    company = db_session.query(Company).order_by(Company.id).first()
     cid = company.id if company else 1
 
     # Customer with no phone
@@ -186,7 +186,7 @@ def test_send_whatsapp_endpoint_customer_no_phone(db_session: Session):
 
 def test_send_whatsapp_endpoint_public_base_url_empty(db_session: Session):
     headers = get_auth_headers(db_session)
-    company = db_session.query(Company).first()
+    company = db_session.query(Company).order_by(Company.id).first()
     cid = company.id if company else 1
 
     cust = Customer(
@@ -218,3 +218,171 @@ def test_send_whatsapp_endpoint_public_base_url_empty(db_session: Session):
         data = res.json()
         assert data["sent"] is False
         assert data["reason"] == "PUBLIC_BASE_URL not configured"
+
+
+# ── Per-company WhatsApp configuration ───────────────────────────────────────
+
+def _send(company=None, to_number="9702883617"):
+    return send_quotation_confirmed(
+        to_number=to_number,
+        document_url="https://example.com/doc.pdf",
+        customer_name="Test Customer",
+        quote_number="QT1001",
+        quote_date="2026-09-20",
+        total_amount="1,000.00",
+        company_name="Test Co",
+        company=company,
+    )
+
+
+def _ok_response():
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {"messages": [{"id": "wamid.1"}]}
+    return mock_response
+
+
+def test_company_with_own_config_uses_it_not_the_global():
+    company = Company(
+        name="Excel Traders Test", whatsapp_enabled=True,
+        whatsapp_phone_number_id="CO-PHONE-ID", whatsapp_token="co-token-xyz",
+        whatsapp_template_quotation="excel_quote_tpl", whatsapp_api_url="https://co.example.com/v1/",
+    )
+    with patch.object(settings, "WHATSAPP_TOKEN", "global-token"), \
+         patch.object(settings, "WHATSAPP_PHONE_NUMBER_ID", "GLOBAL-PHONE-ID"), \
+         patch.object(settings, "WHATSAPP_TEMPLATE_QUOTATION", "global_tpl"), \
+         patch.object(settings, "WHATSAPP_API_URL", "https://global.example.com/v19.0"), \
+         patch("httpx.Client.post", return_value=_ok_response()) as mock_post:
+        res = _send(company)
+    assert res["sent"] is True
+    url = mock_post.call_args.args[0]
+    kwargs = mock_post.call_args.kwargs
+    assert url == "https://co.example.com/v1/CO-PHONE-ID/messages"
+    assert kwargs["headers"]["Authorization"] == "Bearer co-token-xyz"
+    assert kwargs["json"]["template"]["name"] == "excel_quote_tpl"
+
+
+def test_company_with_blank_fields_falls_back_to_settings():
+    company = Company(
+        name="Essar Test", whatsapp_enabled=True,
+        whatsapp_phone_number_id="", whatsapp_token=None,
+        whatsapp_template_quotation="  ", whatsapp_api_url=None,
+    )
+    with patch.object(settings, "WHATSAPP_TOKEN", "global-token"), \
+         patch.object(settings, "WHATSAPP_PHONE_NUMBER_ID", "GLOBAL-PHONE-ID"), \
+         patch.object(settings, "WHATSAPP_TEMPLATE_QUOTATION", "global_tpl"), \
+         patch.object(settings, "WHATSAPP_API_URL", "https://global.example.com/v19.0"), \
+         patch("httpx.Client.post", return_value=_ok_response()) as mock_post:
+        res = _send(company)
+    assert res["sent"] is True
+    assert mock_post.call_args.args[0] == "https://global.example.com/v19.0/GLOBAL-PHONE-ID/messages"
+    assert mock_post.call_args.kwargs["headers"]["Authorization"] == "Bearer global-token"
+    assert mock_post.call_args.kwargs["json"]["template"]["name"] == "global_tpl"
+
+
+def test_no_company_uses_global_settings():
+    with patch.object(settings, "WHATSAPP_TOKEN", "global-token"), \
+         patch.object(settings, "WHATSAPP_PHONE_NUMBER_ID", "GLOBAL-PHONE-ID"), \
+         patch("httpx.Client.post", return_value=_ok_response()) as mock_post:
+        res = _send(None)
+    assert res["sent"] is True
+    assert mock_post.call_args.kwargs["headers"]["Authorization"] == "Bearer global-token"
+
+
+def test_disabled_company_skips_sending_without_raising():
+    company = Company(name="Disabled Co", whatsapp_enabled=False,
+                      whatsapp_phone_number_id="CO-PHONE-ID", whatsapp_token="co-token")
+    with patch.object(settings, "WHATSAPP_TOKEN", "global-token"), \
+         patch.object(settings, "WHATSAPP_PHONE_NUMBER_ID", "GLOBAL-PHONE-ID"), \
+         patch("httpx.Client.post") as mock_post:
+        res = _send(company)
+    assert res == {"sent": False, "reason": "WhatsApp disabled for this company"}
+    mock_post.assert_not_called()
+
+
+SECRET = "tok-" + uuid.uuid4().hex   # unique so a leak anywhere in a response is detectable
+
+
+@pytest.fixture
+def wa_company(db_session: Session):
+    company = Company(name=f"WA Test Co {uuid.uuid4().hex[:6]}", whatsapp_enabled=True,
+                      whatsapp_phone_number_id="WA-TEST-PHONE", whatsapp_token=SECRET)
+    db_session.add(company)
+    db_session.commit()
+    yield company
+    db_session.query(Quotation).filter(Quotation.company_id == company.id).delete(synchronize_session=False)
+    db_session.query(Customer).filter(Customer.company_id == company.id).delete(synchronize_session=False)
+    db_session.query(Company).filter(Company.id == company.id).delete(synchronize_session=False)
+    db_session.commit()
+
+
+def test_company_responses_never_contain_the_token(db_session: Session, wa_company):
+    headers = get_auth_headers(db_session)
+    for path in (f"/api/v1/companies/{wa_company.id}", "/api/v1/companies/?page=1&page_size=1000", "/api/v1/companies/dropdown"):
+        res = client.get(path, headers=headers)
+        assert res.status_code == 200, (path, res.text)
+        assert SECRET not in res.text, path
+        assert '"whatsapp_token"' not in res.text, path
+    item = client.get(f"/api/v1/companies/{wa_company.id}", headers=headers).json()
+    assert item["whatsapp_token_set"] is True
+    assert item["whatsapp_phone_number_id"] == "WA-TEST-PHONE"
+
+
+def test_company_update_with_empty_token_keeps_stored_token(db_session: Session, wa_company):
+    headers = get_auth_headers(db_session)
+    url = f"/api/v1/companies/{wa_company.id}"
+
+    for payload in ({"whatsapp_token": ""}, {"whatsapp_token": "   "}, {"whatsapp_token": None},
+                    {"whatsapp_template_quotation": "tpl_only"}):
+        res = client.put(url, json=payload, headers=headers)
+        assert res.status_code == 200, res.text
+        assert SECRET not in res.text
+        assert res.json()["whatsapp_token_set"] is True
+        db_session.expire_all()
+        assert db_session.get(Company, wa_company.id).whatsapp_token == SECRET, payload
+
+    # The computed flag is read-only: sending it back changes nothing
+    res = client.put(url, json={"whatsapp_token_set": False}, headers=headers)
+    assert res.status_code == 200 and res.json()["whatsapp_token_set"] is True
+
+    # A non-empty value replaces it
+    res = client.put(url, json={"whatsapp_token": "replacement-token"}, headers=headers)
+    assert res.status_code == 200 and "replacement-token" not in res.text
+    db_session.expire_all()
+    assert db_session.get(Company, wa_company.id).whatsapp_token == "replacement-token"
+
+
+def test_send_endpoint_uses_the_quotation_company_config(db_session: Session, wa_company):
+    headers = get_auth_headers(db_session)
+    cust = Customer(customer_code=f"CUST-WA-{uuid.uuid4().hex[:4].upper()}", name="WA Customer",
+                    company_id=wa_company.id, phone="9702883617")
+    db_session.add(cust)
+    db_session.commit()
+    quote = Quotation(quote_number=f"QT-WA-{uuid.uuid4().hex[:4].upper()}", company_id=wa_company.id,
+                      customer_id=cust.id, status="confirmed", total_amount=1000.0)
+    db_session.add(quote)
+    db_session.commit()
+    # superadmin viewing the test company
+    user = db_session.query(User).filter(User.role == "superadmin", User.is_active == True).first()
+    sid = uuid.uuid4().hex
+    from datetime import datetime, timezone
+    user.current_session_id, user.session_started_at = sid, datetime.now(timezone.utc)
+    db_session.commit()
+    token = create_access_token(user.id, user.role, company_id=user.company_id or 1, home_company_id=user.company_id or 1,
+                                active_company_id=wa_company.id, session_id=sid)
+
+    with patch.object(settings, "PUBLIC_BASE_URL", "https://erp.example.com"), \
+         patch.object(settings, "WHATSAPP_TOKEN", "global-token"), \
+         patch.object(settings, "WHATSAPP_PHONE_NUMBER_ID", "GLOBAL-PHONE-ID"), \
+         patch("app.services.whatsapp_service.httpx.Client") as mock_client:
+        # Patch only the service's httpx: TestClient itself is an httpx.Client
+        mock_post = mock_client.return_value.__enter__.return_value.post
+        mock_post.return_value = _ok_response()
+        res = client.post(f"/api/v1/quotations/{quote.id}/send-whatsapp",
+                          json={"document_url": "/uploads/quotations/x.pdf"},
+                          headers={"Authorization": f"Bearer {token}"})
+    assert res.status_code == 200, res.text
+    assert res.json().get("sent") is True, res.text
+    assert "/WA-TEST-PHONE/messages" in mock_post.call_args.args[0]
+    assert mock_post.call_args.kwargs["headers"]["Authorization"] == f"Bearer {SECRET}"
+    assert mock_client.call_args.kwargs.get("timeout") == 30.0

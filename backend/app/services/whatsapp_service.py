@@ -22,6 +22,26 @@ def normalize_phone_number(to_number: str | int | None) -> tuple[bool, str]:
         return False, digits
 
 
+def resolve_whatsapp_config(company=None) -> dict:
+    """WhatsApp sending config for a company.
+
+    Each value is the company's own when it is filled in, otherwise the global
+    WHATSAPP_* setting from .env. With no company (or no company row), everything
+    comes from the global settings and sending is enabled.
+    """
+    def pick(field: str, global_value):
+        value = getattr(company, field, None) if company is not None else None
+        return value if (value and str(value).strip()) else global_value
+
+    return {
+        "enabled": True if company is None else bool(getattr(company, "whatsapp_enabled", False)),
+        "api_url": pick("whatsapp_api_url", settings.WHATSAPP_API_URL),
+        "phone_number_id": pick("whatsapp_phone_number_id", settings.WHATSAPP_PHONE_NUMBER_ID),
+        "token": pick("whatsapp_token", settings.WHATSAPP_TOKEN),
+        "template": pick("whatsapp_template_quotation", settings.WHATSAPP_TEMPLATE_QUOTATION),
+    }
+
+
 def send_quotation_confirmed(
     to_number,
     document_url,
@@ -30,14 +50,20 @@ def send_quotation_confirmed(
     quote_date,
     total_amount,
     company_name,
+    company=None,
 ) -> dict:
     """Send WhatsApp quotation confirmation template with document header.
 
     Provider: 1automations, Meta Cloud API compatible.
-    Endpoint: POST {WHATSAPP_API_URL}/{PHONE_NUMBER_ID}/messages
+    Endpoint: POST {api_url}/{phone_number_id}/messages, with config resolved per
+    company (see resolve_whatsapp_config). Never raises for configuration problems.
     """
-    token = settings.WHATSAPP_TOKEN
-    phone_number_id = settings.WHATSAPP_PHONE_NUMBER_ID
+    config = resolve_whatsapp_config(company)
+    if not config["enabled"]:
+        return {"sent": False, "reason": "WhatsApp disabled for this company"}
+
+    token = config["token"]
+    phone_number_id = config["phone_number_id"]
 
     if not token or not phone_number_id:
         missing = []
@@ -51,7 +77,7 @@ def send_quotation_confirmed(
     if not valid:
         return {"sent": False, "reason": "invalid number"}
 
-    api_base = settings.WHATSAPP_API_URL.rstrip("/")
+    api_base = str(config["api_url"]).rstrip("/")
     url = f"{api_base}/{phone_number_id}/messages"
 
     headers = {
@@ -65,7 +91,7 @@ def send_quotation_confirmed(
         "to": normalized_number,
         "type": "template",
         "template": {
-            "name": settings.WHATSAPP_TEMPLATE_QUOTATION,
+            "name": config["template"],
             "language": {
                 "code": "en",
                 "policy": "deterministic",

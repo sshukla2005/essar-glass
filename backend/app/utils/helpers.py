@@ -126,9 +126,11 @@ def serialize_row(obj):
         return obj
     cols = {c.key: getattr(obj, c.key) for c in obj.__table__.columns}
     extra = cols.pop('extra_data', None)
-    if isinstance(extra, dict) and extra:
-        return {**extra, **cols}
-    return cols
+    out = {**extra, **cols} if isinstance(extra, dict) and extra else cols
+    # Write-only columns (secrets) are never returned, only whether one is stored
+    for col in getattr(type(obj), '__write_only_columns__', ()):
+        out[f"{col}_set"] = bool(out.pop(col, None))
+    return out
 
 
 def serialize_item(obj):
@@ -160,6 +162,24 @@ def stash_extra_fields(model, payload):
         base.update(unknown)
         known['extra_data'] = base
     return known
+
+
+def prepare_write_only_fields(model, payload: dict, is_update: bool) -> dict:
+    """Input handling for a model's __write_only_columns__ (secrets such as tokens).
+
+    The computed "<column>_set" flag is read-only and dropped. A blank or missing
+    value leaves the stored secret unchanged on update, and stores NULL on create.
+    """
+    for col in getattr(model, '__write_only_columns__', ()):
+        payload.pop(f"{col}_set", None)
+        if col in payload:
+            value = payload[col]
+            if value is None or (isinstance(value, str) and not value.strip()):
+                if is_update:
+                    payload.pop(col)
+                else:
+                    payload[col] = None
+    return payload
 
 
 def paginate(query, page: int = 1, page_size: int = 20, counts: Optional[dict] = None):

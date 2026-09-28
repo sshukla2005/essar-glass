@@ -208,10 +208,11 @@ app.include_router(ai_router.router, prefix="/api/v1")
 from app.schemas.customer import CustomerCreate, CustomerUpdate, CustomerResponse
 from app.schemas.vendor import VendorCreate, VendorUpdate, VendorResponse
 from app.schemas.quotation import QuotationCreate, QuotationUpdate, QuotationResponse
+from app.schemas.company import CompanyCreate, CompanyUpdate, CompanyResponse
 
 # Auto CRUD routers
 ROUTER_CONFIGS = [
-    {"prefix": "/companies",       "tag": "Companies",       "model": Company,         "code_prefix": "COMP", "code_field": None, "company_scoped": True, "read_roles": None, "write_roles": {"superadmin"}, "module": "company"},
+    {"prefix": "/companies",       "tag": "Companies",       "model": Company,         "code_prefix": "COMP", "code_field": None, "company_scoped": True, "read_roles": None, "write_roles": {"superadmin"}, "module": "company", "create_schema": CompanyCreate, "update_schema": CompanyUpdate, "response_schema": CompanyResponse},
     {"prefix": "/customers",       "tag": "Customers",       "model": Customer,        "code_prefix": "CUST", "code_field": "customer_code", "module": "customers", "create_schema": CustomerCreate, "update_schema": CustomerUpdate, "response_schema": CustomerResponse},
     {"prefix": "/vendors",         "tag": "Vendors",         "model": Vendor,          "code_prefix": "VEND", "code_field": "vendor_code", "module": "vendors", "create_schema": VendorCreate, "update_schema": VendorUpdate, "response_schema": VendorResponse},
     {"prefix": "/products",        "tag": "Products",        "model": Product,         "code_prefix": "PROD", "code_field": "internal_ref", "module": "products"},
@@ -890,6 +891,7 @@ def send_quotation_whatsapp(
         quote_date=str(quotation.quote_date or ""),
         total_amount=format_indian_currency(quotation.total_amount),
         company_name=company_name,
+        company=company,  # per-company sender; None (no company row) uses the global settings
     )
 
 

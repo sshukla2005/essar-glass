@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { Card, Typography, Form, Input, Row, Col, Space, Button, App, Divider } from 'antd'
+import { Card, Typography, Form, Input, Row, Col, Space, Button, App, Divider, Switch, Tag } from 'antd'
 import { SaveOutlined, CloseOutlined, UploadOutlined, DeleteOutlined } from '@ant-design/icons'
 import { Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -41,6 +41,11 @@ const CompanyInfo = () => {
         bank_ifsc: companyData.bank_ifsc || '',
         terms_conditions: companyData.terms_conditions ?? '',
         warranty_terms: companyData.warranty_terms ?? '',
+        whatsapp_enabled: !!companyData.whatsapp_enabled,
+        whatsapp_phone_number_id: companyData.whatsapp_phone_number_id || '',
+        whatsapp_template_quotation: companyData.whatsapp_template_quotation || '',
+        whatsapp_api_url: companyData.whatsapp_api_url || '',
+        whatsapp_token: '',   // never pre-filled: the API does not return the token
       })
       setLogoPreview(companyData.logo || null)
     }
@@ -75,7 +80,9 @@ const CompanyInfo = () => {
     try {
       const values = await form.validateFields()
       if (values.bank_ifsc) values.bank_ifsc = values.bank_ifsc.toUpperCase()
-      await saveMutation.mutateAsync(values)
+      // Only send a token that was typed in; blank keeps the stored one
+      if (!values.whatsapp_token || !values.whatsapp_token.trim()) delete values.whatsapp_token
+      await saveMutation.mutateAsync(values)   // refetch re-runs setFieldsValue, which clears the token field
     } catch {}
   }
 
@@ -294,6 +301,46 @@ const CompanyInfo = () => {
                   rows={14}
                   placeholder={`3.1 LIMITED PRODUCT WARRANTY\nUnless otherwise specified...`}
                 />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Divider orientation="left">WhatsApp</Divider>
+          <Text type="secondary" style={{ display: 'block', marginBottom: 16, fontSize: 13 }}>
+            Sender used for quotation messages from this company. Blank fields use the server's default WhatsApp settings.
+          </Text>
+          <Row gutter={16}>
+            <Col span={8}>
+              <Form.Item name="whatsapp_enabled" label="Enabled" valuePropName="checked">
+                <Switch />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="whatsapp_phone_number_id" label="Phone Number ID">
+                <Input placeholder="Blank = server default" />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="whatsapp_template_quotation" label="Template Name">
+                <Input placeholder="Blank = server default (quotation_confirmed)" />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="whatsapp_api_url" label="API URL (optional)">
+                <Input placeholder="Blank = server default (https://crmapi.1automations.com/api/meta/v19.0)" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item
+                name="whatsapp_token"
+                label="Token"
+                extra={companyData?.whatsapp_token_set
+                  ? <Tag color="green" style={{ marginTop: 4 }}>Token is set</Tag>
+                  : <span style={{ fontSize: 12 }}>No token stored</span>}
+              >
+                <Input.Password placeholder="Leave blank to keep existing" autoComplete="new-password" />
               </Form.Item>
             </Col>
           </Row>

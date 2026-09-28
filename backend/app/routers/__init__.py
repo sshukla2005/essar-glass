@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from typing import Optional
 from app.database import get_db
 from app.deps import get_current_user
-from app.utils.helpers import apply_company_filter, apply_scope_filter, paginate, get_next_code, serialize_row, stash_extra_fields
+from app.utils.helpers import apply_company_filter, apply_scope_filter, paginate, get_next_code, serialize_row, stash_extra_fields, prepare_write_only_fields
 
 logger = logging.getLogger(__name__)
 
@@ -227,6 +227,7 @@ def make_crud_router(
         user        = Depends(_require_permissions(write_roles, module)),
     ):
         obj_data = data.model_dump()
+        obj_data = prepare_write_only_fields(model, obj_data, is_update=False)
 
         if company_scoped:
             from app.models.user import User as UserModel
@@ -448,6 +449,7 @@ def make_crud_router(
         old_product_id = getattr(item, "product_id", None)
 
         update_data = data.model_dump(exclude_unset=True)
+        update_data = prepare_write_only_fields(model, update_data, is_update=True)
 
         # Never allow financial server-computed fields, company_id or created_by to be changed via update
         update_data.pop("company_id", None)
