@@ -167,18 +167,33 @@ def stash_extra_fields(model, payload):
 def prepare_write_only_fields(model, payload: dict, is_update: bool) -> dict:
     """Input handling for a model's __write_only_columns__ (secrets such as tokens).
 
-    The computed "<column>_set" flag is read-only and dropped. A blank or missing
-    value leaves the stored secret unchanged on update, and stores NULL on create.
+    - "<column>_set" is a computed, read-only flag: always dropped.
+    - "<column>_clear": true removes the stored secret (NULL). It is never stored
+      or returned. Sending it together with a non-empty "<column>" is contradictory
+      and rejected with 400 before anything is written.
+    - Otherwise a blank or missing value leaves the stored secret unchanged on
+      update (stores NULL on create), and a non-empty value replaces it.
     """
+    from fastapi import HTTPException
+
     for col in getattr(model, '__write_only_columns__', ()):
         payload.pop(f"{col}_set", None)
-        if col in payload:
-            value = payload[col]
-            if value is None or (isinstance(value, str) and not value.strip()):
-                if is_update:
-                    payload.pop(col)
-                else:
-                    payload[col] = None
+        clear = payload.pop(f"{col}_clear", None)
+        value = payload.get(col)
+        has_value = isinstance(value, str) and bool(value.strip())
+        if clear:
+            if has_value:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"{col}_clear and a new {col} cannot be sent together",
+                )
+            payload[col] = None
+            continue
+        if col in payload and not has_value:
+            if is_update:
+                payload.pop(col)
+            else:
+                payload[col] = None
     return payload
 
 

@@ -469,3 +469,84 @@ def test_no_combination_mixes_company_and_global_credentials(phone_id, token):
     used_token = post.call_args.kwargs["headers"]["Authorization"].removeprefix("Bearer ")
     pair = (used_phone, used_token)
     assert pair in {("CO-PHONE-ID", "co-token"), ("GLOBAL-PHONE-ID", "global-token")}, pair
+
+
+# ── Removing a stored token (whatsapp_token_clear) ───────────────────────────
+
+def test_clear_flag_nulls_the_token(db_session: Session, wa_company):
+    headers = get_auth_headers(db_session)
+    for payload in ({"whatsapp_token_clear": True}, {"whatsapp_token_clear": True, "whatsapp_token": ""}):
+        # re-store a token, then clear it (the second payload also sends a blank token)
+        db_session.query(Company).filter(Company.id == wa_company.id).update({"whatsapp_token": SECRET})
+        db_session.commit()
+        res = client.put(f"/api/v1/companies/{wa_company.id}", json=payload, headers=headers)
+        assert res.status_code == 200, res.text
+        assert res.json()["whatsapp_token_set"] is False
+        db_session.expire_all()
+        assert db_session.get(Company, wa_company.id).whatsapp_token is None, payload
+
+
+def test_clear_flag_with_a_new_token_is_rejected_and_changes_nothing(db_session: Session, wa_company):
+    headers = get_auth_headers(db_session)
+    res = client.put(f"/api/v1/companies/{wa_company.id}",
+                     json={"whatsapp_token_clear": True, "whatsapp_token": "new-token-abc",
+                           "whatsapp_template_quotation": "should_not_be_saved"},
+                     headers=headers)
+    assert res.status_code == 400, res.text
+    assert "new-token-abc" not in res.text and SECRET not in res.text
+    db_session.expire_all()
+    row = db_session.get(Company, wa_company.id)
+    assert row.whatsapp_token == SECRET
+    assert row.whatsapp_template_quotation is None
+
+
+def test_after_clearing_with_blank_phone_id_config_falls_back_to_global(db_session: Session, wa_company):
+    headers = get_auth_headers(db_session)
+    res = client.put(f"/api/v1/companies/{wa_company.id}",
+                     json={"whatsapp_token_clear": True, "whatsapp_phone_number_id": ""}, headers=headers)
+    assert res.status_code == 200, res.text
+    db_session.expire_all()
+    company = db_session.get(Company, wa_company.id)
+    res, post = _send_with_globals(company)
+    assert res["sent"] is True
+    assert post.call_args.args[0] == "https://global.example.com/v19.0/GLOBAL-PHONE-ID/messages"
+    assert post.call_args.kwargs["headers"]["Authorization"] == "Bearer global-token"
+
+
+def test_after_clearing_with_phone_id_still_set_config_is_incomplete(db_session: Session, wa_company):
+    headers = get_auth_headers(db_session)
+    res = client.put(f"/api/v1/companies/{wa_company.id}", json={"whatsapp_token_clear": True}, headers=headers)
+    assert res.status_code == 200, res.text
+    db_session.expire_all()
+    company = db_session.get(Company, wa_company.id)
+    assert company.whatsapp_phone_number_id == "WA-TEST-PHONE" and company.whatsapp_token is None
+    res, post = _send_with_globals(company)
+    assert res == {"sent": False,
+                   "reason": f"WhatsApp config incomplete for {company.name} — set both Phone Number ID and Token"}
+    post.assert_not_called()
+
+
+def test_clear_flag_never_appears_in_company_responses(db_session: Session, wa_company):
+    headers = get_auth_headers(db_session)
+    url = f"/api/v1/companies/{wa_company.id}"
+    responses = [
+        client.put(url, json={"whatsapp_token_clear": False, "whatsapp_template_quotation": "tpl_x"}, headers=headers),
+        client.put(url, json={"whatsapp_token_clear": True}, headers=headers),
+        client.get(url, headers=headers),
+        client.get("/api/v1/companies/?page=1&page_size=1000", headers=headers),
+        client.get("/api/v1/companies/dropdown", headers=headers),
+    ]
+    created = client.post("/api/v1/companies/", json={"name": f"WA Clear Co {uuid.uuid4().hex[:6]}",
+                                                      "whatsapp_token_clear": False, "whatsapp_token": SECRET},
+                          headers=headers)
+    responses.append(created)
+    try:
+        for res in responses:
+            assert res.status_code in (200, 201), res.text
+            assert "whatsapp_token_clear" not in res.text
+            assert SECRET not in res.text
+        assert created.json()["whatsapp_token_set"] is True
+    finally:
+        if created.status_code in (200, 201):
+            db_session.query(Company).filter(Company.id == created.json()["id"]).delete(synchronize_session=False)
+            db_session.commit()

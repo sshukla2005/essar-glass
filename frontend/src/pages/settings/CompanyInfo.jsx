@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { Card, Typography, Form, Input, Row, Col, Space, Button, App, Divider, Switch, Tag, Alert } from 'antd'
+import { Card, Typography, Form, Input, Row, Col, Space, Button, App, Divider, Switch, Tag, Alert, Popconfirm } from 'antd'
 import { SaveOutlined, CloseOutlined, UploadOutlined, DeleteOutlined } from '@ant-design/icons'
 import { Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -82,6 +82,17 @@ const CompanyInfo = () => {
       }
     },
     onError: () => message.error('Failed to save. Try again.'),
+  })
+
+  // Removes the stored WhatsApp token; the company then uses the global sender
+  const clearTokenMutation = useMutation({
+    mutationFn: () => companyApi.update(companyId, { whatsapp_token_clear: true }),
+    onSuccess: () => {
+      message.success('WhatsApp token removed')
+      queryClient.invalidateQueries({ queryKey: ['company-info'] })
+      queryClient.invalidateQueries({ queryKey: ['companies'] })
+    },
+    onError: () => message.error('Failed to remove the token. Try again.'),
   })
 
   const handleSave = async () => {
@@ -345,7 +356,22 @@ const CompanyInfo = () => {
                 name="whatsapp_token"
                 label="Token"
                 extra={companyData?.whatsapp_token_set
-                  ? <Tag color="green" style={{ marginTop: 4 }}>Token is set</Tag>
+                  ? (
+                    <Space size={8} style={{ marginTop: 4 }}>
+                      <Tag color="green" style={{ margin: 0 }}>Token is set</Tag>
+                      <Popconfirm
+                        title="Remove the stored token?"
+                        description="This company will fall back to the global WhatsApp sender."
+                        okText="Remove"
+                        okButtonProps={{ danger: true }}
+                        onConfirm={() => clearTokenMutation.mutateAsync()}
+                      >
+                        <Button type="link" size="small" danger loading={clearTokenMutation.isPending} style={{ padding: 0, height: 'auto' }}>
+                          Remove
+                        </Button>
+                      </Popconfirm>
+                    </Space>
+                  )
                   : <span style={{ fontSize: 12 }}>No token stored</span>}
               >
                 <Input.Password placeholder="Leave blank to keep existing" autoComplete="new-password" />

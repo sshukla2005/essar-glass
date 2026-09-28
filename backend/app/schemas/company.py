@@ -24,6 +24,9 @@ class CompanyUpdate(BaseModel):
     whatsapp_api_url: Optional[str] = None
     # Blank or omitted keeps the stored token; only a non-empty value replaces it
     whatsapp_token: Optional[str] = None
+    # true removes the stored token (the company falls back to the global sender).
+    # Rejected with 400 when sent together with a non-empty whatsapp_token. Never returned.
+    whatsapp_token_clear: Optional[bool] = None
 
 
 class CompanyResponse(BaseModel):
