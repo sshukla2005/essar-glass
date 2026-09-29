@@ -94,6 +94,10 @@ const MasterList = ({
       message.success(active ? 'Record activated' : 'Record archived')
       queryClient.invalidateQueries({ queryKey: [queryKey] })
     },
+    onError: (err) => {
+      const detail = err?.response?.data?.detail
+      message.error(typeof detail === 'string' && detail ? detail : 'Failed to archive record')
+    },
   })
 
   // ── Clone ─────────────────────────────────────────────────────────────────

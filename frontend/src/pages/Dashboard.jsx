@@ -107,7 +107,7 @@ const ProductionTile = ({ title, data, color, bgColor }) => {
         </div>
         {data?.unclassified_sqft > 0 && (
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
-            <span style={{ color: '#64748b' }}>Unclassified:</span>
+            <span style={{ color: '#64748b' }}>No thickness:</span>
             <span style={{ fontWeight: 600, color: '#f97316' }}>{Number(data?.unclassified_sqft || 0).toFixed(1)} sqft</span>
           </div>
         )}
@@ -142,7 +142,7 @@ const ToughDemandTile = ({ title, data, color, bgColor, unclassified }) => {
         </div>
         {unclassified?.pieces > 0 && (
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
-            <span style={{ color: '#64748b' }}>Unclassified:</span>
+            <span style={{ color: '#64748b' }}>No thickness:</span>
             <span style={{ fontWeight: 600, color: '#f97316' }}>{unclassified.pieces} pcs · {Number(unclassified.sqft || 0).toFixed(1)} sqft</span>
           </div>
         )}
@@ -712,14 +712,16 @@ const Dashboard = () => {
                     </Text>
                   ) : null
                 },
-                {
-                  title: 'UNCLASS', dataIndex: 'unclassified_sqft', width: 80, align: 'right',
+                // Glass with no thickness on the line or its product; shown only when some row has it
+                ...(filteredCuttingRows.some(r => r.unclassified_sqft) ? [{
+                  title: <AntTooltip title="Sqft of glass with no thickness set on the line or its product">NO THK</AntTooltip>,
+                  dataIndex: 'unclassified_sqft', width: 80, align: 'right',
                   render: v => v ? (
                     <Text strong style={{ color: '#ea580c' }}>
                       {Number(v).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
                     </Text>
                   ) : null
-                },
+                }] : []),
                 {
                   title: 'Cut / Total', key: 'cut_total', width: 90, align: 'center',
                   render: (_, record) => (

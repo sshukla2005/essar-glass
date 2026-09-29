@@ -18,6 +18,7 @@ const { Title, Text } = Typography
 const ROLES = [
   { value: 'superadmin', label: 'Superadmin',         color: 'gold',   desc: 'Cross-company full system access' },
   { value: 'admin',      label: 'Admin',              color: 'red',    desc: 'Full access to company data' },
+  { value: 'manager',    label: 'Manager',            color: 'cyan',   desc: 'All company modules except Sales Performance' },
   { value: 'sales',      label: 'Sales',              color: 'blue',   desc: 'CRM, Quotations, Sales Orders' },
   { value: 'accounts',   label: 'Accounts',           color: 'green',  desc: 'Invoices, Payments' },
   { value: 'warehouse',  label: 'Warehouse',          color: 'orange', desc: 'Inventory, Delivery Challans' },

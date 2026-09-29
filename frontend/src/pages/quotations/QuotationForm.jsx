@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react'
-import { Form, Input, InputNumber, Select, Row, Col, Divider, Tabs, DatePicker, Button, Table, Steps, Space, Tag, Popconfirm, Switch, App, Collapse, Checkbox, Typography, Radio, Tooltip, Modal, Card } from 'antd'
+import { Form, Input, InputNumber, Select, Row, Col, Divider, Tabs, DatePicker, Button, Table, Steps, Space, Tag, Popconfirm, Switch, App, Collapse, Checkbox, Typography, Radio, Tooltip, Modal, Card, Alert } from 'antd'
 import { PlusOutlined, DeleteOutlined, CheckCircleOutlined, CloseCircleOutlined, ShoppingCartOutlined, DownloadOutlined, LineChartOutlined, UploadOutlined } from '@ant-design/icons'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -21,6 +21,7 @@ import CompanySelector from '../../components/common/CompanySelector'
 // Import modular components
 import FractionInput, { toFraction } from './components/FractionInput'
 import ActionToolbar from './components/ActionToolbar'
+import { useAuth } from '../../hooks/useAuth'
 import QuotationDetailsCard from './components/QuotationDetailsCard'
 import GlassCard from './components/GlassCard'
 import HardwareCard from './components/HardwareCard'
@@ -30,6 +31,12 @@ import StickySummary from './components/StickySummary'
 import NotesCard from './components/NotesCard'
 import CostAnalysisCard from './components/CostAnalysisCard'
 import ProcessRateCardSection from './components/ProcessRateCardSection'
+
+// A string `detail` from the API, else the fallback (422 responses carry a list, not a message)
+const apiError = (err, fallback) => {
+  const detail = err?.response?.data?.detail
+  return typeof detail === 'string' && detail ? detail : fallback
+}
 
 const getUomRates = (uom) => {
   try {
@@ -275,6 +282,7 @@ const QuotationForm = () => {
   const [form] = Form.useForm()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const { user } = useAuth()
 
   const [unit, setUnit] = useState('inch')
   const [groups, setGroups] = useState([emptyGroup()])
@@ -1241,6 +1249,7 @@ const QuotationForm = () => {
       queryClient.invalidateQueries({ queryKey: ['crm_leads'] })
       if (!isEdit && res?.data?.id) navigate(`/quotations/${res.data.id}/edit`)
     },
+    onError: (err) => message.error(apiError(err, 'Failed to save quotation')),
   })
 
   const getFlatLines = () => {
@@ -2266,6 +2275,9 @@ const QuotationForm = () => {
   }
 
   const status = record?.status || 'draft'
+  // Only the creator (or a superadmin) may edit or change the status of an existing quotation; the API enforces the same rule
+  const isCreatorLocked = isEdit && !!record && user?.role !== 'superadmin' && record.created_by !== user?.id
+  const isReadOnly = status === 'converted' || status === 'lost' || isCreatorLocked
   const fmt = (v) => `₹ ${Number(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
   const handleCustomerChange = (val) => {
@@ -2290,8 +2302,8 @@ const QuotationForm = () => {
   return (
     <MasterForm title="Quotation" isEdit={isEdit} isLoading={isLoading} isSaving={saveMutation.isPending}
       breadcrumbs={[{ label: 'Sales' }, { label: 'Quotations', path: '/quotations' }, { label: isEdit ? record?.quote_number || 'Edit' : 'New' }]}
-      onSave={status === 'converted' || status === 'lost' ? null : () => handleSave(false)}
-      onSaveNew={status === 'converted' || status === 'lost' ? null : () => handleSave(true)}
+      onSave={isReadOnly ? null : () => handleSave(false)}
+      onSaveNew={isReadOnly ? null : () => handleSave(true)}
       onDiscard={() => guardedNavigate('/quotations')}
       onBack={() => guardedNavigate('/quotations')}>
 
@@ -2376,7 +2388,7 @@ const QuotationForm = () => {
             isSendingWhatsApp={isSendingWhatsApp}
             isEdit={isEdit}
             record={record}
-            onImportExcel={() => fileInputRef.current?.click()}
+            onImportExcel={isReadOnly ? undefined : () => fileInputRef.current?.click()}
             onCostAnalysis={openGlobalComparison}
             onGeneratePDF={() => generateQuotationPDF(getQuotationPdfData())}
             onPreviewPDF={handlePreviewPDF}
@@ -2416,6 +2428,7 @@ const QuotationForm = () => {
             isMarkingLost={isMarkingLost}
             onReopen={handleReopen}
             isReopening={isReopening}
+            canChangeStatus={!isCreatorLocked}
           />
         </div>
         <Button
@@ -2438,7 +2451,12 @@ const QuotationForm = () => {
         </Button>
       </div>
 
-      <Form form={form} layout="vertical" disabled={status === 'converted' || status === 'lost'}
+      {isCreatorLocked && (
+        <Alert type="info" showIcon style={{ marginBottom: 12 }}
+          message={`Read-only: created by ${record.created_by_name || 'another user'}. Only the creator can edit this quotation.`} />
+      )}
+
+      <Form form={form} layout="vertical" disabled={isReadOnly}
         onValuesChange={() => { if (hydratedRef.current) setIsDirty(true) }}>
         <Form.Item name="crm_lead_id" hidden><input type="hidden" /></Form.Item>
         <CompanySelector form={form} />
@@ -3412,7 +3430,7 @@ const QuotationForm = () => {
             if (p === '__back__') setTimeout(() => window.history.back(), 0)
             else navigate(p)
           }}>Leave without saving</Button>,
-          status !== 'converted' && (
+          !isReadOnly && (
             <Button key="save" type="primary" loading={saveMutation.isPending}
               onClick={async () => {
                 try {

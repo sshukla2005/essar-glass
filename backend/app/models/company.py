@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, Text
+from sqlalchemy import Column, Integer, String, Boolean, Text, false
 from app.database import Base
 from app.models.base import TimestampMixin, SoftDeleteMixin
 
@@ -40,3 +40,15 @@ class Company(Base, TimestampMixin, SoftDeleteMixin):
     # ── Per-company document terms (stored as plain text, no HTML) ────────────
     terms_conditions = Column(Text, nullable=True)
     warranty_terms   = Column(Text, nullable=True)
+
+    # ── WhatsApp sending (per company; blank fields fall back to WHATSAPP_* in .env) ──
+    # Not to be confused with `whatsapp` above, which is the display phone number.
+    whatsapp_phone_number_id    = Column(String,  nullable=True)
+    whatsapp_token              = Column(Text,    nullable=True)
+    whatsapp_template_quotation = Column(String,  nullable=True)
+    whatsapp_api_url            = Column(String,  nullable=True)
+    whatsapp_enabled            = Column(Boolean, nullable=False, default=False, server_default=false())
+
+    # Accepted on create/update but never returned: serialize_row replaces each with
+    # a boolean "<column>_set" and a blank value on update keeps the stored one.
+    __write_only_columns__ = ("whatsapp_token",)

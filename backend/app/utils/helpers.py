@@ -126,9 +126,11 @@ def serialize_row(obj):
         return obj
     cols = {c.key: getattr(obj, c.key) for c in obj.__table__.columns}
     extra = cols.pop('extra_data', None)
-    if isinstance(extra, dict) and extra:
-        return {**extra, **cols}
-    return cols
+    out = {**extra, **cols} if isinstance(extra, dict) and extra else cols
+    # Write-only columns (secrets) are never returned, only whether one is stored
+    for col in getattr(type(obj), '__write_only_columns__', ()):
+        out[f"{col}_set"] = bool(out.pop(col, None))
+    return out
 
 
 def serialize_item(obj):
@@ -160,6 +162,39 @@ def stash_extra_fields(model, payload):
         base.update(unknown)
         known['extra_data'] = base
     return known
+
+
+def prepare_write_only_fields(model, payload: dict, is_update: bool) -> dict:
+    """Input handling for a model's __write_only_columns__ (secrets such as tokens).
+
+    - "<column>_set" is a computed, read-only flag: always dropped.
+    - "<column>_clear": true removes the stored secret (NULL). It is never stored
+      or returned. Sending it together with a non-empty "<column>" is contradictory
+      and rejected with 400 before anything is written.
+    - Otherwise a blank or missing value leaves the stored secret unchanged on
+      update (stores NULL on create), and a non-empty value replaces it.
+    """
+    from fastapi import HTTPException
+
+    for col in getattr(model, '__write_only_columns__', ()):
+        payload.pop(f"{col}_set", None)
+        clear = payload.pop(f"{col}_clear", None)
+        value = payload.get(col)
+        has_value = isinstance(value, str) and bool(value.strip())
+        if clear:
+            if has_value:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"{col}_clear and a new {col} cannot be sent together",
+                )
+            payload[col] = None
+            continue
+        if col in payload and not has_value:
+            if is_update:
+                payload.pop(col)
+            else:
+                payload[col] = None
+    return payload
 
 
 def paginate(query, page: int = 1, page_size: int = 20, counts: Optional[dict] = None):

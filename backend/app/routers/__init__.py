@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from typing import Optional
 from app.database import get_db
 from app.deps import get_current_user
-from app.utils.helpers import apply_company_filter, apply_scope_filter, paginate, get_next_code, serialize_row, stash_extra_fields
+from app.utils.helpers import apply_company_filter, apply_scope_filter, paginate, get_next_code, serialize_row, stash_extra_fields, prepare_write_only_fields
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +37,15 @@ def _require_permissions(allowed: set[str] | None = None, module: str | None = N
             )
         return user
     return _dep
+
+
+def _require_quotation_creator(model, item, user):
+    """Quotations only: edits, status changes, archive and delete are limited to the
+    creator or a superadmin. Quotations with no recorded creator are superadmin-only."""
+    if getattr(model, "__tablename__", None) != "quotations":
+        return
+    if user.role != "superadmin" and item.created_by != user.id:
+        raise HTTPException(status_code=403, detail="Only the creator can edit this quotation")
 
 
 def _require_roles(allowed: set[str] | None):
@@ -218,7 +227,13 @@ def make_crud_router(
         if not item:
             raise HTTPException(status_code=404, detail="Not found")
 
-        return serialize_row(item)
+        out = serialize_row(item)
+        # Quotations only: the form shows who created it (edits are creator-only, see update_item)
+        if getattr(model, "__tablename__", None) == "quotations":
+            from app.models.user import User as UserModel
+            creator = db.query(UserModel).filter(UserModel.id == item.created_by).first() if item.created_by else None
+            out["created_by_name"] = (creator.name or creator.username) if creator else None
+        return out
 
     @router.post("/", status_code=201)
     def create_item(
@@ -227,6 +242,7 @@ def make_crud_router(
         user        = Depends(_require_permissions(write_roles, module)),
     ):
         obj_data = data.model_dump()
+        obj_data = prepare_write_only_fields(model, obj_data, is_update=False)
 
         if company_scoped:
             from app.models.user import User as UserModel
@@ -397,6 +413,16 @@ def make_crud_router(
 
         item = model(**obj_data)
 
+        # Creating a workshop order from a confirmed Sales Order moves the SO to Production.
+        # Same session and commit as the WO insert, so both happen or neither does.
+        if getattr(model, "__tablename__", None) == "workshop_orders" and obj_data.get("so_id"):
+            from app.models.sales_order import SalesOrder as SalesOrderModel
+            so_q = db.query(SalesOrderModel).filter(SalesOrderModel.id == obj_data["so_id"])
+            so_q = apply_company_filter(so_q, SalesOrderModel, obj_data.get("company_id"))
+            so = so_q.first()
+            if so is not None and so.status == "confirmed":
+                so.status = "in_production"
+
         if getattr(model, "__tablename__", None) in ("sales_orders", "quotations"):
             from app.utils.helpers import compute_profit_fields
             tot_c, prof_a, prof_p = compute_profit_fields(item)
@@ -444,10 +470,13 @@ def make_crud_router(
         if not item:
             raise HTTPException(status_code=404, detail="Not found")
 
+        _require_quotation_creator(model, item, user)
+
         old_status = getattr(item, "status", None)
         old_product_id = getattr(item, "product_id", None)
 
         update_data = data.model_dump(exclude_unset=True)
+        update_data = prepare_write_only_fields(model, update_data, is_update=True)
 
         # Never allow financial server-computed fields, company_id or created_by to be changed via update
         update_data.pop("company_id", None)
@@ -653,6 +682,8 @@ def make_crud_router(
         if not item:
             raise HTTPException(status_code=404, detail="Not found")
 
+        _require_quotation_creator(model, item, user)
+
         if getattr(model, "__tablename__", None) == "workshop_orders" and data.get("status") == "completed":
             lines = item.lines or []
             all_complete = False
@@ -698,6 +729,8 @@ def make_crud_router(
         if not item:
             raise HTTPException(status_code=404, detail="Not found")
 
+        _require_quotation_creator(model, item, user)
+
         from app.models.user import User as UserModel
         if model is UserModel:
             if item.id == user.id:
@@ -728,6 +761,8 @@ def make_crud_router(
         item = q.first()
         if not item:
             raise HTTPException(status_code=404, detail="Not found")
+
+        _require_quotation_creator(model, item, user)
 
         from app.models.user import User as UserModel
         if model is UserModel:

@@ -22,6 +22,57 @@ def normalize_phone_number(to_number: str | int | None) -> tuple[bool, str]:
         return False, digits
 
 
+def _filled(value) -> bool:
+    return bool(value and str(value).strip())
+
+
+def resolve_whatsapp_config(company=None) -> dict:
+    """WhatsApp sending config for a company, all-or-nothing on credentials.
+
+    - Company has BOTH phone number id and token: use the company's credentials;
+      its template and API URL fall back to the global ones when blank.
+    - Company has NEITHER: use the global WHATSAPP_* settings entirely.
+    - Company has exactly ONE: misconfigured. Returns an "error" and no credentials,
+      so a company credential is never mixed with a global one.
+    No company (or no company row): global settings, sending enabled.
+    """
+    global_config = {
+        "api_url": settings.WHATSAPP_API_URL,
+        "phone_number_id": settings.WHATSAPP_PHONE_NUMBER_ID,
+        "token": settings.WHATSAPP_TOKEN,
+        "template": settings.WHATSAPP_TEMPLATE_QUOTATION,
+    }
+    if company is None:
+        return {"enabled": True, "source": "global", **global_config}
+
+    enabled = bool(getattr(company, "whatsapp_enabled", False))
+    has_phone = _filled(getattr(company, "whatsapp_phone_number_id", None))
+    has_token = _filled(getattr(company, "whatsapp_token", None))
+
+    if has_phone and has_token:
+        api_url = getattr(company, "whatsapp_api_url", None)
+        template = getattr(company, "whatsapp_template_quotation", None)
+        return {
+            "enabled": enabled,
+            "source": "company",
+            "api_url": api_url if _filled(api_url) else global_config["api_url"],
+            "phone_number_id": company.whatsapp_phone_number_id,
+            "token": company.whatsapp_token,
+            "template": template if _filled(template) else global_config["template"],
+        }
+    if not has_phone and not has_token:
+        return {"enabled": enabled, "source": "global", **global_config}
+
+    name = getattr(company, "name", None) or f"company {getattr(company, 'id', '?')}"
+    return {
+        "enabled": enabled,
+        "source": "incomplete",
+        "has_phone_number_id": has_phone,
+        "has_token": has_token,
+        "error": f"WhatsApp config incomplete for {name} — set both Phone Number ID and Token",
+    }
+
+
 def send_quotation_confirmed(
     to_number,
     document_url,
@@ -30,14 +81,27 @@ def send_quotation_confirmed(
     quote_date,
     total_amount,
     company_name,
+    company=None,
 ) -> dict:
     """Send WhatsApp quotation confirmation template with document header.
 
     Provider: 1automations, Meta Cloud API compatible.
-    Endpoint: POST {WHATSAPP_API_URL}/{PHONE_NUMBER_ID}/messages
+    Endpoint: POST {api_url}/{phone_number_id}/messages, with config resolved per
+    company (see resolve_whatsapp_config). Never raises for configuration problems.
     """
-    token = settings.WHATSAPP_TOKEN
-    phone_number_id = settings.WHATSAPP_PHONE_NUMBER_ID
+    config = resolve_whatsapp_config(company)
+    if not config["enabled"]:
+        return {"sent": False, "reason": "WhatsApp disabled for this company"}
+    if config.get("error"):
+        # Never log the token itself, only which of the two fields is filled
+        logger.warning(
+            "WhatsApp not sent for quotation %s: %s (phone_number_id set: %s, token set: %s)",
+            quote_number, config["error"], config["has_phone_number_id"], config["has_token"],
+        )
+        return {"sent": False, "reason": config["error"]}
+
+    token = config["token"]
+    phone_number_id = config["phone_number_id"]
 
     if not token or not phone_number_id:
         missing = []
@@ -51,7 +115,7 @@ def send_quotation_confirmed(
     if not valid:
         return {"sent": False, "reason": "invalid number"}
 
-    api_base = settings.WHATSAPP_API_URL.rstrip("/")
+    api_base = str(config["api_url"]).rstrip("/")
     url = f"{api_base}/{phone_number_id}/messages"
 
     headers = {
@@ -65,7 +129,7 @@ def send_quotation_confirmed(
         "to": normalized_number,
         "type": "template",
         "template": {
-            "name": settings.WHATSAPP_TEMPLATE_QUOTATION,
+            "name": config["template"],
             "language": {
                 "code": "en",
                 "policy": "deterministic",

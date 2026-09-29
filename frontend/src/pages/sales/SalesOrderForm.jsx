@@ -31,6 +31,12 @@ import SOInvoiceStatusPanel from './components/SOInvoiceStatusPanel'
 import FractionInput, { toFraction } from '../quotations/components/FractionInput'
 import ProcessRateCardSection from '../quotations/components/ProcessRateCardSection'
 
+// A string `detail` from the API, else the fallback (422 responses carry a list, not a message)
+const apiError = (err, fallback) => {
+  const detail = err?.response?.data?.detail
+  return typeof detail === 'string' && detail ? detail : fallback
+}
+
 const getUomRates = (uom) => {
   try {
     const master = JSON.parse(
@@ -1594,11 +1600,12 @@ const SalesOrderForm = () => {
 
   const saveMutation = useMutation({
     onSuccess: (res) => {
-      message.success(`SO ${isEdit ? 'updated' : 'created'}`)
+      message.success(`Sales Order ${isEdit ? 'updated' : 'created'}`)
       setIsDirty(false)
       queryClient.invalidateQueries({ queryKey: ['sales_orders'] })
       if (!isEdit && res?.data?.id) navigate(`/sales-orders/${res.data.id}/edit`)
     },
+    onError: (err) => message.error(apiError(err, 'Failed to save Sales Order')),
     mutationFn: (data) => isEdit ? salesOrderApi.update(id, data) : salesOrderApi.create(data),
   })
 
@@ -1627,15 +1634,17 @@ const SalesOrderForm = () => {
       return newStatus
     },
     onSuccess: (newStatus) => {
+      const label = String(newStatus).replace(/_/g, ' ').toUpperCase()
       message.success(
-        newStatus === 'confirmed'
-          ? '✅ Order Confirmed! CRM Lead marked as Won.'
-          : `Status updated to ${newStatus}`
+        newStatus === 'confirmed' && record?.crm_lead_id
+          ? `Stage changed to ${label}. CRM lead marked as won.`
+          : `Stage changed to ${label}`
       )
       queryClient.invalidateQueries({ queryKey: ['sales_orders', id] })
       queryClient.invalidateQueries({ queryKey: ['sales_orders'] })
       queryClient.invalidateQueries({ queryKey: ['crm_leads'] })
     },
+    onError: (err) => message.error(apiError(err, 'Failed to change stage')),
   })
 
   const changeStage = (next) => {
@@ -1655,7 +1664,8 @@ const SalesOrderForm = () => {
       const res = await purchaseOrderApi.create(poData)
       return res.data
     },
-    onSuccess: (data) => { message.success('PO Created'); navigate(`/purchase-orders/${data.id}/edit`) }
+    onSuccess: (data) => { message.success('Purchase Order created'); navigate(`/purchase-orders/${data.id}/edit`) },
+    onError: (err) => message.error(apiError(err, 'Failed to create Purchase Order')),
   })
 
   const createDCMutation = useMutation({
@@ -1664,7 +1674,8 @@ const SalesOrderForm = () => {
       const res = await deliveryChallanApi.create(dcData)
       return res.data
     },
-    onSuccess: (data) => { message.success('Delivery Challan Created'); navigate(`/delivery-challans/${data.id}/edit`) }
+    onSuccess: (data) => { message.success('Delivery Challan created'); navigate(`/delivery-challans/${data.id}/edit`) },
+    onError: (err) => message.error(apiError(err, 'Failed to create Delivery Challan')),
   })
 
   const createInvoiceMutation = useMutation({
@@ -1673,7 +1684,8 @@ const SalesOrderForm = () => {
       const res = await invoiceApi.create(invData)
       return res.data
     },
-    onSuccess: (data) => { message.success('Invoice Created'); navigate(`/invoices/${data.id}/edit`) }
+    onSuccess: (data) => { message.success('Invoice created'); navigate(`/invoices/${data.id}/edit`) },
+    onError: (err) => message.error(apiError(err, 'Failed to create Invoice')),
   })
 
   const handleSave = async (andNew = false) => {
@@ -1989,9 +2001,18 @@ const SalesOrderForm = () => {
                       }
                     })
                   }
-                  const res = await workshopOrderApi.create(woData)
-                  message.success('Workshop Order created')
-                  navigate(`/workshop/orders/${res.data.id}/edit`)
+                  try {
+                    const res = await workshopOrderApi.create(woData)
+                    // The API moves a confirmed SO to IN PRODUCTION in the same transaction
+                    queryClient.invalidateQueries({ queryKey: ['sales_orders', id] })
+                    queryClient.invalidateQueries({ queryKey: ['sales_orders'] })
+                    message.success(record?.status === 'confirmed'
+                      ? 'Workshop Order created. Stage changed to IN PRODUCTION'
+                      : 'Workshop Order created')
+                    navigate(`/workshop/orders/${res.data.id}/edit`)
+                  } catch (err) {
+                    message.error(apiError(err, 'Failed to create Workshop Order'))
+                  }
                 }}>
                 Create Workshop Order
               </Button>

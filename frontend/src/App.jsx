@@ -107,6 +107,7 @@ import PaymentAccounts from './pages/settings/PaymentAccounts'
 
 // ── Reports ───────────────────────────────────────────────────────────────────
 import SalesPerformance from './pages/reports/SalesPerformance'
+import { useAuth } from './hooks/useAuth'
 
 
 const fixFarma = () => {
@@ -123,6 +124,12 @@ const fixFarma = () => {
   } catch {}
 }
 fixFarma()
+
+// Sales users have no Dashboard in their menu, so home takes them to Quotations
+const HomeRoute = () => {
+  const { user, hasPermission } = useAuth()
+  return user?.role === 'sales' && hasPermission('quotations') ? <Navigate to="/quotations" replace /> : <Dashboard />
+}
 
 const App = () => {
   useEffect(() => {
@@ -176,7 +183,7 @@ const App = () => {
           <Route path="/super-dashboard" element={<ProtectedRoute requiredRole="superadmin"><SuperAdminDashboard /></ProtectedRoute>} />
           <Route path="/super/users" element={<ProtectedRoute requiredRole="superadmin"><UserManagement /></ProtectedRoute>} />
           <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
-            <Route index element={<Dashboard />} />
+            <Route index element={<HomeRoute />} />
 
             {/* ── CRM ────────────────────────────────────────────────── */}
             <Route path="crm/pipeline"       element={<ProtectedRoute module="pipeline"><Pipeline /></ProtectedRoute>} />
