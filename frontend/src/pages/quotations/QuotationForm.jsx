@@ -2275,7 +2275,7 @@ const QuotationForm = () => {
   }
 
   const status = record?.status || 'draft'
-  // Only the creator (or a superadmin) may edit an existing quotation; the API enforces the same rule
+  // Only the creator (or a superadmin) may edit or change the status of an existing quotation; the API enforces the same rule
   const isCreatorLocked = isEdit && !!record && user?.role !== 'superadmin' && record.created_by !== user?.id
   const isReadOnly = status === 'converted' || status === 'lost' || isCreatorLocked
   const fmt = (v) => `₹ ${Number(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -2428,6 +2428,7 @@ const QuotationForm = () => {
             isMarkingLost={isMarkingLost}
             onReopen={handleReopen}
             isReopening={isReopening}
+            canChangeStatus={!isCreatorLocked}
           />
         </div>
         <Button

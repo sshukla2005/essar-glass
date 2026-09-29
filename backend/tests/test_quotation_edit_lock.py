@@ -114,10 +114,59 @@ def test_non_creator_can_still_read_and_sees_creator_name(ctx):
     assert res.json()["created_by_name"] == ctx["users"]["creator"].name
 
 
-def test_status_workflow_is_not_locked_yet(ctx):
-    # Field edits only; status changes are deliberately left open until agreed
+@pytest.mark.parametrize("who", ["other", "manager"])
+@pytest.mark.parametrize("status", ["confirmed", "converted", "cancelled", "lost", "draft"])
+def test_non_creator_cannot_change_status(ctx, who, status):
     q = _new_quotation(ctx)
-    res = client.patch(f"/api/v1/quotations/{q['id']}/status", json={"status": "sent"}, headers=ctx["h"]["other"])
+    res = client.patch(f"/api/v1/quotations/{q['id']}/status", json={"status": status}, headers=ctx["h"][who])
+    assert res.status_code == 403
+    assert res.json()["detail"] == LOCK_MSG
+    got = client.get(f"/api/v1/quotations/{q['id']}", headers=ctx["h"]["creator"]).json()
+    assert got["status"] == "draft"
+
+
+@pytest.mark.parametrize("who", ["creator", "superadmin"])
+def test_creator_and_superadmin_can_change_status(ctx, who):
+    q = _new_quotation(ctx)
+    res = client.patch(f"/api/v1/quotations/{q['id']}/status", json={"status": "confirmed"}, headers=ctx["h"][who])
+    assert res.status_code == 200, res.text
+    assert res.json()["status"] == "confirmed"
+
+
+def test_non_creator_cannot_archive_or_delete(ctx):
+    q = _new_quotation(ctx)
+    for who in ("other", "manager"):
+        res = client.patch(f"/api/v1/quotations/{q['id']}/archive", headers=ctx["h"][who])
+        assert res.status_code == 403
+        assert res.json()["detail"] == LOCK_MSG
+        res = client.delete(f"/api/v1/quotations/{q['id']}", headers=ctx["h"][who])
+        assert res.status_code == 403
+    got = client.get(f"/api/v1/quotations/{q['id']}", headers=ctx["h"]["creator"])
+    assert got.status_code == 200
+    assert got.json()["is_active"] is True
+
+
+def test_creator_can_archive(ctx):
+    q = _new_quotation(ctx)
+    res = client.patch(f"/api/v1/quotations/{q['id']}/archive", headers=ctx["h"]["creator"])
+    assert res.status_code == 200, res.text
+
+
+def test_quotation_without_creator_is_superadmin_only(ctx):
+    q = _new_quotation(ctx)
+    ctx["db"].execute(text("update quotations set created_by = null where id = :id"), {"id": q["id"]})
+    ctx["db"].commit()
+    res = client.put(f"/api/v1/quotations/{q['id']}", json={"internal_notes": "x"}, headers=ctx["h"]["creator"])
+    assert res.status_code == 403
+    res = client.put(f"/api/v1/quotations/{q['id']}", json={"internal_notes": "x"}, headers=ctx["h"]["superadmin"])
+    assert res.status_code == 200, res.text
+
+
+def test_other_models_status_is_unchanged(ctx):
+    so = client.post("/api/v1/sales-orders/", json={"status": "draft"}, headers=ctx["h"]["creator"])
+    assert so.status_code == 201, so.text
+    ctx["created"]["sales_orders"].append(so.json()["id"])
+    res = client.patch(f"/api/v1/sales-orders/{so.json()['id']}/status", json={"status": "confirmed"}, headers=ctx["h"]["other"])
     assert res.status_code == 200, res.text
 
 

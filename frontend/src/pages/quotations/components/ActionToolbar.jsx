@@ -52,6 +52,8 @@ const ActionToolbar = ({
   isMarkingLost = false,
   onReopen,
   isReopening = false,
+  // false hides Confirm / Convert / Cancel / Mark as Lost / Reopen (quotation not editable by this user)
+  canChangeStatus = true,
   // SO-specific props
   onCreatePO,
   isCreatingPO = false,
@@ -280,7 +282,7 @@ const ActionToolbar = ({
           </>
         ) : (
           <>
-            {status === 'confirmed' && (
+            {canChangeStatus && status === 'confirmed' && (
               <>
                 <Button 
                   type="primary" 
@@ -320,7 +322,7 @@ const ActionToolbar = ({
               </>
             )}
 
-            {status === 'draft' && (
+            {canChangeStatus && status === 'draft' && (
               <Button 
                 type="primary" 
                 onClick={onConfirm} 
@@ -340,7 +342,7 @@ const ActionToolbar = ({
               </Button>
             )}
 
-            {['draft', 'sent', 'confirmed'].includes(status) && (
+            {canChangeStatus && ['draft', 'sent', 'confirmed'].includes(status) && (
               <Button 
                 danger 
                 onClick={() => {
@@ -366,7 +368,7 @@ const ActionToolbar = ({
                 <Tag color="red" style={{ padding: '6px 16px', fontSize: 13, borderRadius: 8, border: '1px solid #fca5a5', fontWeight: 600 }}>
                   LOST
                 </Tag>
-                {isSuperAdmin && (
+                {isSuperAdmin && canChangeStatus && (
                   <Popconfirm
                     title="Reopen this quotation?"
                     description="This will return the quotation to draft status. Existing lost reason will be retained in history."
