@@ -16,6 +16,7 @@ import {
   Space,
   Divider
 } from 'antd'
+import DisabledContext from 'antd/es/config-provider/DisabledContext'
 import { 
   DeleteOutlined, 
   LineChartOutlined, 
@@ -564,6 +565,8 @@ const GlassCard = ({
   onEditRates
 }) => {
   const groupTotal = group.sizes.reduce((s, x) => s + (x.subtotal || 0), 0)
+  // True inside a disabled Form (read-only quotation); explicit `disabled` props below would otherwise override it
+  const formDisabled = React.useContext(DisabledContext)
 
   const handleCreateProductMaster = async () => {
     try {
@@ -941,7 +944,7 @@ const GlassCard = ({
                 value={group.rate} 
                 min={0} 
                 prefix="₹" 
-                disabled={!group.custom_costing} 
+                disabled={formDisabled || !group.custom_costing} 
                 style={{ 
                   width: '100%', 
                   borderColor: group.custom_costing ? '#f59e0b' : undefined,

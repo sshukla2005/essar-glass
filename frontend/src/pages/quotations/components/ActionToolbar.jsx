@@ -98,7 +98,7 @@ const ActionToolbar = ({
       </div>
 
       <Space wrap style={{ gap: 8 }}>
-        {!isSO && (
+        {!isSO && onImportExcel && (
           <Button 
             icon={<UploadOutlined style={{ color: '#0ea5e9' }} />} 
             onClick={onImportExcel} 

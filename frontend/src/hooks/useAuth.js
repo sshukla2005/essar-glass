@@ -81,6 +81,8 @@ const useAuth = () => {
   const hasPermission = (module) => {
     if (!user) return false
     if (user.role === 'superadmin' || user.role === 'admin') return true
+    // Managers never get Sales Performance, whatever their permission list says (the API returns 403 too)
+    if (user.role === 'manager' && module === 'sales_performance') return false
     if (user.permissions?.includes('all')) return true
     return user.permissions?.includes(module) || false
   }

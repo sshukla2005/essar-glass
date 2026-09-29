@@ -218,7 +218,13 @@ def make_crud_router(
         if not item:
             raise HTTPException(status_code=404, detail="Not found")
 
-        return serialize_row(item)
+        out = serialize_row(item)
+        # Quotations only: the form shows who created it (edits are creator-only, see update_item)
+        if getattr(model, "__tablename__", None) == "quotations":
+            from app.models.user import User as UserModel
+            creator = db.query(UserModel).filter(UserModel.id == item.created_by).first() if item.created_by else None
+            out["created_by_name"] = (creator.name or creator.username) if creator else None
+        return out
 
     @router.post("/", status_code=201)
     def create_item(
@@ -398,6 +404,16 @@ def make_crud_router(
 
         item = model(**obj_data)
 
+        # Creating a workshop order from a confirmed Sales Order moves the SO to Production.
+        # Same session and commit as the WO insert, so both happen or neither does.
+        if getattr(model, "__tablename__", None) == "workshop_orders" and obj_data.get("so_id"):
+            from app.models.sales_order import SalesOrder as SalesOrderModel
+            so_q = db.query(SalesOrderModel).filter(SalesOrderModel.id == obj_data["so_id"])
+            so_q = apply_company_filter(so_q, SalesOrderModel, obj_data.get("company_id"))
+            so = so_q.first()
+            if so is not None and so.status == "confirmed":
+                so.status = "in_production"
+
         if getattr(model, "__tablename__", None) in ("sales_orders", "quotations"):
             from app.utils.helpers import compute_profit_fields
             tot_c, prof_a, prof_p = compute_profit_fields(item)
@@ -444,6 +460,12 @@ def make_crud_router(
         item = q.first()
         if not item:
             raise HTTPException(status_code=404, detail="Not found")
+
+        # Quotations only: field edits are limited to the creator or a superadmin.
+        # Status changes (PATCH /status), archive and delete are separate endpoints and not covered here.
+        if getattr(model, "__tablename__", None) == "quotations":
+            if user.role != "superadmin" and item.created_by != user.id:
+                raise HTTPException(status_code=403, detail="Only the creator can edit this quotation")
 
         old_status = getattr(item, "status", None)
         old_product_id = getattr(item, "product_id", None)

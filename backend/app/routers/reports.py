@@ -31,6 +31,15 @@ from app.utils.helpers import apply_company_filter, apply_scope_filter
 
 router = APIRouter(prefix="/api/v1/reports", tags=["Reports"])
 
+
+def _sales_performance_user(user = Depends(get_current_user)):
+    """Sales Performance is not for managers. Other roles keep their existing
+    access (sales users get their own-scoped figures, see test_phase1_5_datascope)."""
+    if user.role == "manager":
+        raise HTTPException(status_code=403, detail="Sales Performance is not available to managers")
+    return user
+
+
 _UNASSIGNED = "Unassigned"
 # Quotation pipeline buckets: won = 'converted', lost = 'lost', pending = open statuses below.
 _PENDING_QUOTE_STATUSES = ('draft', 'sent', 'confirmed')
@@ -357,7 +366,7 @@ def sales_performance(
     from_date: Optional[str] = Query(None, alias="from"),
     to_date:   Optional[str] = Query(None, alias="to"),
     db:   Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user = Depends(_sales_performance_user),
 ):
     cid = getattr(user, "active_company_id", None)
     f_date, t_date, period_label = _parse_dates(from_date, to_date)
@@ -997,7 +1006,7 @@ def sales_performance_history(
     doc_type:    Optional[str] = Query(None),
     search:      Optional[str] = Query(None),
     db:          Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user = Depends(_sales_performance_user),
 ):
     cid = getattr(user, "active_company_id", None)
     f_date, t_date, _ = _parse_dates(from_date, to_date)
@@ -1030,7 +1039,7 @@ def sales_performance_export(
     salesperson: Optional[str] = Query(None),
     doc_type:    Optional[str] = Query(None),
     db:          Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user = Depends(_sales_performance_user),
 ):
     cid = getattr(user, "active_company_id", None)
     f_date, t_date, period_label = _parse_dates(from_date, to_date)

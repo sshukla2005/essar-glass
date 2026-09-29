@@ -67,6 +67,8 @@ export const MODULES = [
 export const DEFAULT_ROLE_PERMISSIONS = {
   superadmin: ['all'],
   admin: ['all'],
+  // Everything except Sales Performance, which managers can never open (see useAuth.hasPermission)
+  manager: MODULES.map(m => m.key).filter(k => k !== 'sales_performance'),
   sales: ['pipeline', 'leads', 'stages', 'quotations', 'sales_orders', 'customers'],
   accounts: ['invoices', 'payment_accounts', 'customers'],
   warehouse: ['stock', 'delivery_challans', 'stock_movements', 'products'],

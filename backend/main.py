@@ -262,9 +262,10 @@ def _glass_product_thickness_map(db) -> dict:
     product_thick_map = {}
     products = db.query(Product).filter(Product.is_active == True).all()
     for p in products:
-        if getattr(p, "thickness", None) is not None:
+        # The column is thickness_mm; reading p.thickness left this map empty
+        if p.thickness_mm is not None:
             try:
-                product_thick_map[p.id] = float(p.thickness)
+                product_thick_map[p.id] = float(p.thickness_mm)
             except (ValueError, TypeError):
                 pass
     return product_thick_map

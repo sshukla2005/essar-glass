@@ -24,6 +24,9 @@ import { MODULES } from '../../utils/modules'
 const { Sider, Header, Content } = Layout
 const { Text } = Typography
 
+// Top-level menus a sales user may see: CRM, Sales, Purchase, Inventory, Workshop
+const SALES_MENU_GROUPS = ['grp_crm', 'grp_sales', 'grp_purchase', 'grp_inventory', 'grp_workshop']
+
 const menuItems = [
   { key: '/', icon: <AppstoreOutlined />, label: 'Dashboard' },
   { key: 'grp_crm', icon: <TeamOutlined />, label: 'CRM', children: [
@@ -95,6 +98,9 @@ const AppLayout = () => {
     })
   }
 
+  // Sales Performance is never shown to managers (hasPermission also denies it; the API returns 403)
+  const canSeeSalesPerformance = user?.role !== 'manager'
+
   const effectiveMenuItems = useMemo(() => {
     const rawItems = [...menuItems]
     if (user?.role === 'superadmin') {
@@ -124,6 +130,7 @@ const AppLayout = () => {
         if (item.key === 'grp_admin' && user?.role === 'superadmin') return item
 
         const validChildren = item.children.filter(child => {
+          if (child.key === '/reports/sales-performance' && !canSeeSalesPerformance) return false
           const modKey = routeToModuleMap[child.key]
           if (!modKey) return true
           return hasPermission(modKey)
@@ -133,7 +140,10 @@ const AppLayout = () => {
         return { ...item, children: validChildren }
       })
       .filter(Boolean)
-  }, [user?.role, hasPermission])
+      // Sales users see at most these top-level menus. This only trims the sidebar:
+      // routes stay reachable, and permissions still decide which groups appear.
+      .filter(item => user?.role !== 'sales' || SALES_MENU_GROUPS.includes(item.key))
+  }, [user?.role, hasPermission, canSeeSalesPerformance])
 
   const userMenuItems = useMemo(() => {
     const items = []
