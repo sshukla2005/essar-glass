@@ -107,6 +107,20 @@ def test_superadmin_can_update_any_quotation(ctx):
     assert res.json()["internal_notes"] == "superadmin edit"
 
 
+def test_superadmin_can_edit_a_converted_quotation_and_it_stays_converted(ctx):
+    q = _new_quotation(ctx)
+    assert client.patch(f"/api/v1/quotations/{q['id']}/status", json={"status": "converted"},
+                        headers=ctx["h"]["creator"]).status_code == 200
+    res = client.put(f"/api/v1/quotations/{q['id']}", json={"salesperson": "Reassigned", "internal_notes": "after SO"},
+                     headers=ctx["h"]["superadmin"])
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert (body["salesperson"], body["internal_notes"], body["status"]) == ("Reassigned", "after SO", "converted")
+    # Non-creators are still locked out of it
+    assert client.put(f"/api/v1/quotations/{q['id']}", json={"internal_notes": "x"},
+                      headers=ctx["h"]["other"]).status_code == 403
+
+
 def test_non_creator_can_still_read_and_sees_creator_name(ctx):
     q = _new_quotation(ctx)
     res = client.get(f"/api/v1/quotations/{q['id']}", headers=ctx["h"]["manager"])

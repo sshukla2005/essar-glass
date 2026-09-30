@@ -2277,7 +2277,9 @@ const QuotationForm = () => {
   const status = record?.status || 'draft'
   // Only the creator (or a superadmin) may edit or change the status of an existing quotation; the API enforces the same rule
   const isCreatorLocked = isEdit && !!record && user?.role !== 'superadmin' && record.created_by !== user?.id
-  const isReadOnly = status === 'converted' || status === 'lost' || isCreatorLocked
+  // Converted quotations are locked, except for a superadmin. Editing one does not change its Sales Order.
+  const convertedLocked = status === 'converted' && user?.role !== 'superadmin'
+  const isReadOnly = convertedLocked || status === 'lost' || isCreatorLocked
   const fmt = (v) => `₹ ${Number(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
   const handleCustomerChange = (val) => {
@@ -2312,7 +2314,12 @@ const QuotationForm = () => {
       {/* ── Converted Banner ── */}
       {status === 'converted' && (
         <div style={{ background: '#ecfdf5', border: '1px solid #10b981', padding: '12px 20px', borderRadius: 12, marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Space><CheckCircleOutlined style={{ color: '#10b981', fontSize: 18 }} /><span style={{ color: '#065f46', fontWeight: 600, fontSize: 15 }}>Converted to Sales Order</span></Space>
+          <Space direction="vertical" size={2}>
+            <Space><CheckCircleOutlined style={{ color: '#10b981', fontSize: 18 }} /><span style={{ color: '#065f46', fontWeight: 600, fontSize: 15 }}>Converted to Sales Order</span></Space>
+            {!convertedLocked && (
+              <span style={{ color: '#047857', fontSize: 12 }}>You can edit this as superadmin. Changes here do not update the Sales Order.</span>
+            )}
+          </Space>
           <Button type="primary" onClick={() => navigate(linkedSoId ? `/sales-orders/${linkedSoId}/edit` : '/sales-orders')} style={{ background: '#10b981', borderColor: '#10b981', borderRadius: 8 }}>View Sales Order →</Button>
         </div>
       )}
