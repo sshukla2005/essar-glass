@@ -1,6 +1,6 @@
 // ─── CustomerForm.jsx ────────────────────────────────────────────────────────
 import React, { useEffect } from 'react'
-import { Form, Input, InputNumber, Select, Row, Col, Divider, Radio, Tabs, App } from 'antd'
+import { Form, Input, InputNumber, Select, Row, Col, Divider, Radio, Tabs, App, Checkbox } from 'antd'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import MasterForm from '../../../components/common/MasterForm'
@@ -47,6 +47,8 @@ const CustomerForm = () => {
   const customerType = Form.useWatch('customer_type', form)
   const gstTreatment = Form.useWatch('gst_treatment', form)
   const showGstin    = gstTreatment === 'registered_regular' || gstTreatment === 'registered_composition'
+  // Unset on customers saved before shipping addresses existed: treated as "same as billing"
+  const shipSameAsBilling = Form.useWatch('ship_same_as_billing', form) !== false
 
   // ── Fetch record for edit ──────────────────────────────────────────────────
   const { data: record, isLoading } = useQuery({
@@ -150,6 +152,33 @@ const CustomerForm = () => {
               <Form.Item name="tags" label="Tags"><Input placeholder="Comma-separated tags" /></Form.Item>
             </Col>
           </Row>
+
+          <Divider orientation="left">Shipping Address</Divider>
+          <Form.Item name="ship_same_as_billing" valuePropName="checked" initialValue={true} style={{ marginBottom: shipSameAsBilling ? 24 : 12 }}>
+            <Checkbox>Same as billing address (used as Ship To on quotations and Sales Orders)</Checkbox>
+          </Form.Item>
+          {!shipSameAsBilling && (
+            <Row gutter={16}>
+              <Col span={12}>
+                <Form.Item name="ship_address" label="Ship To Address Line 1" rules={[{ required: true, message: 'Enter the shipping address or tick "Same as billing"' }]}>
+                  <Input placeholder="Site / warehouse street address" />
+                </Form.Item>
+                <Form.Item name="ship_address_line2" label="Ship To Address Line 2"><Input placeholder="Landmark, area" /></Form.Item>
+                <Row gutter={16}>
+                  <Col span={8}><Form.Item name="ship_city" label="City"><Input placeholder="City" /></Form.Item></Col>
+                  <Col span={10}>
+                    <Form.Item name="ship_state" label="State">
+                      <Select showSearch allowClear placeholder="Select state"
+                        options={INDIAN_STATES.map(s => ({ value: s, label: s }))}
+                        filterOption={(i, o) => o.label.toLowerCase().includes(i.toLowerCase())}
+                      />
+                    </Form.Item>
+                  </Col>
+                  <Col span={6}><Form.Item name="ship_pincode" label="Pincode"><Input maxLength={6} placeholder="000000" /></Form.Item></Col>
+                </Row>
+              </Col>
+            </Row>
+          )}
 
           <Divider orientation="left">GST Information</Divider>
           <Row gutter={16}>
