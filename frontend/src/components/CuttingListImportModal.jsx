@@ -5,6 +5,7 @@ import dayjs from 'dayjs'
 import { useNavigate } from 'react-router-dom'
 import { aiApi, customerApi, quotationApi } from '../api'
 import { settingsApi } from '../api/settingsApi'
+import { glassTypeOptions } from '../utils/glassTypes'
 
 const { Text } = Typography
 const { Dragger } = Upload
@@ -495,7 +496,7 @@ const CuttingListImportModal = ({ open, onClose }) => {
                             size="small"
                             value={group.glass_type}
                             onChange={(v) => handleGroupAttributeChange(gIdx, 'glass_type', v)}
-                            options={dropdownConfig.glass_types.map(t => ({ value: t, label: t }))}
+                            options={glassTypeOptions(dropdownConfig.glass_types)}
                             status={!group.glass_type ? 'error' : undefined}
                           />
                         </Col>

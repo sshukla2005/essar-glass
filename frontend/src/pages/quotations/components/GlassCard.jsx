@@ -30,6 +30,7 @@ import {
 } from '@ant-design/icons'
 import FractionInput, { toFraction } from './FractionInput'
 import { calcGroupSize, getAutoChargedDim } from '../../../utils/quotationCalc'
+import { glassTypeOptions, matchGlassTypeOption } from '../../../utils/glassTypes'
 
 // Client request: Artwork / Design block hidden on Quotation & Sales
 // Order line items. Set to true to restore.
@@ -575,7 +576,7 @@ const GlassCard = ({
         glass_type: group.glass_type,
         glass_category: group.glass_category,
         thickness_mm: group.glass_thickness,
-        hsn_code: '7007',
+        // No hsn_code: left blank, the product gets its code from the HSN mapping
         sale_price: group.rate || 0,
         cost_price: 0,
         product_type: 'storable',
@@ -764,12 +765,12 @@ const GlassCard = ({
                 style={{ width: '100%', borderRadius: 6 }} 
                 showSearch
                 options={[
-                  ...dropdownConfig.glass_types.map(t => ({ value: t, label: t })), 
+                  ...glassTypeOptions(dropdownConfig.glass_types), 
                   { value: '__custom__', label: '+ Add custom...' }
                 ]}
                 filterOption={(input, option) => { 
                   if (option.value === '__custom__') return true
-                  return String(option.label).toLowerCase().includes(input.toLowerCase()) 
+                  return matchGlassTypeOption(input, option)
                 }}
                 onSearch={val => setCustomSearchVal(prev => ({ ...prev, [`${group.group_key}_type`]: val }))}
                 onChange={val => {

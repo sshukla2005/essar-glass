@@ -2,7 +2,8 @@ import { jsPDF } from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import html2canvas from 'html2canvas'
 import dayjs from 'dayjs'
-import { customerApi, vendorApi, companyApi, quotationApi, salesOrderApi } from '../api'
+import { customerApi, vendorApi, companyApi, quotationApi, salesOrderApi, hsnMappingApi } from '../api'
+import { resolveHsnFor, distinctHsnCodes } from './hsnResolver'
 import { computeLineWeightKg } from './glassCalc'
 
 // ── Brand logo assets (Vite-bundled, fingerprinted) ──────
@@ -1136,11 +1137,21 @@ const drawGroupHsnRow = (doc, group, y) => {
   drawLine(doc, MARGIN.l + CONTENT_W, y, MARGIN.l + CONTENT_W, y + rowH, [60, 60, 60], 0.2)
   
   setFont(doc, 7, 'bold', C.text)
-  drawText(doc, `HSN #: ${group.hsn || '7007'}     CS: ${group.cs || '400'}`, MARGIN.l + 4, y + 4.0)
+  drawText(doc, `HSN #: ${group.hsn || '—'}     CS: ${group.cs || '400'}`, MARGIN.l + 4, y + 4.0)
   drawLine(doc, MARGIN.l, y + rowH, MARGIN.l + CONTENT_W, y + rowH, [60, 60, 60], 0.2)
   
   return y + rowH
 }
+
+// Hardware, labour and other lines without glass dimensions (same test the item cards use)
+const isNonGlassLine = (line) => {
+  const w = line.width_inch || line.act_w_in || (line.width_mm ? line.width_mm / 25.4 : 0)
+  const h = line.height_inch || line.act_h_in || (line.height_mm ? line.height_mm / 25.4 : 0)
+  return Boolean((line.item_type && line.item_type !== 'glass') || (!line.item_type && !w && !h && (line.description || line.remarks || line.product_name)))
+}
+
+// HS codes for a document's glass groups or lines, resolved in one request
+const resolveDocumentHsn = (sources) => resolveHsnFor(sources, hsnMappingApi.resolveBatch)
 
 const calculateGroupHeight = (group, hasCep) => {
   const sizes = group.sizes || []
@@ -1509,7 +1520,7 @@ const drawFinalSummaryBlock = (doc, totalsRows, amtWords, quotation, y) => {
   setFont(doc, 6.5, 'bold', C.textLight)
   drawText(doc, 'HSN CODE / CLASSIFICATION', MARGIN.l + 5, ly)
   setFont(doc, 7.5, 'normal', C.text)
-  drawText(doc, '7007 (Safety/Toughened Glass)', MARGIN.l + 5, ly + 4)
+  drawText(doc, quotation?.hsn_summary || '—', MARGIN.l + 5, ly + 4)
   
   // Amount in Words box placed at bottom of Left Card
   const amtBoxH = 14
@@ -2111,7 +2122,9 @@ export const generateQuotationPDF = async (quotation, { save = true } = {}) => {
       }
     }
 
-    const groups = quotation.groups || []
+    const hsnFor = await resolveDocumentHsn(quotation.groups || [])
+    const groups = (quotation.groups || []).map(g => ({ ...g, hsn: hsnFor(g) }))
+    const hsnSummary = distinctHsnCodes(groups, g => g.hsn).join(', ')
     const hasCep = groups.some(g => g.cep)
     const unitMode = quotation.unit_mode || 'inch'
     const cols = buildCols(hasCep, unitMode)
@@ -2234,7 +2247,7 @@ export const generateQuotationPDF = async (quotation, { save = true } = {}) => {
     // page and left a large blank gap on page 1.
     y = checkPageBreak(doc, y, summaryHeight, pageNum, quotation, company)
 
-    y = drawFinalSummaryBlock(doc, totalsRows, toWords(Math.round(grand)), quotation, y) + SP_16
+    y = drawFinalSummaryBlock(doc, totalsRows, toWords(Math.round(grand)), { ...quotation, hsn_summary: hsnSummary }, y) + SP_16
 
     // Terms/signature section gets its own break check.
     y = checkPageBreak(doc, y, footerSectionH, pageNum, quotation, company)
@@ -2359,7 +2372,7 @@ const drawSOItemsCard = (doc, lines, hasCep, cols, startY, pageNum, so, company,
   })
   
   ly = drawGroupSubtotal(doc, cols, tQty, tArea, tRft, tCep, tAmt, hasCep, ly)
-  ly = drawGroupHsnRow(doc, { hsn: '7007', cs: '400' }, ly)
+  ly = drawGroupHsnRow(doc, { hsn: so.hsn_summary, cs: '400' }, ly)
   
   return { endY: ly, tQty, tArea, tAmt }
 }
@@ -2518,7 +2531,12 @@ export const generateSOPDF = async (so, { save = true } = {}) => {
       }
     }
 
-    const groups = so.groups || []
+    const soGlassLines = (so.lines || []).filter(l => !isNonGlassLine(l))
+    const hsnFor = await resolveDocumentHsn((so.groups || []).length ? so.groups : soGlassLines)
+    const groups = (so.groups || []).map(g => ({ ...g, hsn: hsnFor(g) }))
+    const hsnSummary = groups.length
+      ? distinctHsnCodes(groups, g => g.hsn).join(', ')
+      : distinctHsnCodes(soGlassLines, hsnFor).join(', ')
     const hasCep = (groups.length > 0 ? groups.some(g => g.cep) : (so.lines || []).some(l => l.cep))
     const unitMode = so.unit_mode || 'inch'
     const cols = buildCols(hasCep, unitMode)
@@ -2563,7 +2581,7 @@ export const generateSOPDF = async (so, { save = true } = {}) => {
         })
       })
     } else {
-      const res = drawSOItemsCard(doc, so.lines || [], hasCep, cols, y, pageNum, so, company, unitMode)
+      const res = drawSOItemsCard(doc, so.lines || [], hasCep, cols, y, pageNum, { ...so, hsn_summary: hsnSummary }, company, unitMode)
       totalQty = res.tQty
       totalSqft = res.tArea
       grandGlass = res.tAmt
@@ -2680,7 +2698,7 @@ export const generateSOPDF = async (so, { save = true } = {}) => {
     const footerSectionH = calculateDocumentFooterHeight(company, so)
     
     y = checkPageBreak(doc, y, summaryHeight, pageNum, so, company)
-    y = drawFinalSummaryBlock(doc, totalsRows, toWords(Math.round(grand)), { payment_terms: so.payment_terms }, y) + SP_16
+    y = drawFinalSummaryBlock(doc, totalsRows, toWords(Math.round(grand)), { payment_terms: so.payment_terms, hsn_summary: hsnSummary }, y) + SP_16
 
     y = checkPageBreak(doc, y, footerSectionH, pageNum, so, company)
     drawDocumentFooterSection(doc, company, y, pageNum, so)
@@ -2763,7 +2781,7 @@ const drawPOItemsCard = (doc, lines, cols, startY, pageNum, po, company) => {
   })
   
   ly = drawGroupSubtotal(doc, cols, tQty, tArea, tRft, 0, tAmt, false, ly)
-  ly = drawGroupHsnRow(doc, { hsn: '7007', cs: '400' }, ly)
+  ly = drawGroupHsnRow(doc, { hsn: po.hsn_summary, cs: '400' }, ly)
   
   return { endY: ly, tQty, tArea, tAmt }
 }
@@ -2836,8 +2854,13 @@ export const generatePOPDF = async (po) => {
       })
     })
 
+    // HS codes of the glass lines, one request for the whole PO
+    const poGlassLines = (po.lines || []).filter(l => !isNonGlassLine(l))
+    const hsnFor = await resolveDocumentHsn(poGlassLines)
+    const hsnSummary = distinctHsnCodes(poGlassLines, hsnFor).join(', ')
+
     // Render items card (using splits if needed)
-    const res = drawPOItemsCard(doc, po.lines || [], cols, y, pageNum, po, company)
+    const res = drawPOItemsCard(doc, po.lines || [], cols, y, pageNum, { ...po, hsn_summary: hsnSummary }, company)
     const tQty = res.tQty
     const tArea = res.tArea
     const tAmt = res.tAmt
@@ -2879,7 +2902,7 @@ export const generatePOPDF = async (po) => {
     const summaryHeight = calculateSummaryHeight(totalsRows)
     y = checkPageBreak(doc, y, summaryHeight, pageNum, po, company)
 
-    y = drawFinalSummaryBlock(doc, totalsRows, toWords(Math.round(grand)), { payment_terms: po.payment_terms }, y) + SP_16
+    y = drawFinalSummaryBlock(doc, totalsRows, toWords(Math.round(grand)), { payment_terms: po.payment_terms, hsn_summary: hsnSummary }, y) + SP_16
     y = checkPageBreak(doc, y, 22 + 28, pageNum, po, company)
     y = drawSignatureStrip(doc, company, y) + SP_16
     drawTerms(doc, y, company)

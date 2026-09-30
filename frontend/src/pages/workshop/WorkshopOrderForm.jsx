@@ -19,6 +19,7 @@ import FractionInput, { toFraction } from '../quotations/components/FractionInpu
 import { computeLineWeightKg } from '../../utils/glassCalc'
 import { makePdfFilename, generateWorkshopOrderPDF } from '../../utils/pdfGenerator'
 import { notBefore } from '../../utils/dateRules'
+import { glassTypeOptions as buildGlassTypeOptions } from '../../utils/glassTypes'
 
 const { TextArea } = Input
 const { Text } = Typography
@@ -145,10 +146,9 @@ const WorkshopOrderForm = () => {
   const glassTypeOptions = useMemo(() => {
     try {
       const cfg = JSON.parse(localStorage.getItem('glass_dropdown_config') || '{}')
-      const types = cfg.glass_types?.length ? cfg.glass_types : ['Annealed', 'Toughened', 'Laminated', 'DGU']
-      return types.map(t => ({ value: t, label: t }))
+      return buildGlassTypeOptions(cfg.glass_types)
     } catch {
-      return ['Annealed', 'Toughened', 'Laminated', 'DGU'].map(t => ({ value: t, label: t }))
+      return buildGlassTypeOptions()
     }
   }, [])
 

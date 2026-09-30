@@ -27,7 +27,7 @@ const ProductList = () => (
       { title: 'On Hand', dataIndex: 'on_hand_qty', width: 100, render: (v, r) => (
         <span style={{ fontSize: 14, fontWeight: 700, color: v === 0 ? '#dc2626' : v < (r.min_qty||0) ? '#f59e0b' : '#10b981' }}>{v || 0}</span>
       )},
-      { title: 'HSN Code',    dataIndex: 'hsn_id',        key: 'hsn',        width: 100, render: v => v ? <Tag color="geekblue">{v}</Tag> : '—' },
+      { title: 'HSN Code',    dataIndex: 'hsn_code',      key: 'hsn',        width: 100, render: v => v ? <Tag color="geekblue">{v}</Tag> : <span style={{ color: '#94a3b8' }}>Auto</span> },
     ]}
     createPath="/masters/products/new"
     editPath={(r) => `/masters/products/${r.id}/edit`}

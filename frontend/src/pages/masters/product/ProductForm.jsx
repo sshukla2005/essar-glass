@@ -4,17 +4,13 @@ import { Form, Input, InputNumber, Select, Row, Col, Divider, Radio, Tabs, Switc
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import MasterForm from '../../../components/common/MasterForm'
-import { productApi, uomApi, hsnApi, taxApi } from '../../../api'
+import { productApi, uomApi, taxApi, hsnMappingApi } from '../../../api'
 import CompanySelector from '../../../components/common/CompanySelector'
+import { glassTypeOptions } from '../../../utils/glassTypes'
 
 const { TextArea } = Input
 
-const GLASS_TYPES = [
-  { value: 'Annealed', label: 'Annealed' },
-  { value: 'Toughened', label: 'Toughened' },
-  { value: 'Laminated', label: 'Laminated' },
-  { value: 'DGU', label: 'DGU' },
-]
+const GLASS_TYPES = glassTypeOptions()
 
 const GLASS_CATEGORIES = ['Clear', 'Xtra Clear', 'Tinted', 'Reflective', 'Mirror']
 const GLASS_THICKNESSES = [3.5, 4, 5, 6, 8, 10, 12]
@@ -46,10 +42,6 @@ const ProductForm = () => {
     queryKey: ['uoms-dropdown'],
     queryFn:  () => uomApi.dropdown().then(r => r.data),
   })
-  const { data: hsnCodes = [] } = useQuery({
-    queryKey: ['hsn-codes-dropdown'],
-    queryFn:  () => hsnApi.dropdown().then(r => r.data),
-  })
   const { data: taxes = [] } = useQuery({
     queryKey: ['taxes-dropdown'],
     queryFn:  () => taxApi.dropdown().then(r => r.data),
@@ -60,14 +52,23 @@ const ProductForm = () => {
       form.setFieldsValue({
         ...record,
         uom_id: record.uom?.id || record.uom_id,
-        hsn_id: record.hsn?.id || record.hsn_id,
         tax_id: record.tax?.id || record.tax_id,
       })
     }
   }, [record])
 
-  // Watch glass_category + thickness_mm for auto-price
+  const glassType     = Form.useWatch('glass_type', form)
   const glassCategory = Form.useWatch('glass_category', form)
+
+  // HS code the mapping would give this glass type/category, shown when hsn_code is blank
+  const { data: autoHsn } = useQuery({
+    queryKey: ['hsn-resolve', glassType || '', glassCategory || ''],
+    queryFn:  () => hsnMappingApi.resolve({ glass_type: glassType || undefined, glass_category: glassCategory || undefined })
+      .then(r => r.data.hs_code),
+    staleTime: 60_000,
+  })
+
+  // Watch glass_category + thickness_mm for auto-price
   const thicknessMm   = Form.useWatch('thickness_mm', form)
 
   useEffect(() => {
@@ -170,11 +171,12 @@ const ProductForm = () => {
               </Form.Item>
             </Col>
             <Col span={4}>
-              <Form.Item name="hsn_id" label="HSN Code">
-                <Select showSearch placeholder="Select"
-                  options={hsnCodes.map(h => ({ value: h.id, label: `${h.code} — ${h.description || ''}` }))}
-                  filterOption={(i, o) => o.label.toLowerCase().includes(i.toLowerCase())}
-                />
+              <Form.Item name="hsn_code" label="HSN Code"
+                tooltip="Leave blank to use the HSN mapping for this glass type and category (shown greyed out)"
+                normalize={v => (v || '').trim()}
+                rules={[{ pattern: /^\d{4,8}$/, message: '4 to 8 digits' }]}>
+                <Input placeholder={autoHsn ? `Auto: ${autoHsn}` : 'Auto'} maxLength={8} inputMode="numeric"
+                  style={{ fontFamily: 'monospace' }} />
               </Form.Item>
             </Col>
             <Col span={4}>
