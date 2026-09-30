@@ -105,6 +105,7 @@ import InvoiceForm from './pages/invoices/InvoiceForm'
 import CustomerLedger from './pages/invoices/CustomerLedger'
 import PaymentAccounts from './pages/settings/PaymentAccounts'
 import HsnMappingSettings from './pages/settings/HsnMappingSettings'
+import ArtworkMaster from './pages/masters/artwork/ArtworkMaster'
 
 // ── Reports ───────────────────────────────────────────────────────────────────
 import SalesPerformance from './pages/reports/SalesPerformance'
@@ -235,6 +236,7 @@ const App = () => {
 
             {/* ── Masters: Products ───────────────────────────────────── */}
             <Route path="masters/products"          element={<ProtectedRoute module="products"><ProductList /></ProtectedRoute>} />
+            <Route path="masters/artworks"          element={<ProtectedRoute module="artworks"><ArtworkMaster /></ProtectedRoute>} />
             <Route path="masters/products/new"      element={<ProtectedRoute module="products"><ProductForm /></ProtectedRoute>} />
             <Route path="masters/products/:id/edit" element={<ProtectedRoute module="products"><ProductForm /></ProtectedRoute>} />
 

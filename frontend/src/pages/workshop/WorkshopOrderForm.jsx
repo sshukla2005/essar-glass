@@ -8,7 +8,6 @@ import MasterForm from '../../components/common/MasterForm'
 import ArtworkPanelMapper from '../../components/common/ArtworkPanelMapper'
 import { workshopOrderApi, salesOrderApi, customerApi, productApi, tougheningBatchApi, processMasterApi, vendorApi, companyApi, interCompanyApi } from '../../api'
 import { useAuth } from '../../hooks/useAuth'
-import { settingsApi } from '../../api/settingsApi'
 // Note for developer/user to add manually in Masters -> Vendors:
 // MEBT, Amath, Sapphire, Al Burhan, RDTuff, Diamond
 import jsPDF from 'jspdf'
@@ -20,26 +19,13 @@ import { computeLineWeightKg } from '../../utils/glassCalc'
 import { makePdfFilename, generateWorkshopOrderPDF } from '../../utils/pdfGenerator'
 import { notBefore } from '../../utils/dateRules'
 import { glassTypeOptions as buildGlassTypeOptions } from '../../utils/glassTypes'
+import { useArtworkMaster, newArtworkEntry } from '../../hooks/useArtworkMaster'
 
 const { TextArea } = Input
 const { Text } = Typography
 
 const STATUS_STEPS = ['draft', 'in_progress', 'completed']
 const STATUS_IDX = { draft: 0, in_progress: 1, completed: 2, cancelled: 0 }
-
-const getArtworkMaster = () => {
-  try {
-    return JSON.parse(localStorage.getItem('artwork_master') || '[]')
-  } catch { return [] }
-}
-
-const saveArtworkMaster = async (artworks) => {
-  localStorage.setItem('artwork_master', JSON.stringify(artworks))
-  // Also save to backend
-  try {
-    await settingsApi.save(settingsApi.KEYS.ARTWORK_MASTER, artworks)
-  } catch { }
-}
 
 const WorkshopOrderForm = () => {
   const { message } = App.useApp()
@@ -56,7 +42,8 @@ const WorkshopOrderForm = () => {
   const hydratedRef = useRef(false)
   const [lines, setLines] = useState([])
   const [selectedJobworkVendor, setSelectedJobworkVendor] = useState(null)
-  const [artworkMaster, setArtworkMaster] = useState(getArtworkMaster)
+  // Artwork library, managed in Masters > Artwork (read fresh from the server)
+  const { artworks: artworkMaster, add: addArtwork } = useArtworkMaster()
   const [selectedLineKeys, setSelectedLineKeys] = useState([])
   const [bulkArtworkModal, setBulkArtworkModal] = useState(false)
   const [bulkArtworkId, setBulkArtworkId] = useState(null)
@@ -68,19 +55,10 @@ const WorkshopOrderForm = () => {
   const [bulkSerial, setBulkSerial] = useState('')
 
   const saveToArtworkMaster = (name, fileName, fileData) => {
-    const newArtwork = {
-      id: Date.now(),
-      name,
-      file_name: fileName,
-      file_data: fileData,
-      created_at: new Date().toISOString().split('T')[0]
-    }
-    setArtworkMaster(prev => {
-      const updated = [...prev, newArtwork]
-      saveArtworkMaster(updated)
-      return updated
-    })
-    message.success(`"${name}" saved to Artwork Master!`)
+    const newArtwork = newArtworkEntry(name, fileName, fileData)
+    addArtwork(newArtwork)
+      .then(() => message.success(`"${name}" saved to Artwork Master!`))
+      .catch(() => message.error(`Could not save "${name}" to Artwork Master`))
     return newArtwork
   }
   const [expandedRowKeys, setExpandedRowKeys] = useState([])
@@ -103,16 +81,6 @@ const WorkshopOrderForm = () => {
       return prev.map((m, i) => (i === activeMap ? { ...m, ...patch } : m))
     })
   }
-
-  // Load artwork master from backend on mount
-  useEffect(() => {
-    settingsApi.get(settingsApi.KEYS.ARTWORK_MASTER).then(data => {
-      if (data && Array.isArray(data) && data.length > 0) {
-        setArtworkMaster(data)
-        localStorage.setItem('artwork_master', JSON.stringify(data))
-      }
-    }).catch(() => { })
-  }, [])
 
   const inchToMm = (val) => val ? Math.round(val * 25.4) : null
   const mmToInch = (mm) => mm ? parseFloat((mm / 25.4).toFixed(4)) : null
