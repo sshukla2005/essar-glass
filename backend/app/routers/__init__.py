@@ -48,6 +48,24 @@ def _require_quotation_creator(model, item, user):
         raise HTTPException(status_code=403, detail="Only the creator can edit this quotation")
 
 
+def _require_invoice_without_payments(model, item, db):
+    """Invoices only: refuse to delete/archive one that still has payments allocated,
+    so a payment is never left pointing at a removed invoice. Delete the payment first
+    (it reverses its allocations)."""
+    if getattr(model, "__tablename__", None) != "invoices":
+        return
+    from app.models.payment_allocation import PaymentAllocation
+    paid = db.query(PaymentAllocation).filter(
+        PaymentAllocation.invoice_id == item.id,
+        PaymentAllocation.is_active == True,
+    ).count()
+    if paid:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invoice {getattr(item, 'invoice_number', '')} has {paid} payment(s) against it. Delete those payments first.",
+        )
+
+
 def _require_roles(allowed: set[str] | None):
     return _require_permissions(allowed=allowed)
 
@@ -730,6 +748,7 @@ def make_crud_router(
             raise HTTPException(status_code=404, detail="Not found")
 
         _require_quotation_creator(model, item, user)
+        _require_invoice_without_payments(model, item, db)
 
         from app.models.user import User as UserModel
         if model is UserModel:
@@ -763,6 +782,7 @@ def make_crud_router(
             raise HTTPException(status_code=404, detail="Not found")
 
         _require_quotation_creator(model, item, user)
+        _require_invoice_without_payments(model, item, db)
 
         from app.models.user import User as UserModel
         if model is UserModel:

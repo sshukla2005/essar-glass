@@ -1,15 +1,16 @@
 import React, { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Card, Table, Tag, Typography, Button,
-  Space, Divider, Row, Col, App, Statistic
+  Space, Divider, Row, Col, App, Statistic, Popconfirm
 } from 'antd'
 import {
   ArrowLeftOutlined, PlusOutlined,
-  FileTextOutlined, DollarOutlined
+  FileTextOutlined, DollarOutlined, DeleteOutlined
 } from '@ant-design/icons'
-import { receivablesApi } from '../../api'
+import { receivablesApi, paymentApi, invoiceApi } from '../../api'
+import { useAuth } from '../../hooks/useAuth'
 import RecordPaymentModal from './RecordPaymentModal'
 
 const { Text, Title } = Typography
@@ -24,12 +25,35 @@ const CustomerLedger = () => {
   const navigate = useNavigate()
   const { message } = App.useApp()
   const [paymentModal, setPaymentModal] = useState(false)
+  const [deletingId, setDeletingId] = useState(null)
+  const queryClient = useQueryClient()
+  const { user } = useAuth()
+  const canDelete = user?.role === 'superadmin' || user?.role === 'admin'
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['customer-ledger', customerId],
     queryFn: () => receivablesApi.customerLedger(customerId).then(r => r.data),
     staleTime: 0,
   })
+
+  // Payment: soft-deleted with its allocations reversed, so the invoices it paid show as due again.
+  // Invoice: soft-deleted; the server refuses while payments are still allocated to it.
+  const deleteTransaction = async (row) => {
+    setDeletingId(row.id)
+    try {
+      if (row.type === 'payment') await paymentApi.delete(row.payment_id)
+      else await invoiceApi.archive(row.invoice_id)
+      message.success(`${row.type === 'payment' ? 'Payment' : 'Invoice'} ${row.reference || ''} deleted`)
+      queryClient.invalidateQueries({ queryKey: ['invoices'] })
+      queryClient.invalidateQueries({ queryKey: ['payments'] })
+      await refetch()
+    } catch (err) {
+      const detail = err?.response?.data?.detail
+      message.error(typeof detail === 'string' && detail ? detail : 'Could not delete this entry')
+    } finally {
+      setDeletingId(null)
+    }
+  }
 
   const customer = data?.customer || {}
   const transactions = data?.transactions || []
@@ -140,6 +164,26 @@ const CustomerLedger = () => {
         </Text>
       ),
     },
+    ...(canDelete ? [{
+      title: '',
+      key: 'delete',
+      width: 56,
+      align: 'center',
+      render: (_, row) => (
+        <Popconfirm
+          title={`Delete ${row.type === 'payment' ? 'payment' : 'invoice'} ${row.reference || ''}?`}
+          description={row.type === 'payment'
+            ? 'The payment is removed and the invoices it paid become due again.'
+            : 'The invoice is removed from the ledger. Delete any payments against it first.'}
+          okText="Delete"
+          okButtonProps={{ danger: true }}
+          onConfirm={() => deleteTransaction(row)}
+        >
+          <Button size="small" danger type="text" icon={<DeleteOutlined />}
+            loading={deletingId === row.id} aria-label={`Delete ${row.reference || row.type}`} />
+        </Popconfirm>
+      ),
+    }] : []),
   ]
 
   const balanceColor = balance > 0 ? '#dc2626' : balance < 0 ? '#6366f1' : '#16a34a'
