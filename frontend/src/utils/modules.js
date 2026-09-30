@@ -45,6 +45,7 @@ export const MODULES = [
   { key: 'vendors',          label: 'Vendors',             section: 'masters',   route: '/masters/vendors' },
   { key: 'products',         label: 'Products',            section: 'masters',   route: '/masters/products' },
   { key: 'employees',        label: 'Employees',           section: 'masters',   route: '/masters/employees' },
+  { key: 'artworks',         label: 'Artwork',             section: 'masters',   route: '/masters/artworks' },
 
   // ── Settings ─────────────────────────────────────────────────────────────────
   { key: 'company',          label: 'Company Info',        section: 'settings',  route: '/settings/company' },

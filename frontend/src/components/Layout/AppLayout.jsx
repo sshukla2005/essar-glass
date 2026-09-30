@@ -59,6 +59,7 @@ const menuItems = [
     { key: '/masters/vendors', label: 'Vendors' },
     { key: '/masters/products', label: 'Products' },
     { key: '/masters/employees', label: 'Employees' },
+    { key: '/masters/artworks', label: 'Artwork' },
   ]},
   { key: 'grp_settings', icon: <SettingOutlined />, label: 'Settings', children: [
     { key: '/settings/company', label: 'Company' },

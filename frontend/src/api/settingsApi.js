@@ -50,11 +50,8 @@ const migrateFromLocalStorage = async () => {
       backendKey: KEYS.GLASS_DROPDOWN_CONFIG,
       default:   {}
     },
-    {
-      lsKey:     'artwork_master',
-      backendKey: KEYS.ARTWORK_MASTER,
-      default:   []
-    },
+    // artwork_master is not migrated: it is managed only on the server (Masters > Artwork),
+    // and re-uploading an old browser copy would bring back deleted artwork.
   ]
 
   for (const m of migrations) {
