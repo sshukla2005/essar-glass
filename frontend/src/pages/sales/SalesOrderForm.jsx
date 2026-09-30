@@ -30,6 +30,7 @@ import CostAnalysisCard from '../quotations/components/CostAnalysisCard'
 import SOInvoiceStatusPanel from './components/SOInvoiceStatusPanel'
 import FractionInput, { toFraction } from '../quotations/components/FractionInput'
 import ProcessRateCardSection from '../quotations/components/ProcessRateCardSection'
+import { defaultShipToText } from '../../utils/shipTo'
 
 // A string `detail` from the API, else the fallback (422 responses carry a list, not a message)
 const apiError = (err, fallback) => {
@@ -2231,7 +2232,7 @@ const SalesOrderForm = () => {
               paymentTerms={PAYMENT_TERMS}
               handleCustomerChange={(val) => {
                 const c = customers.find(x => x.id === val)
-                if (c) form.setFieldsValue({ payment_terms: c.payment_terms })
+                if (c) form.setFieldsValue({ payment_terms: c.payment_terms, delivery_address: defaultShipToText(c) })
               }}
               customerApi={customerApi}
               employeeApi={employeeApi}

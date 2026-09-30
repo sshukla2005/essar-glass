@@ -31,6 +31,7 @@ import StickySummary from './components/StickySummary'
 import NotesCard from './components/NotesCard'
 import CostAnalysisCard from './components/CostAnalysisCard'
 import ProcessRateCardSection from './components/ProcessRateCardSection'
+import { defaultShipToText } from '../../utils/shipTo'
 
 // A string `detail` from the API, else the fallback (422 responses carry a list, not a message)
 const apiError = (err, fallback) => {
@@ -2285,7 +2286,7 @@ const QuotationForm = () => {
   const handleCustomerChange = (val) => {
     const c = customers.find(x => x.id === val)
     if (c) {
-      form.setFieldsValue({ payment_terms: c.payment_terms || 'immediate', delivery_address: c.address || '', salesperson: c.salesperson || '' })
+      form.setFieldsValue({ payment_terms: c.payment_terms || 'immediate', delivery_address: defaultShipToText(c), salesperson: c.salesperson || '' })
     }
   }
 

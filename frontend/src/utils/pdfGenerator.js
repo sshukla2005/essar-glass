@@ -4,6 +4,7 @@ import html2canvas from 'html2canvas'
 import dayjs from 'dayjs'
 import { customerApi, vendorApi, companyApi, quotationApi, salesOrderApi, hsnMappingApi } from '../api'
 import { resolveHsnFor, distinctHsnCodes } from './hsnResolver'
+import { resolveShipToParty } from './shipTo'
 import { computeLineWeightKg } from './glassCalc'
 
 // ── Brand logo assets (Vite-bundled, fingerprinted) ──────
@@ -2092,10 +2093,12 @@ export const generateQuotationPDF = async (quotation, { save = true } = {}) => {
       email: quotation.customer_email || '',
       pan: quotation.customer_pan || quotation.customer_pan_number || '',
     }
+    let custMaster = null   // customer master row, for the Ship To address
     if (customerId) {
       try {
         const res = await customerApi.get(customerId)
         const c = res.data || res
+        custMaster = c || null
         if (c) cust = {
           name: c.name || quotation.customer_name || '',
           address: c.address || '',
@@ -2114,6 +2117,7 @@ export const generateQuotationPDF = async (quotation, { save = true } = {}) => {
         try {
           const all = JSON.parse(localStorage.getItem('customers') || '[]')
           const c = all.find(x => x.id === customerId)
+          custMaster = c || null
           if (c) cust = {
             name: c.name,
             address: c.address || '',
@@ -2143,7 +2147,8 @@ export const generateQuotationPDF = async (quotation, { save = true } = {}) => {
     drawBorder(doc)
     let y = drawHeader(doc, company, 'PROFORMA INVOICE')
     y = drawDocInfo(doc, quotation, y, 'PROFORMA INVOICE')
-    y = drawCustomerCard(doc, cust, y)
+    // Ship To: the document's own address, else the customer's shipping address, else same as Bill To
+    y = drawCustomerCard(doc, cust, y, resolveShipToParty(cust, custMaster, quotation.delivery_address))
 
     let totalQty = 0, totalSqft = 0, totalCep = 0, grandGlass = 0, totalWeightKg = 0
     let groupNo = 0
@@ -2497,10 +2502,12 @@ export const generateSOPDF = async (so, { save = true } = {}) => {
       email: so.customer_email || '',
       pan: so.customer_pan || so.customer_pan_number || '',
     }
+    let custMaster = null   // customer master row, for the Ship To address
     if (customerId) {
       try {
         const res = await customerApi.get(customerId)
         const c = res.data || res
+        custMaster = c || null
         if (c) {
           cust = {
             name: c.name || so.customer_name || '',
@@ -2521,6 +2528,7 @@ export const generateSOPDF = async (so, { save = true } = {}) => {
         try {
           const all = JSON.parse(localStorage.getItem('customers') || '[]')
           const c = all.find(x => x.id === customerId)
+          custMaster = c || null
           if (c) {
             cust = {
               name: c.name,
@@ -2562,7 +2570,8 @@ export const generateSOPDF = async (so, { save = true } = {}) => {
       company_id: so.company_id
     }, y, 'SALES ORDER')
     
-    y = drawCustomerCard(doc, cust, y)
+    // Ship To: the document's own address, else the customer's shipping address, else same as Bill To
+    y = drawCustomerCard(doc, cust, y, resolveShipToParty(cust, custMaster, so.delivery_address))
     y = drawInfoStrips(doc, cust, y)
 
     let totalQty = 0, totalSqft = 0, totalCep = 0, grandGlass = 0, totalWeightKg = 0

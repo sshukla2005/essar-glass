@@ -393,6 +393,19 @@ const QuotationDetailsCard = forwardRef(({
             </Form.Item>
           </Col>
         </Row>
+        <Row gutter={16} style={{ marginTop: 16 }}>
+          <Col xs={24}>
+            {/* Printed as SHIP TO on the PDF; empty = same as the customer's billing address */}
+            <Form.Item name="delivery_address" label={lbl('Ship To (delivery address)')} style={{ marginBottom: 0 }}>
+              <Input.TextArea
+                rows={2}
+                autoSize={{ minRows: 2, maxRows: 4 }}
+                placeholder="Same as billing address. Filled from the customer's shipping address when they have one; edit for a different site."
+                style={{ borderRadius: 8 }}
+              />
+            </Form.Item>
+          </Col>
+        </Row>
       </div>
     </div>
   )
