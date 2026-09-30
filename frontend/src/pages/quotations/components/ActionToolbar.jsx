@@ -8,7 +8,6 @@ import {
   WhatsAppOutlined,
   ShoppingCartOutlined, 
   CheckCircleOutlined,
-  SettingOutlined,
   ThunderboltOutlined,
   CarOutlined,
   DollarOutlined
@@ -57,8 +56,6 @@ const ActionToolbar = ({
   // SO-specific props
   onCreatePO,
   isCreatingPO = false,
-  onProduction,
-  isStartingProduction = false,
   onReady,
   isMarkingReady = false,
   onCreateDelivery,
@@ -221,17 +218,7 @@ const ActionToolbar = ({
               </>
             )}
 
-            {status === 'confirmed' && (
-              <Button 
-                type="primary" 
-                icon={<SettingOutlined style={{ color: '#fff' }} />} 
-                onClick={onProduction} 
-                loading={isStartingProduction} 
-                style={{ background: '#f59e0b', borderColor: '#f59e0b', borderRadius: 8, height: 38, fontWeight: 600, display: 'flex', alignItems: 'center' }}
-              >
-                Production
-              </Button>
-            )}
+            {/* No Production button: creating a Workshop Order moves a confirmed SO to IN PRODUCTION */}
 
             {status === 'in_production' && (
               <Button 
