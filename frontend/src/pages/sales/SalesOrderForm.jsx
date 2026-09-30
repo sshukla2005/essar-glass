@@ -1648,6 +1648,67 @@ const SalesOrderForm = () => {
     onError: (err) => message.error(apiError(err, 'Failed to change stage')),
   })
 
+  // Creates the Workshop Order; the API moves a confirmed SO to IN PRODUCTION in the same transaction
+  const createWorkshopOrder = async () => {
+    const woData = {
+      so_id: parseInt(id), customer_id: record?.customer_id,
+      customer_name: customers.find(c => c.id === record?.customer_id)?.name || '',
+      so_number: record?.so_number, order_date: new Date().toISOString().split('T')[0],
+      priority: 'normal', status: 'draft',
+      lines: getFlatLines().map(l => {
+        const prod = products.find(p => p.id === l.product_id)
+        const w_mm = l.width_inch ? Math.round(l.width_inch * 25.4) : null
+        const h_mm = l.height_inch ? Math.round(l.height_inch * 25.4) : null
+        return {
+          ...l,
+          act_w_mm: w_mm,
+          act_h_mm: h_mm,
+          act_w_in: l.width_inch ? parseFloat(l.width_inch.toFixed(4)) : null,
+          act_h_in: l.height_inch ? parseFloat(l.height_inch.toFixed(4)) : null,
+          glass_type: prod?.glass_type || '',
+          processes: l.processes,
+          size_processes: l.size_processes || [],
+          has_process: (l.processes?.length > 0) || (l.size_processes?.length > 0),
+          process_label: [
+            ...(l.processes || []),
+            ...(l.size_processes || [])
+          ].map(p => p.process_name || p.name || '').filter(Boolean).join(', '),
+          cep: l.cep || false,
+          is_toughened: l.is_toughened || false,
+          line_status: 'pending',
+          holes_qty: 0,
+          remarks: ''
+        }
+      })
+    }
+    try {
+      const res = await workshopOrderApi.create(woData)
+      // The API moves a confirmed SO to IN PRODUCTION in the same transaction
+      queryClient.invalidateQueries({ queryKey: ['sales_orders', id] })
+      queryClient.invalidateQueries({ queryKey: ['sales_orders'] })
+      message.success(record?.status === 'confirmed'
+        ? 'Workshop Order created. Stage changed to IN PRODUCTION'
+        : 'Workshop Order created')
+      navigate(`/workshop/orders/${res.data.id}/edit`)
+    } catch (err) {
+      message.error(apiError(err, 'Failed to create Workshop Order'))
+    }
+  }
+
+  // Ask first, like the old Production button did: on a confirmed SO this also changes its stage
+  const confirmCreateWorkshopOrder = () => {
+    const movesStage = record?.status === 'confirmed'
+    Modal.confirm({
+      title: movesStage ? 'Change stage?' : 'Create Workshop Order?',
+      content: movesStage
+        ? 'Creating a Workshop Order will move this order to IN PRODUCTION. Do you want to continue?'
+        : 'A new Workshop Order will be created for this Sales Order. Do you want to continue?',
+      okText: movesStage ? 'Yes, create & change stage' : 'Yes, create',
+      cancelText: 'Cancel',
+      onOk: createWorkshopOrder,
+    })
+  }
+
   const changeStage = (next) => {
     const label = String(next).replace(/_/g, ' ').toUpperCase()
     Modal.confirm({
@@ -1970,51 +2031,7 @@ const SalesOrderForm = () => {
             </Badge>
             : ['confirmed', 'in_production'].includes(status) && (
               <Button type="primary" icon={<ToolOutlined />} style={{ background: '#ea580c', borderColor: '#ea580c' }}
-                onClick={async () => {
-                  const woData = {
-                    so_id: parseInt(id), customer_id: record?.customer_id,
-                    customer_name: customers.find(c => c.id === record?.customer_id)?.name || '',
-                    so_number: record?.so_number, order_date: new Date().toISOString().split('T')[0],
-                    priority: 'normal', status: 'draft',
-                    lines: getFlatLines().map(l => {
-                      const prod = products.find(p => p.id === l.product_id)
-                      const w_mm = l.width_inch ? Math.round(l.width_inch * 25.4) : null
-                      const h_mm = l.height_inch ? Math.round(l.height_inch * 25.4) : null
-                      return {
-                        ...l,
-                        act_w_mm: w_mm,
-                        act_h_mm: h_mm,
-                        act_w_in: l.width_inch ? parseFloat(l.width_inch.toFixed(4)) : null,
-                        act_h_in: l.height_inch ? parseFloat(l.height_inch.toFixed(4)) : null,
-                        glass_type: prod?.glass_type || '',
-                        processes: l.processes,
-                        size_processes: l.size_processes || [],
-                        has_process: (l.processes?.length > 0) || (l.size_processes?.length > 0),
-                        process_label: [
-                          ...(l.processes || []),
-                          ...(l.size_processes || [])
-                        ].map(p => p.process_name || p.name || '').filter(Boolean).join(', '),
-                        cep: l.cep || false,
-                        is_toughened: l.is_toughened || false,
-                        line_status: 'pending',
-                        holes_qty: 0,
-                        remarks: ''
-                      }
-                    })
-                  }
-                  try {
-                    const res = await workshopOrderApi.create(woData)
-                    // The API moves a confirmed SO to IN PRODUCTION in the same transaction
-                    queryClient.invalidateQueries({ queryKey: ['sales_orders', id] })
-                    queryClient.invalidateQueries({ queryKey: ['sales_orders'] })
-                    message.success(record?.status === 'confirmed'
-                      ? 'Workshop Order created. Stage changed to IN PRODUCTION'
-                      : 'Workshop Order created')
-                    navigate(`/workshop/orders/${res.data.id}/edit`)
-                  } catch (err) {
-                    message.error(apiError(err, 'Failed to create Workshop Order'))
-                  }
-                }}>
+                onClick={confirmCreateWorkshopOrder}>
                 Create Workshop Order
               </Button>
             )
@@ -2145,8 +2162,6 @@ const SalesOrderForm = () => {
             isConfirming={statusMutation.isPending && statusMutation.variables === 'confirmed'}
             onCreatePO={() => createPOMutation.mutate()}
             isCreatingPO={createPOMutation.isPending}
-            onProduction={() => changeStage('in_production')}
-            isStartingProduction={statusMutation.isPending && statusMutation.variables === 'in_production'}
             onReady={() => changeStage('ready')}
             isMarkingReady={statusMutation.isPending && statusMutation.variables === 'ready'}
             onCreateDelivery={() => createDCMutation.mutate()}
