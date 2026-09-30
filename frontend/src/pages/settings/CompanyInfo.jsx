@@ -49,6 +49,7 @@ const CompanyInfo = () => {
         bank_ifsc: companyData.bank_ifsc || '',
         terms_conditions: companyData.terms_conditions ?? '',
         warranty_terms: companyData.warranty_terms ?? '',
+        pdf_footer_text: companyData.pdf_footer_text ?? '',
         whatsapp_enabled: !!companyData.whatsapp_enabled,
         whatsapp_phone_number_id: companyData.whatsapp_phone_number_id || '',
         whatsapp_template_quotation: companyData.whatsapp_template_quotation || '',
@@ -319,6 +320,21 @@ const CompanyInfo = () => {
                 <Input.TextArea
                   rows={14}
                   placeholder={`3.1 LIMITED PRODUCT WARRANTY\nUnless otherwise specified...`}
+                />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Row gutter={16}>
+            <Col span={24}>
+              <Form.Item
+                name="pdf_footer_text"
+                label="PDF Footer (factory address)"
+                extra="Printed as written, one line per line, in the box at the bottom of quotation and Sales Order PDFs. Leave empty to use the company address and email above."
+              >
+                <Input.TextArea
+                  rows={5}
+                  placeholder={`Factory outlet & Reg. Sales Off: ...\nGoogle Maps: https://...\nemail: ...`}
                 />
               </Form.Item>
             </Col>

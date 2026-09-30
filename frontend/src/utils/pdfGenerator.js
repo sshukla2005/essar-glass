@@ -1583,7 +1583,47 @@ const drawFinalSummaryBlock = (doc, totalsRows, amtWords, quotation, y) => {
 }
 
 // ── Terms & Signature Section ──
-const calculateDocumentFooterHeight = (company, docData = null) => {
+// Lines of the bottom address box, wrapped to the page width. The company's own PDF
+// footer text (Settings > Company) is printed as written; without it the box is
+// built from the address/email fields.
+const ADDRESS_BOX_FONT = [6.5, 'bold']
+const footerAddressLines = (doc, company) => {
+  let lines = []
+  const custom = cleanVal(company?.pdf_footer_text)
+  if (custom) {
+    lines = custom.split('\n').map(l => l.trim()).filter(Boolean)
+  } else {
+    const cityStr = cleanVal(company?.city)
+    const pinStr = cleanVal(company?.pincode)
+    let cityPinComp = cityStr
+    if (pinStr && !cityStr.includes(pinStr)) {
+      cityPinComp = cityStr ? `${cityStr} ${pinStr}` : pinStr
+    }
+    const fullAddrStr = [
+      cleanVal(company?.address),
+      cleanVal(company?.address_line2),
+      cityPinComp,
+      cleanVal(company?.state_name) && !cityStr.includes(cleanVal(company?.state_name)) ? cleanVal(company?.state_name) : ''
+    ].filter(Boolean).join(', ')
+    if (fullAddrStr) lines.push(`Factory outlet & Reg. Sales Off: ${fullAddrStr}`)
+
+    const contactParts = []
+    const emailStr = cleanVal(company?.email)
+    const websiteStr = cleanVal(company?.website)
+    const mapsStr = cleanVal(company?.google_maps || company?.map_link)
+    if (emailStr) contactParts.push(`email: ${emailStr}`)
+    if (websiteStr) contactParts.push(`website: ${websiteStr}`)
+    if (mapsStr) contactParts.push(`google maps: ${mapsStr}`)
+    if (contactParts.length > 0) lines.push(contactParts.join('   |   '))
+  }
+  if (!doc) return lines
+  setFont(doc, ADDRESS_BOX_FONT[0], ADDRESS_BOX_FONT[1], C.textMid)
+  return lines.flatMap(l => doc.splitTextToSize(l, CONTENT_W - 8))
+}
+
+const addressBoxHeight = (lineCount) => 3.5 + Math.max(1, lineCount) * 3.5
+
+const calculateDocumentFooterHeight = (company, docData = null, doc = null) => {
   const snap = docData?.bank_snapshot || docData?.totals?.bank_snapshot
   const hasSnap = snap && (snap.ac_name || snap.ac_no || snap.bank || snap.branch || snap.ifsc)
 
@@ -1611,11 +1651,12 @@ const calculateDocumentFooterHeight = (company, docData = null) => {
   }
   const bankH = bankLinesCount > 0 ? (4.5 + bankLinesCount * 3.2 + 2.0) : 0
   const rightH = bankH + 25.0
-  return rightH + 4.5 + 12.0
+  // note line (4.5) + gap (1.5) + address box
+  return rightH + 4.5 + 1.5 + addressBoxHeight(footerAddressLines(doc, company).length)
 }
 
 const drawDocumentFooterSection = (doc, company, y, pageNum, docData) => {
-  const footerH = calculateDocumentFooterHeight(company, docData)
+  const footerH = calculateDocumentFooterHeight(company, docData, doc)
   
   // Page break check so footer is never cut off
   y = checkPageBreak(doc, y, footerH, pageNum, docData, company)
@@ -1700,45 +1741,13 @@ const drawDocumentFooterSection = (doc, company, y, pageNum, docData) => {
   // ---------------------------------------------------------
   // BOTTOM ADDRESS BOX (Full Width Bordered Box)
   // ---------------------------------------------------------
-  const cityStr = cleanVal(company.city)
-  const pinStr = cleanVal(company.pincode)
-  let cityPinComp = cityStr
-  if (pinStr && !cityStr.includes(pinStr)) {
-    cityPinComp = cityStr ? `${cityStr} ${pinStr}` : pinStr
-  }
-
-  const addrComp = [
-    cleanVal(company.address),
-    cleanVal(company.address_line2),
-    cityPinComp,
-    cleanVal(company.state_name) && !cityStr.includes(cleanVal(company.state_name)) ? cleanVal(company.state_name) : ''
-  ].filter(Boolean)
-
-  const fullAddrStr = addrComp.join(', ')
-  const emailStr = cleanVal(company.email)
-  const websiteStr = cleanVal(company.website)
-  const mapsStr = cleanVal(company.google_maps || company.map_link)
-
-  const addrBoxLines = []
-  if (fullAddrStr) {
-    addrBoxLines.push(`Factory outlet & Reg. Sales Off: ${fullAddrStr}`)
-  }
-  
-  const contactParts = []
-  if (emailStr) contactParts.push(`email: ${emailStr}`)
-  if (websiteStr) contactParts.push(`website: ${websiteStr}`)
-  if (mapsStr) contactParts.push(`google maps: ${mapsStr}`)
-  if (contactParts.length > 0) {
-    addrBoxLines.push(contactParts.join('   |   '))
-  }
-
-  const lineCount = addrBoxLines.length || 1
-  const addrBoxH = 3.5 + lineCount * 3.5
+  const addrBoxLines = footerAddressLines(doc, company)
+  const addrBoxH = addressBoxHeight(addrBoxLines.length)
 
   drawCard(doc, MARGIN.l, noteY, CONTENT_W, addrBoxH, C.summaryBg, C.border, 1.5)
 
   let aby = noteY + 3.8
-  setFont(doc, 6.5, 'bold', C.textMid)
+  setFont(doc, ADDRESS_BOX_FONT[0], ADDRESS_BOX_FONT[1], C.textMid)
   addrBoxLines.forEach(aline => {
     drawText(doc, aline, MARGIN.l + 4, aby)
     aby += 3.5
@@ -2240,7 +2249,7 @@ export const generateQuotationPDF = async (quotation, { save = true } = {}) => {
     ].filter(Boolean)
 
     const summaryHeight = calculateSummaryHeight(totalsRows)
-    const footerSectionH = calculateDocumentFooterHeight(company, quotation)
+    const footerSectionH = calculateDocumentFooterHeight(company, quotation, doc)
     
     // Break for the summary block only — it is much shorter than the terms
     // section, so checking them together needlessly pushed BOTH to a new
@@ -2695,7 +2704,7 @@ export const generateSOPDF = async (so, { save = true } = {}) => {
     ].filter(Boolean)
 
     const summaryHeight = calculateSummaryHeight(totalsRows)
-    const footerSectionH = calculateDocumentFooterHeight(company, so)
+    const footerSectionH = calculateDocumentFooterHeight(company, so, doc)
     
     y = checkPageBreak(doc, y, summaryHeight, pageNum, so, company)
     y = drawFinalSummaryBlock(doc, totalsRows, toWords(Math.round(grand)), { payment_terms: so.payment_terms, hsn_summary: hsnSummary }, y) + SP_16

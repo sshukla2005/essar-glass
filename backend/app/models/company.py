@@ -40,6 +40,9 @@ class Company(Base, TimestampMixin, SoftDeleteMixin):
     # ── Per-company document terms (stored as plain text, no HTML) ────────────
     terms_conditions = Column(Text, nullable=True)
     warranty_terms   = Column(Text, nullable=True)
+    # Bottom address box on quotation/SO PDFs, printed line by line as written.
+    # Empty = build it from the address/email fields above.
+    pdf_footer_text  = Column(Text, nullable=True)
 
     # ── WhatsApp sending (per company; blank fields fall back to WHATSAPP_* in .env) ──
     # Not to be confused with `whatsapp` above, which is the display phone number.
