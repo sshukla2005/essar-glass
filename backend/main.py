@@ -172,6 +172,7 @@ from app.routers.auth import router as auth_router
 from app.routers.settings import router as settings_router
 from app.routers.super import router as super_router
 from app.routers.reports import router as reports_router
+from app.routers.hsn_mappings import router as hsn_mappings_router
 from app.routers.inter_company import router as inter_company_router
 from app.routers.payments import router as payments_router
 from app.routers.delivery_notes import router as delivery_notes_router
@@ -191,6 +192,9 @@ app.include_router(super_router, prefix=f"{PREFIX}")
 
 # Reports
 app.include_router(reports_router)
+
+# HSN mapping (superadmin admin + lookup)
+app.include_router(hsn_mappings_router)
 
 # Inter-Company
 app.include_router(inter_company_router, prefix=f"{PREFIX}")

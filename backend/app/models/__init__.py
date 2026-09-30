@@ -3,6 +3,7 @@ from app.models.user       import User
 from app.models.customer   import Customer
 from app.models.vendor     import Vendor
 from app.models.product    import Product
+from app.models.hsn_mapping import HsnMapping
 from app.models.employee   import Employee
 from app.models.crm        import CRMStage, CRMLead
 from app.models.quotation  import Quotation

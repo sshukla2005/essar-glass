@@ -72,6 +72,7 @@ const menuItems = [
     { key: '/settings/tax-groups', label: 'Tax Groups' },
     { key: '/masters/taxes', label: 'Taxes' },
     { key: '/masters/hsn-codes', label: 'HSN/SAC' },
+    { key: '/settings/hsn-mapping', label: 'HSN Mapping' },
     { key: '/settings/uom-categories', label: 'UoM Categories' },
     { key: '/masters/uoms', label: 'Units of Measure' },
     { key: '/settings/process-masters', label: 'Process Masters', icon: <ToolOutlined /> },
@@ -131,6 +132,7 @@ const AppLayout = () => {
 
         const validChildren = item.children.filter(child => {
           if (child.key === '/reports/sales-performance' && !canSeeSalesPerformance) return false
+          if (child.key === '/settings/hsn-mapping' && user?.role !== 'superadmin') return false
           const modKey = routeToModuleMap[child.key]
           if (!modKey) return true
           return hasPermission(modKey)
