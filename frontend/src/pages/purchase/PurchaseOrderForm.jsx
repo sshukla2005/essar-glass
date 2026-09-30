@@ -608,6 +608,20 @@ const PurchaseOrderForm = () => {
       )
     },
     {
+      title: 'Qty',
+      width: 90,
+      dataIndex: 'quantity',
+      render: (v, row) => (
+        <InputNumber
+          size="small"
+          value={v}
+          min={1}
+          style={{ width: '100%', borderRadius: 6 }}
+          onChange={val => updateGlassSize(group.key, row.key, 'quantity', val)}
+        />
+      )
+    },
+    {
       title: 'Sqft',
       width: 130,
       dataIndex: 'sqft',
@@ -632,20 +646,6 @@ const PurchaseOrderForm = () => {
             </Tooltip>
           )}
         </div>
-      )
-    },
-    {
-      title: 'Qty',
-      width: 90,
-      dataIndex: 'quantity',
-      render: (v, row) => (
-        <InputNumber
-          size="small"
-          value={v}
-          min={1}
-          style={{ width: '100%', borderRadius: 6 }}
-          onChange={val => updateGlassSize(group.key, row.key, 'quantity', val)}
-        />
       )
     },
     {
