@@ -57,7 +57,6 @@ export const MODULES = [
   { key: 'currencies',       label: 'Currencies',          section: 'settings',  route: '/settings/currencies' },
   { key: 'tax_groups',       label: 'Tax Groups',          section: 'settings',  route: '/settings/tax-groups' },
   { key: 'taxes',            label: 'Taxes',               section: 'settings',  route: '/masters/taxes' },
-  { key: 'hsn_codes',        label: 'HSN/SAC Codes',       section: 'settings',  route: '/masters/hsn-codes' },
   { key: 'uom_categories',   label: 'UoM Categories',      section: 'settings',  route: '/settings/uom-categories' },
   { key: 'uoms',             label: 'Units of Measure',    section: 'settings',  route: '/masters/uoms' },
   { key: 'process_masters',  label: 'Process Masters',     section: 'settings',  route: '/settings/process-masters' },

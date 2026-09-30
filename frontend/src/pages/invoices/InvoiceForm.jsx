@@ -14,12 +14,13 @@ import dayjs from 'dayjs'
 import MasterForm from '../../components/common/MasterForm'
 import {
   invoiceApi, customerApi, productApi,
-  salesOrderApi, deliveryChallanApi, paymentApi
+  salesOrderApi, deliveryChallanApi, paymentApi, hsnMappingApi
 } from '../../api'
 import CompanySelector from '../../components/common/CompanySelector'
 import { settingsApi } from '../../api/settingsApi'
 import RecordPaymentModal from './RecordPaymentModal'
 import { notBefore } from '../../utils/dateRules'
+import { resolveHsnFor } from '../../utils/hsnResolver'
 import { useAuth } from '../../hooks/useAuth'
 
 const { TextArea } = Input
@@ -194,6 +195,10 @@ const InvoiceForm = () => {
 
       const newLines = []
 
+      // HS codes for all glass groups/lines of this SO, resolved in one request
+      const glassSources = so.groups?.length ? so.groups : (so.lines || [])
+      const hsnFor = await resolveHsnFor(glassSources, hsnMappingApi.resolveBatch)
+
       // ── Glass groups → one line per group ──────────────────
       if (so.groups?.length) {
         so.groups.forEach(group => {
@@ -201,9 +206,8 @@ const InvoiceForm = () => {
           const totalAmount = (group.sizes || []).reduce((s, sz) => s + (sz.subtotal  || 0), 0)
           const totalSqft   = (group.sizes || []).reduce((s, sz) => s + (sz.total_sqft || 0), 0)
 
-          // Get HSN from product master
-          const prod   = products.find(p => p.id === group.product_id)
-          const hsn    = prod?.hsn_code || '7007'
+          // Product's own HSN if set, else the HSN mapping for its glass type/category
+          const hsn    = hsnFor(group) || ''
 
           newLines.push({
             key:         Date.now() + Math.random(),
@@ -225,7 +229,7 @@ const InvoiceForm = () => {
             grouped.set(key, {
               product_id:  line.product_id,
               description: line.description || '',
-              hsn_code:    products.find(p => p.id === line.product_id)?.hsn_code || '7007',
+              hsn_code:    hsnFor(line) || '',
               quantity:    0,
               unit_price:  line.rate || line.unit_price || 0,
               amount:      0,
@@ -293,7 +297,8 @@ const InvoiceForm = () => {
             key:         Date.now() + Math.random(),
             product_id:  null,
             description: 'Process Charges (Cutting / Holes / Farma etc.)',
-            hsn_code:    '7007',
+            // Processing is billed with the glass it was done on: first glass group's code
+            hsn_code:    hsnFor(glassSources[0]) || '',
             quantity:    1,
             unit:        'job',
             unit_price:  parseFloat(procTotal.toFixed(2)),
@@ -357,6 +362,18 @@ const InvoiceForm = () => {
   }, [lines, gstMode, discountAmt, dcCharges, isEdit, record])
 
   // ── Update line ────────────────────────────────────────────
+  // Product without its own HSN: fill the line from the HSN mapping, unless the user
+  // has typed a code or picked another product meanwhile
+  const resolveLineHsn = async (key, prod) => {
+    const item = { product_id: prod.id, glass_type: prod.glass_type, glass_category: prod.glass_category }
+    const codeFor = await resolveHsnFor([item], hsnMappingApi.resolveBatch)
+    const code = codeFor(item)
+    if (!code) return
+    setLines(prev => prev.map(l =>
+      l.key === key && l.product_id === prod.id && !(l.hsn_code || '').trim() ? { ...l, hsn_code: code } : l
+    ))
+  }
+
   const updateLine = (key, field, value) => {
     setLines(prev => prev.map(l => {
       if (l.key !== key) return l
@@ -384,6 +401,11 @@ const InvoiceForm = () => {
 
       return updated
     }))
+
+    if (field === 'product_id') {
+      const prod = products.find(p => p.id === value)
+      if (prod && !(prod.hsn_code || '').trim()) resolveLineHsn(key, prod)
+    }
   }
 
   // ── Save ───────────────────────────────────────────────────
@@ -538,7 +560,7 @@ const InvoiceForm = () => {
         <Input
           size="small"
           value={v}
-          placeholder="7007"
+          placeholder="HSN/SAC"
           style={{ width: '100%' }}
           onChange={e => updateLine(row.key, 'hsn_code', e.target.value)}
         />

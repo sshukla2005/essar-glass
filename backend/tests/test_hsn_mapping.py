@@ -231,3 +231,61 @@ def test_resolve_endpoint(db):
     assert res.json()["hs_code"] == "70080010"
     res = client.get("/api/v1/hsn-mappings/resolve", params={"glass_type": "Nope"}, headers=h)
     assert res.json()["hs_code"] == DEFAULT_HS_CODE
+
+
+# ── Batch resolve (used by the PDFs and invoice lines) ─────────────────────
+
+@pytest.fixture
+def products(db, company_id):
+    """Two temporary glass products: one with its own hsn_code, one without."""
+    tag = uuid.uuid4().hex[:6]
+    own = Product(internal_ref=f"T{tag}A", name=f"HSN test own {tag}", glass_type="Toughened",
+                  glass_category="Clear", hsn_code="7007", company_id=company_id)
+    auto = Product(internal_ref=f"T{tag}B", name=f"HSN test auto {tag}", glass_type=" annealed ",
+                   glass_category="MIRROR", hsn_code="  ", company_id=company_id)
+    db.add_all([own, auto])
+    db.commit()
+    yield {"own": own, "auto": auto}
+    db.query(Product).filter(Product.id.in_([own.id, auto.id])).delete(synchronize_session=False)
+    db.commit()
+
+
+def _batch(headers, items):
+    res = client.post("/api/v1/hsn-mappings/resolve-batch", json={"items": items}, headers=headers)
+    assert res.status_code == 200, res.text
+    return res.json()["codes"]
+
+
+def test_batch_product_own_hsn_code_wins(db, products):
+    h = _headers(db, "sales")
+    # Even when the document line says another type, the product's own code is used
+    assert _batch(h, [{"product_id": products["own"].id, "glass_type": "DGU"}]) == ["7007"]
+
+
+def test_batch_product_without_own_code_uses_mapping(db, products):
+    h = _headers(db, "sales")
+    assert _batch(h, [{"product_id": products["auto"].id}]) == ["70099100"]
+
+
+def test_batch_document_type_and_category_override_product_fields(db, products):
+    h = _headers(db, "sales")
+    assert _batch(h, [{"product_id": products["auto"].id, "glass_type": "Toughened", "glass_category": "Clear"}]) == ["70071900"]
+
+
+def test_batch_default_when_nothing_matches(db):
+    h = _headers(db, "sales")
+    assert _batch(h, [{"glass_type": "Unobtanium"}, {}, {"product_id": 999999999}]) == [DEFAULT_HS_CODE] * 3
+
+
+def test_batch_keeps_order_for_a_twenty_line_document(db):
+    h = _headers(db, "sales")
+    kinds = [("Annealed", "Clear", "70052990"), (" toughened ", None, "70071900"),
+             ("DGU", "Clear", "70080010"), ("Annealed", "xtra clear", "70052990"), ("Nope", None, DEFAULT_HS_CODE)]
+    items = [{"glass_type": t, "glass_category": c} for t, c, _ in kinds] * 4
+    assert _batch(h, items) == [code for _, _, code in kinds] * 4
+
+
+def test_batch_rejects_oversized_requests(db):
+    h = _headers(db, "sales")
+    res = client.post("/api/v1/hsn-mappings/resolve-batch", json={"items": [{}] * 501}, headers=h)
+    assert res.status_code == 400

@@ -4,9 +4,10 @@ GET    /api/v1/hsn-mappings              list rows (all companies and global)
 POST   /api/v1/hsn-mappings              add a row
 PATCH  /api/v1/hsn-mappings/{id}         change hs_code and/or is_active
 GET    /api/v1/hsn-mappings/resolve      HS code for a product or a type/category (any user)
+POST   /api/v1/hsn-mappings/resolve-batch  HS codes for many items in one request (any user)
 """
 import re
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -37,6 +38,16 @@ class HsnMappingCreate(BaseModel):
     glass_type: str
     glass_category: Optional[str] = None
     hs_code: str
+
+
+class ResolveItem(BaseModel):
+    product_id: Optional[int] = None
+    glass_type: Optional[str] = None
+    glass_category: Optional[str] = None
+
+
+class ResolveBatch(BaseModel):
+    items: List[ResolveItem]
 
 
 class HsnMappingUpdate(BaseModel):
@@ -99,6 +110,42 @@ def resolve(
     else:
         code = resolve_hs_code(db, company_id=cid, glass_type=glass_type, glass_category=glass_category)
     return {"hs_code": code, "default": DEFAULT_HS_CODE}
+
+
+MAX_BATCH = 500
+
+
+@router.post("/resolve-batch")
+def resolve_batch(
+    data: ResolveBatch,
+    db:   Session = Depends(get_db),
+    user = Depends(get_current_user),
+):
+    """Codes in the same order as `items`. A product's own hsn_code wins; otherwise the
+    item's glass type/category are used, falling back to the product's. Unknown or
+    other-company products resolve from the item's type/category alone."""
+    if len(data.items) > MAX_BATCH:
+        raise HTTPException(status_code=400, detail=f"At most {MAX_BATCH} items per request")
+    cid = user.active_company_id
+    ids = {i.product_id for i in data.items if i.product_id}
+    products = {}
+    if ids:
+        q = apply_company_filter(db.query(Product).filter(Product.id.in_(ids)), Product, cid)
+        products = {p.id: p for p in q.all()}
+
+    cache = {}
+    codes = []
+    for item in data.items:
+        product = products.get(item.product_id)
+        glass_type = item.glass_type if normalize(item.glass_type) else (product.glass_type if product else None)
+        glass_category = item.glass_category if normalize(item.glass_category) else (product.glass_category if product else None)
+        own = product.hsn_code if product else None
+        key = ((own or "").strip(), normalize(glass_type), normalize(glass_category))
+        if key not in cache:
+            cache[key] = resolve_hs_code(db, company_id=cid, glass_type=glass_type,
+                                         glass_category=glass_category, product_hsn_code=own)
+        codes.append(cache[key])
+    return {"codes": codes, "default": DEFAULT_HS_CODE}
 
 
 @router.get("")

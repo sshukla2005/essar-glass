@@ -253,7 +253,9 @@ const App = () => {
             <Route path="masters/taxes/new"       element={<ProtectedRoute module="taxes"><TaxForm /></ProtectedRoute>} />
             <Route path="masters/taxes/:id/edit"  element={<ProtectedRoute module="taxes"><TaxForm /></ProtectedRoute>} />
 
-            {/* ── Masters: HSN / SAC Codes ────────────────────────────── */}
+            {/* ── Masters: HSN / SAC Codes ──────────────────────────────
+                 Browser-only list, no longer in the menu (HS codes come from Settings > HSN Mapping).
+                 Routes kept so old links still open. */}
             <Route path="masters/hsn-codes"           element={<ProtectedRoute module="hsn_codes"><HsnList /></ProtectedRoute>} />
             <Route path="masters/hsn-codes/new"       element={<ProtectedRoute module="hsn_codes"><HsnForm /></ProtectedRoute>} />
             <Route path="masters/hsn-codes/:id/edit"  element={<ProtectedRoute module="hsn_codes"><HsnForm /></ProtectedRoute>} />

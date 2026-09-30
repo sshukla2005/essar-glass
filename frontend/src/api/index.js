@@ -221,6 +221,8 @@ export const hsnMappingApi = {
   create: (data) => api.post('/api/v1/hsn-mappings', data),
   update: (id, data) => api.patch(`/api/v1/hsn-mappings/${id}`, data),
   resolve: (params) => api.get('/api/v1/hsn-mappings/resolve', { params }),
+  // items: [{ product_id, glass_type, glass_category }] -> { codes: [...] } in the same order
+  resolveBatch: (items) => api.post('/api/v1/hsn-mappings/resolve-batch', { items }).then(r => r.data),
 }
 
 // ── SuperAdmin Dashboard ───────────────────────────

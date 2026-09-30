@@ -71,7 +71,6 @@ const menuItems = [
     { key: '/settings/currencies', label: 'Currencies' },
     { key: '/settings/tax-groups', label: 'Tax Groups' },
     { key: '/masters/taxes', label: 'Taxes' },
-    { key: '/masters/hsn-codes', label: 'HSN/SAC' },
     { key: '/settings/hsn-mapping', label: 'HSN Mapping' },
     { key: '/settings/uom-categories', label: 'UoM Categories' },
     { key: '/masters/uoms', label: 'Units of Measure' },
