@@ -6,15 +6,11 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import MasterForm from '../../../components/common/MasterForm'
 import { productApi, uomApi, taxApi, hsnMappingApi } from '../../../api'
 import CompanySelector from '../../../components/common/CompanySelector'
+import { glassTypeOptions } from '../../../utils/glassTypes'
 
 const { TextArea } = Input
 
-const GLASS_TYPES = [
-  { value: 'Annealed', label: 'Annealed' },
-  { value: 'Toughened', label: 'Toughened' },
-  { value: 'Laminated', label: 'Laminated' },
-  { value: 'DGU', label: 'DGU' },
-]
+const GLASS_TYPES = glassTypeOptions()
 
 const GLASS_CATEGORIES = ['Clear', 'Xtra Clear', 'Tinted', 'Reflective', 'Mirror']
 const GLASS_THICKNESSES = [3.5, 4, 5, 6, 8, 10, 12]
