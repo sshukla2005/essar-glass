@@ -264,12 +264,14 @@ const Dashboard = () => {
       .reduce((sum, i) => sum + (i.total_amount || 0), 0)
 
     const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+    // Sales trend: committed Sales Orders (same statuses as totalRevenue) by order date
+    const committedSOs = salesOrders.filter(s => committedSOStatuses.includes(s.status))
     const chartData = months.map((name, idx) => {
-      const monthQuotes = quotations.filter(q => {
-        const d = new Date(q.created_at || q.quote_date)
+      const monthSOs = committedSOs.filter(s => {
+        const d = new Date(s.order_date || s.created_at)
         return !isNaN(d) && d.getMonth() === idx
       })
-      return { name, quotations: monthQuotes.reduce((s, q) => s + (q.total_amount || 0), 0) }
+      return { name, sales: monthSOs.reduce((sum, s) => sum + (s.total_amount || 0), 0) }
     })
 
     const recentSOs = [...salesOrders]
@@ -322,6 +324,7 @@ const Dashboard = () => {
       dispatchReady, awaitingDispatch,
       totalRevenue, pendingRevenue,
       chartData,
+      hasCommittedSOs: committedSOs.length > 0,
       recentSOs,
       recentInvoices,
       totalCustomers: customersData?.total || customers.length,
@@ -445,8 +448,8 @@ const Dashboard = () => {
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
               <div>
-                <Title level={4} style={{ margin: 0, fontWeight: 700 }}>Quotations Trend</Title>
-                <Text type="secondary" style={{ fontSize: 13 }}>Monthly revenue from quotations</Text>
+                <Title level={4} style={{ margin: 0, fontWeight: 700 }}>Sales Trend</Title>
+                <Text type="secondary" style={{ fontSize: 13 }}>Monthly value of confirmed Sales Orders</Text>
               </div>
               <Radio.Group value={timeRange} onChange={(e) => setTimeRange(e.target.value)} size="small">
                 <Radio.Button value="yearly">Yearly</Radio.Button>
@@ -465,14 +468,14 @@ const Dashboard = () => {
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
                   <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 11 }} />
                   <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11 }} tickFormatter={v => v > 0 ? `₹${(v/1000).toFixed(0)}k` : '₹0'} />
-                  <Tooltip formatter={(val) => [`₹${Number(val).toLocaleString('en-IN')}`, 'Revenue']} />
-                  <Area type="monotone" dataKey="quotations" stroke="#10b981" strokeWidth={2} fill="url(#colorQ)" />
+                  <Tooltip formatter={(val) => [`₹${Number(val).toLocaleString('en-IN')}`, 'Sales']} />
+                  <Area type="monotone" dataKey="sales" stroke="#10b981" strokeWidth={2} fill="url(#colorQ)" />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
-            {stats.totalQuotes === 0 && (
+            {!stats.hasCommittedSOs && (
               <div style={{ textAlign: 'center', color: '#94a3b8', marginTop: 8 }}>
-                <Text type="secondary">Create quotations to see trend data</Text>
+                <Text type="secondary">Confirm Sales Orders to see trend data</Text>
               </div>
             )}
           </Card>
