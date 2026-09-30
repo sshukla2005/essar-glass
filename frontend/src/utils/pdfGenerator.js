@@ -950,6 +950,20 @@ const buildCols = (hasCep, unitMode = 'inch') => {
   return cols
 }
 
+// Purchase Orders list Sqft before Qty; quotation and SO keep Qty first
+const buildPOCols = (unitMode = 'inch') => {
+  const base = getColsConfig(false, unitMode)
+  const qi = base.findIndex(c => c.id === 'qty')
+  const si = base.findIndex(c => c.id === 'sqft')
+  ;[base[qi], base[si]] = [base[si], base[qi]]
+  let x = MARGIN.l
+  return base.map(c => {
+    const res = { ...c, x }
+    x += c.w
+    return res
+  })
+}
+
 const drawTableHeader = (doc, cols, y) => {
   const rowH = 11 // total height
   const halfH = 5.5
@@ -2755,14 +2769,15 @@ const drawPOItemsCard = (doc, lines, cols, startY, pageNum, po, company) => {
       ? String(line.description || line.remarks || line.product_name || (line.item_type ? (line.item_type.charAt(0).toUpperCase() + line.item_type.slice(1)) : '')).trim()
       : ''
     
+    // Same order as buildPOCols: Sqft, then Qty
     const vals = isNonGlass ? [
       String(i + 1),
       desc,
       '',
       '',
       '',
-      String(qty),
       area > 0 ? area.toFixed(3) : '',
+      String(qty),
       fmtN(rate),
       fmtN(amt)
     ] : [
@@ -2771,8 +2786,8 @@ const drawPOItemsCard = (doc, lines, cols, startY, pageNum, po, company) => {
       h > 0 ? fmtDim(h, unitMode) : '',
       chargedW > 0 ? fmtDim(chargedW, unitMode) : '',
       chargedH > 0 ? fmtDim(chargedH, unitMode) : '',
-      String(qty),
       area.toFixed(3),
+      String(qty),
       fmtN(rate),
       fmtN(amt)
     ]
@@ -2827,7 +2842,7 @@ export const generatePOPDF = async (po) => {
     }
 
     const unitMode = po?.unit_mode || 'inch'
-    const cols = buildCols(false, unitMode)
+    const cols = buildPOCols(unitMode)
     let pageNum = { val: 1, total: '?' }
 
     drawBorder(doc)
