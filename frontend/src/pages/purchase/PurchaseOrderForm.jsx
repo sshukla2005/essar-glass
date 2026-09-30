@@ -16,7 +16,8 @@ import {
   Typography,
   Collapse,
   Modal,
-  Radio
+  Radio,
+  Tooltip
 } from 'antd'
 import {
   PlusOutlined,
@@ -26,7 +27,8 @@ import {
   InboxOutlined,
   DownloadOutlined,
   ShoppingCartOutlined,
-  BuildOutlined
+  BuildOutlined,
+  ReloadOutlined
 } from '@ant-design/icons'
 import { useNavigate, useParams, useLocation, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -37,67 +39,18 @@ import { generatePOPDF } from '../../utils/pdfGenerator'
 import CompanySelector from '../../components/common/CompanySelector'
 import FractionInput from '../quotations/components/FractionInput'
 import { notBefore } from '../../utils/dateRules'
+import {
+  applyGlassSizeEdit, clearSqftOverride, applyOtherItemEdit, poGlassAmount,
+  glassSizeFromSource, createEmptyGlassSize, createEmptyGlassGroup, groupFlatGlassLines,
+} from '../../utils/poGlassCalc'
 
 const { Text } = Typography
 
 const STATUS_STEPS = ['draft', 'sent', 'confirmed', 'received']
 const STATUS_IDX = { draft: 0, sent: 1, confirmed: 2, received: 3, cancelled: 0 }
 
-const createEmptyGlassSize = () => ({
-  key: Date.now() + Math.random(),
-  width_inch: 0,
-  height_inch: 0,
-  sqft: 0,
-  quantity: 1,
-  unit_price: 0,
-  remarks: '',
-  subtotal: 0,
-})
-
-const createEmptyGlassGroup = (description = '', product_id = null) => ({
-  key: Date.now() + Math.random(),
-  description,
-  product_id,
-  sizes: [createEmptyGlassSize()],
-})
-
-const groupFlatGlassLines = (lines) => {
-  if (!lines || lines.length === 0) return [createEmptyGlassGroup()]
-
-  const groupsMap = new Map()
-  lines.forEach((l, idx) => {
-    const descKey = (l.description || '').trim()
-    if (!groupsMap.has(descKey)) {
-      groupsMap.set(descKey, {
-        key: Date.now() + idx + Math.random(),
-        description: l.description || '',
-        product_id: l.product_id || null,
-        sizes: []
-      })
-    }
-    const group = groupsMap.get(descKey)
-    if (!group.product_id && l.product_id) {
-      group.product_id = l.product_id
-    }
-    const qty = l.quantity || 1
-    const sqft = l.sqft ?? 0
-    const price = l.unit_price || 0
-    const baseQty = sqft > 0 ? sqft : qty
-    const sub = l.subtotal || parseFloat((baseQty * price).toFixed(2))
-    group.sizes.push({
-      key: l.id || l.key || (Date.now() + idx + Math.random()),
-      width_inch: l.width_inch ?? (l.width_mm ? parseFloat((l.width_mm / 25.4).toFixed(4)) : 0),
-      height_inch: l.height_inch ?? (l.height_mm ? parseFloat((l.height_mm / 25.4).toFixed(4)) : 0),
-      sqft: sqft,
-      quantity: qty,
-      unit_price: price,
-      remarks: l.remarks || '',
-      subtotal: sub,
-    })
-  })
-
-  return Array.from(groupsMap.values())
-}
+// New PO rows from a Sales Order / Workshop Order line: inherited Sqft, not overridden
+const sourceGlassSize = (line, key) => glassSizeFromSource({ ...line, key })
 
 const PurchaseOrderForm = () => {
   const { message } = App.useApp()
@@ -149,7 +102,7 @@ const PurchaseOrderForm = () => {
           remarks: '',
           item_type: 'glass',
         }))
-        setGlassGroups(groupFlatGlassLines(flatGlassLines))
+        setGlassGroups(groupFlatGlassLines(flatGlassLines, sourceGlassSize))
         if (location.state.vendor_name) {
           const matchedVendor = vendorList.find(v => v.name.toLowerCase() === location.state.vendor_name.toLowerCase())
           if (matchedVendor) {
@@ -175,28 +128,21 @@ const PurchaseOrderForm = () => {
                 description: group.description || '',
                 product_id: group.product_id || null,
                 sizes: (group.sizes || []).map((size, si) => {
-                  const qty = size.quantity || 1
                   // COST side — a PO is what we pay the vendor, never the selling rate
                   const sqft = size.cost_charged_sqft ?? size.charged_sqft ?? size.total_sqft ?? 0
                   const glassCost = size.glass_cost ?? 0
                   const price = (glassCost > 0 && sqft > 0)
                     ? parseFloat((glassCost / sqft).toFixed(2))
                     : (group.manual_cost_price ?? 0)
-                  const baseQty = sqft > 0 ? sqft : qty
-                  const subtotal = glassCost > 0
-                    ? glassCost
-                    : parseFloat((baseQty * price).toFixed(2))
-                  return {
+                  return glassSizeFromSource({
                     key: Date.now() + gi + si + Math.random(),
                     // ACTUAL dimensions, not the charged/ceiling ones
                     width_inch: size.width_inch ?? 0,
                     height_inch: size.height_inch ?? 0,
                     sqft,
-                    quantity: qty,
+                    quantity: size.quantity || 1,
                     unit_price: price,
-                    remarks: '',
-                    subtotal,
-                  }
+                  })
                 })
               }))
             } else if (so.lines?.length) {
@@ -213,11 +159,10 @@ const PurchaseOrderForm = () => {
                   const gc = line.glass_cost ?? 0
                   return (gc > 0 && cs > 0) ? parseFloat((gc / cs).toFixed(2)) : 0
                 })(),
-                subtotal: line.glass_cost ?? 0,
                 remarks: '',
                 item_type: 'glass',
               }))
-              groups = groupFlatGlassLines(flatGlassLines)
+              groups = groupFlatGlassLines(flatGlassLines, sourceGlassSize)
             }
 
             if (groups.length === 0) {
@@ -282,8 +227,10 @@ const PurchaseOrderForm = () => {
             width_inch: line.width_inch ?? (line.width_mm ? parseFloat((line.width_mm / 25.4).toFixed(4)) : 0),
             height_inch: line.height_inch ?? (line.height_mm ? parseFloat((line.height_mm / 25.4).toFixed(4)) : 0),
             sqft: line.sqft || 0,
+            sqft_manual: line.sqft_manual,
             quantity: line.quantity || 1,
             unit_price: line.unit_price || 0,
+            // Stored amount, shown as-is: opening a PO never reprices it
             subtotal: line.subtotal || 0,
             remarks: line.remarks || '',
             item_type: line.item_type || 'glass',
@@ -318,6 +265,7 @@ const PurchaseOrderForm = () => {
         width_inch: s.width_inch || 0,
         height_inch: s.height_inch || 0,
         sqft: s.sqft || 0,
+        sqft_manual: Boolean(s.sqft_manual),
         quantity: s.quantity || 1,
         unit_price: s.unit_price || 0,
         subtotal: s.subtotal || 0,
@@ -495,11 +443,8 @@ const PurchaseOrderForm = () => {
         if (prod) {
           updatedGroup.description = prod.name
           if (prod.cost_price != null) {
-            updatedGroup.sizes = updatedGroup.sizes.map(s => {
-              const unit_price = prod.cost_price || s.unit_price || 0
-              const subtotal = parseFloat(((s.quantity || 1) * unit_price).toFixed(2))
-              return { ...s, unit_price, subtotal }
-            })
+            updatedGroup.sizes = updatedGroup.sizes.map(s =>
+              applyGlassSizeEdit(s, 'unit_price', prod.cost_price || s.unit_price || 0))
           }
         }
       }
@@ -527,17 +472,16 @@ const PurchaseOrderForm = () => {
       if (g.key !== groupKey) return g
       return {
         ...g,
-        sizes: g.sizes.map(s => {
-          if (s.key !== sizeKey) return s
-          const updated = { ...s, [field]: value }
-          if (field === 'quantity' || field === 'unit_price') {
-            const qty = field === 'quantity' ? (value || 1) : (updated.quantity || 1)
-            const price = field === 'unit_price' ? (value || 0) : (updated.unit_price || 0)
-            updated.subtotal = parseFloat((qty * price).toFixed(2))
-          }
-          return updated
-        })
+        // Sqft from W/H/Qty unless typed; Amount = Sqft x unit cost (utils/poGlassCalc.js)
+        sizes: g.sizes.map(s => s.key === sizeKey ? applyGlassSizeEdit(s, field, value) : s)
       }
+    }))
+  }
+
+  const recalcGlassSize = (groupKey, sizeKey) => {
+    setGlassGroups(prev => prev.map(g => g.key !== groupKey ? g : {
+      ...g,
+      sizes: g.sizes.map(s => s.key === sizeKey ? clearSqftOverride(s) : s)
     }))
   }
 
@@ -558,16 +502,7 @@ const PurchaseOrderForm = () => {
   }
 
   const updateHardwareItem = (key, field, value) => {
-    setHardwareItems(prev => prev.map(h => {
-      if (h.key !== key) return h
-      const updated = { ...h, [field]: value }
-      if (field === 'quantity' || field === 'unit_price') {
-        const qty = field === 'quantity' ? (value || 1) : (updated.quantity || 1)
-        const price = field === 'unit_price' ? (value || 0) : (updated.unit_price || 0)
-        updated.subtotal = parseFloat((qty * price).toFixed(2))
-      }
-      return updated
-    }))
+    setHardwareItems(prev => prev.map(h => h.key === key ? applyOtherItemEdit(h, field, value) : h))
   }
 
   // State handlers for Labour
@@ -587,16 +522,7 @@ const PurchaseOrderForm = () => {
   }
 
   const updateLaborItem = (key, field, value) => {
-    setLaborItems(prev => prev.map(l => {
-      if (l.key !== key) return l
-      const updated = { ...l, [field]: value }
-      if (field === 'quantity' || field === 'unit_price') {
-        const qty = field === 'quantity' ? (value || 1) : (updated.quantity || 1)
-        const price = field === 'unit_price' ? (value || 0) : (updated.unit_price || 0)
-        updated.subtotal = parseFloat((qty * price).toFixed(2))
-      }
-      return updated
-    }))
+    setLaborItems(prev => prev.map(l => l.key === key ? applyOtherItemEdit(l, field, value) : l))
   }
 
   // State handlers for Wastage
@@ -616,16 +542,7 @@ const PurchaseOrderForm = () => {
   }
 
   const updateWastageItem = (key, field, value) => {
-    setWastageItems(prev => prev.map(w => {
-      if (w.key !== key) return w
-      const updated = { ...w, [field]: value }
-      if (field === 'quantity' || field === 'unit_price') {
-        const qty = field === 'quantity' ? (value || 1) : (updated.quantity || 1)
-        const price = field === 'unit_price' ? (value || 0) : (updated.unit_price || 0)
-        updated.subtotal = parseFloat((qty * price).toFixed(2))
-      }
-      return updated
-    }))
+    setWastageItems(prev => prev.map(w => w.key === key ? applyOtherItemEdit(w, field, value) : w))
   }
 
   const status = record?.status || 'draft'
@@ -692,16 +609,29 @@ const PurchaseOrderForm = () => {
     },
     {
       title: 'Sqft',
-      width: 100,
+      width: 130,
       dataIndex: 'sqft',
       render: (v, row) => (
-        <InputNumber
-          size="small"
-          value={v}
-          min={0}
-          style={{ width: '100%', borderRadius: 6 }}
-          onChange={val => updateGlassSize(group.key, row.key, 'sqft', val)}
-        />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <InputNumber
+            size="small"
+            value={v}
+            min={0}
+            style={{ width: '100%', borderRadius: 6, ...(row.sqft_manual ? { borderColor: '#f59e0b' } : {}) }}
+            onChange={val => updateGlassSize(group.key, row.key, 'sqft', val)}
+          />
+          {row.sqft_manual && (
+            <Tooltip title={'Typed by hand: W/H/Qty changes won\'t update it. Click to recalculate from size (3" cost ceiling).'}>
+              <Button
+                size="small"
+                type="text"
+                icon={<ReloadOutlined style={{ color: '#d97706' }} />}
+                aria-label="Recalculate Sqft"
+                onClick={() => recalcGlassSize(group.key, row.key)}
+              />
+            </Tooltip>
+          )}
+        </div>
       )
     },
     {
@@ -748,20 +678,20 @@ const PurchaseOrderForm = () => {
       )
     },
     {
+      // Glass Amount is always Sqft x Unit Cost, so it is shown, not typed
       title: 'Amount',
       dataIndex: 'subtotal',
       width: 130,
       align: 'right',
-      render: (v, row) => (
-        <InputNumber
-          size="small"
-          value={v}
-          min={0}
-          prefix="₹"
-          style={{ width: '100%', borderRadius: 6 }}
-          onChange={val => updateGlassSize(group.key, row.key, 'subtotal', val)}
-        />
-      )
+      render: (v, row) => {
+        const expected = poGlassAmount(row.sqft, row.unit_price)
+        const stale = Math.abs((v || 0) - expected) > 0.005
+        return (
+          <Tooltip title={stale ? `Saved amount. Sqft x Unit Cost = ${fmtCurrency(expected)}; editing this row updates it.` : undefined}>
+            <Text strong style={{ color: stale ? '#d97706' : undefined }}>{fmtCurrency(v)}</Text>
+          </Tooltip>
+        )
+      }
     },
     {
       title: '',
