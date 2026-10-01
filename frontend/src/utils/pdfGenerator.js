@@ -2058,6 +2058,15 @@ const buildArtworkPageHTML = (group, gi, company) => {
   </div></body></html>`
 }
 
+// Round Off for the totals block: the grand total is billed in whole rupees. Forms now send
+// an already-rounded grand total, so the difference is taken from the unrounded tax-inclusive
+// sum when it is close (older records: from the stored grand total itself).
+const pdfRoundOff = (grand, rawSum) => {
+  const billed = Math.round(grand)
+  const base = rawSum > 0 && Math.abs(billed - rawSum) < 1 ? rawSum : grand
+  return parseFloat((billed - base).toFixed(2))
+}
+
 export const generateQuotationPDF = async (quotation, { save = true } = {}) => {
   try {
     const { hardware_items = [], labor_items = [], wastage_items = [] } = quotation
@@ -2230,7 +2239,7 @@ export const generateQuotationPDF = async (quotation, { save = true } = {}) => {
     const sgst = t.sgst || 0
     const igst = t.igst || 0
     const grand = t.grandTotal || quotation.total_amount || (subIII + cgst + sgst + igst)
-    const roundOff = parseFloat((Math.round(grand) - grand).toFixed(2))
+    const roundOff = pdfRoundOff(grand, subIII + cgst + sgst + igst)
     const adv = quotation.advance_received || 0
     const bal = Math.round(grand) - adv
 
@@ -2689,7 +2698,7 @@ export const generateSOPDF = async (so, { save = true } = {}) => {
     }
     
     const grand = t.grandTotal || so.total_amount || (subIII + cgst + sgst + igst)
-    const roundOff = parseFloat((Math.round(grand) - grand).toFixed(2))
+    const roundOff = pdfRoundOff(grand, subIII + cgst + sgst + igst)
     const adv = so.advance_received || 0
     const bal = Math.round(grand) - adv
 
@@ -2911,10 +2920,12 @@ export const generatePOPDF = async (po) => {
       }
     }
 
+    const poRoundOff = pdfRoundOff(grand, subtotal + taxAmt)
     const totalsRows = [
       { label: 'Items Subtotal', value: subtotal },
       ...taxRows,
-      { label: 'GRAND TOTAL', value: grand, grand: true }
+      Math.abs(poRoundOff) > 0.009 ? { label: 'Round Off', value: poRoundOff } : null,
+      { label: 'GRAND TOTAL', value: Math.round(grand), grand: true }
     ].filter(Boolean)
 
     const summaryHeight = calculateSummaryHeight(totalsRows)

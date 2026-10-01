@@ -354,7 +354,10 @@ const PurchaseOrderForm = () => {
     }
 
     tax_amount = parseFloat(tax_amount.toFixed(2))
-    const total_amount = parseFloat((subtotal + tax_amount).toFixed(2))
+    // Whole-rupee total; the difference is shown as Round Off
+    const raw_total = subtotal + tax_amount
+    const total_amount = Math.round(raw_total)
+    const round_off = parseFloat((total_amount - raw_total).toFixed(2))
 
     return {
       glassSubtotal,
@@ -363,6 +366,7 @@ const PurchaseOrderForm = () => {
       wstSubtotal,
       subtotal,
       tax_amount,
+      round_off,
       total_amount,
     }
   }, [glassGroups, hardwareItems, laborItems, wastageItems, productList, gstMode])
@@ -1471,6 +1475,13 @@ const PurchaseOrderForm = () => {
                       </div>
                     )}
                   </div>
+
+                  {Math.abs(totals.round_off || 0) >= 0.01 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 6 }}>
+                      <Text type="secondary">Round Off</Text>
+                      <Text style={{ fontWeight: 500, color: '#334155' }}>{totals.round_off > 0 ? '+' : ''}{fmtCurrency(totals.round_off)}</Text>
+                    </div>
+                  )}
 
                   <div style={{
                     background: '#2563eb',

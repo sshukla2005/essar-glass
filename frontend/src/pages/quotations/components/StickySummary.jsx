@@ -188,6 +188,13 @@ const StickySummary = ({
             </div>
           )}
 
+          {Math.abs(totals.roundOff || 0) >= 0.01 && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 6 }}>
+              <Text type="secondary">Round Off</Text>
+              <Text style={{ fontWeight: 500, color: '#334155' }}>{totals.roundOff > 0 ? '+' : ''}{fmt(totals.roundOff)}</Text>
+            </div>
+          )}
+
           {/* Grand Total Box */}
           <div style={{ 
             background: '#2563eb', // Modern rich blue
