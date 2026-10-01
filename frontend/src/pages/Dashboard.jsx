@@ -811,7 +811,7 @@ const Dashboard = () => {
                 </div>
                 <div>
                   <Title level={4} style={{ margin: 0, fontWeight: 700 }}>Toughening Register</Title>
-                  <Text type="secondary" style={{ fontSize: 13 }}>Confirmed sales orders — glass to be toughened</Text>
+                  <Text type="secondary" style={{ fontSize: 13 }}>Confirmed &amp; in-production sales orders — glass to be toughened</Text>
                 </div>
               </div>
               <Space wrap>
@@ -843,7 +843,7 @@ const Dashboard = () => {
                   }}
                   style={{ width: 120 }}
                 />
-                <Button size="small" onClick={() => navigate('/sales-orders?status=confirmed')}>View Confirmed SOs</Button>
+                <Button size="small" onClick={() => navigate('/sales-orders')}>View Sales Orders</Button>
               </Space>
             </div>
 

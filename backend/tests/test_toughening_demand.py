@@ -17,7 +17,7 @@ from app.services.auth_service import create_access_token, hash_password
 
 client = TestClient(app)
 
-SO_NUMBERS = ["SO-TD-MIX", "SO-TD-DRAFT", "SO-TD-INPROD", "SO-TD-OLD", "SO-TD-INACTIVE",
+SO_NUMBERS = ["SO-TD-TYPEONLY", "SO-TD-MIX", "SO-TD-DRAFT", "SO-TD-INPROD", "SO-TD-OLD", "SO-TD-INACTIVE",
               "SO-TD-OTHERCO", "SO-TD-LEGACY", "SO-TD-NOTOUGH"]
 
 
@@ -85,7 +85,9 @@ def test_toughening_demand_from_confirmed_sales_orders(db_session: Session, dema
             _group(None, True, {"width_inch": 12, "height_inch": 12, "quantity": 4}, description="Frosted"),     # unclassified
         ]),
         so("SO-TD-DRAFT", status="draft", groups=[_group(10, True, big_thick)]),
-        so("SO-TD-INPROD", status="in_production", groups=[_group(10, True, big_thick)]),
+        so("SO-TD-INPROD", status="in_production", groups=[_group(10, True, big_thick)]),  # WO made: still to toughen
+        so("SO-TD-TYPEONLY", groups=[{**_group(10, False, {"width_inch": 12, "height_inch": 12, "quantity": 1}),
+                                      "glass_type": "Toughened"}]),             # only the type says toughened
         so("SO-TD-OLD", order_date=old, groups=[_group(10, True, big_thick)]),
         so("SO-TD-INACTIVE", is_active=False, groups=[_group(10, True, big_thick)]),
         so("SO-TD-OTHERCO", company_id=2, groups=[_group(10, True, big_thick)]),
@@ -104,14 +106,14 @@ def test_toughening_demand_from_confirmed_sales_orders(db_session: Session, dema
 
     assert delta("thin", "pieces") == 3 + 2            # MIX thin + LEGACY
     assert delta("thin", "sqft") == 12 + 8
-    assert delta("thick", "pieces") == 2 + 1
-    assert delta("thick", "sqft") == 12 + 1
+    assert delta("thick", "pieces") == 2 + 1 + 50 + 1   # MIX + INPROD + TYPEONLY
+    assert delta("thick", "sqft") == 12 + 1 + 200 + 1
     assert delta("unclassified", "pieces") == 4
-    assert delta("total", "pieces") == 3 + 2 + 1 + 4 + 2
+    assert delta("total", "pieces") == 3 + 2 + 1 + 4 + 2 + 50 + 1
     assert after["total"]["pieces"] == sum(after[b]["pieces"] for b in ("thin", "thick", "unclassified"))
 
     items = {i["so_number"]: i for i in after["items"] if i["so_number"] in SO_NUMBERS}
-    assert set(items) == {"SO-TD-MIX", "SO-TD-LEGACY"}
+    assert set(items) == {"SO-TD-MIX", "SO-TD-LEGACY", "SO-TD-INPROD", "SO-TD-TYPEONLY"}
     mix = items["SO-TD-MIX"]
     assert mix["thin_sqft"] == 12 and mix["thick_sqft"] == 13 and mix["unclassified_sqft"] == 4
     assert mix["total_pieces"] == 10 and mix["toughened_lines"] == 4
