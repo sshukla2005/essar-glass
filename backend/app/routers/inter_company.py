@@ -1,4 +1,5 @@
 import copy
+import math
 import re
 import random
 from datetime import datetime
@@ -411,7 +412,7 @@ def create_inter_company_link(
             lines=po_lines,
             subtotal=po_subtotal,
             tax_amount=0.0,
-            total_amount=po_subtotal,
+            total_amount=float(math.floor(po_subtotal + 0.5)),  # whole rupees, like the PO form
             is_active=True,
         )
         db.add(po)
