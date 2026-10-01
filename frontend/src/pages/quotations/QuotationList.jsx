@@ -108,7 +108,7 @@ const QuotationList = () => {
               const tax = (t.cgst || 0) + (t.sgst || 0) + (t.igst || 0)
               return tax > 0 ? `₹ ${Number(tax.toFixed(2)).toLocaleString('en-IN')}` : '—' } },
           { title: 'Total',      dataIndex: 'total_amount', key: 'total_amount', width: 130,
-            render: v => v != null ? <b>₹ {Number(v).toLocaleString('en-IN')}</b> : '—' },
+            render: v => v != null ? <b>₹ {Math.round(Number(v)).toLocaleString('en-IN')}</b> : '—' },
           { title: 'Status',     dataIndex: 'status',       key: 'status',       width: 200,
             render: (v, r) => v === 'converted' ? (
               <Space size={4} wrap>

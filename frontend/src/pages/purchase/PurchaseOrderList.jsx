@@ -24,7 +24,7 @@ const PurchaseOrderList = () => {
     { title: 'SO Reference', dataIndex: 'vendor_reference' },
     { title: 'Order Date', dataIndex: 'po_date' },
     { title: 'Expected Delivery', dataIndex: 'expected_delivery' },
-    { title: 'Total Amount', dataIndex: 'total_amount', render: v => <span style={{ color: '#16a34a', fontWeight: 600 }}>₹ {Number(v||0).toLocaleString('en-IN')}</span> },
+    { title: 'Total Amount', dataIndex: 'total_amount', render: v => <span style={{ color: '#16a34a', fontWeight: 600 }}>₹ {Math.round(Number(v||0)).toLocaleString('en-IN')}</span> },
     { title: 'Status', dataIndex: 'status', render: v => <Tag color={STATUS_COLORS[v] || 'default'}>{String(v).toUpperCase()}</Tag> },
   ]
 

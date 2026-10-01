@@ -1,3 +1,4 @@
+import math
 import json
 import logging
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -37,6 +38,25 @@ def _require_permissions(allowed: set[str] | None = None, module: str | None = N
             )
         return user
     return _dep
+
+
+ROUNDED_TOTAL_TABLES = ("quotations", "sales_orders", "purchase_orders")
+
+
+def _round_document_total(item):
+    """Quotations, SOs and POs are billed in whole rupees (Round Off on the PDF and form).
+
+    Half rounds up, as in the forms (Math.round), not Python's round-half-even.
+    """
+    if getattr(item, "__tablename__", None) not in ROUNDED_TOTAL_TABLES:
+        return
+    total = getattr(item, "total_amount", None)
+    if total is None:
+        return
+    try:
+        item.total_amount = float(math.floor(float(total) + 0.5))
+    except (TypeError, ValueError):
+        pass
 
 
 def _advance_so_on_wo_progress(db, wo):
@@ -449,6 +469,7 @@ def make_crud_router(
                         obj_data["status"] = "draft"
 
         item = model(**obj_data)
+        _round_document_total(item)
 
         # Creating a workshop order from a confirmed Sales Order moves the SO to Production.
         # Same session and commit as the WO insert, so both happen or neither does.
@@ -657,6 +678,7 @@ def make_crud_router(
             update_data['extra_data'] = existing
         for k, v in update_data.items():
             setattr(item, k, v)
+        _round_document_total(item)
 
         if getattr(model, "__tablename__", None) == "invoices":
             from app.models.payment_allocation import PaymentAllocation

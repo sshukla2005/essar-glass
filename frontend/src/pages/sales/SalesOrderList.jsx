@@ -39,7 +39,7 @@ const SalesOrderList = () => {
     { title: 'Quotation Ref', dataIndex: 'quotation_id', render: v => v ? `QT${String(v).padStart(4,'0')}` : '—' },
     { title: 'Order Date', dataIndex: 'order_date' },
     { title: 'Delivery Date', dataIndex: 'delivery_date' },
-    { title: 'Total Amount', dataIndex: 'total_amount', render: v => <span style={{ color: '#16a34a', fontWeight: 600 }}>₹ {Number(v||0).toLocaleString('en-IN')}</span> },
+    { title: 'Total Amount', dataIndex: 'total_amount', render: v => <span style={{ color: '#16a34a', fontWeight: 600 }}>₹ {Math.round(Number(v||0)).toLocaleString('en-IN')}</span> },
     { title: 'Status', dataIndex: 'status', render: v => <Tag color={STATUS_COLORS[v] || 'default'}>{String(v).toUpperCase()}</Tag> },
   ]
 
