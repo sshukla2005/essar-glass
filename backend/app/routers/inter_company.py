@@ -388,6 +388,8 @@ def create_inter_company_link(
             l_po = copy.deepcopy(l)
             for k in ["override_glass_type", "override_glass_category", "override_thickness", "override_description"]:
                 l_po.pop(k, None)
+            # The PO and SO forms read `quantity`; the WO line sends `qty`
+            l_po["quantity"] = l.get("quantity") or l.get("qty") or 1
             po_lines.append(l_po)
 
         po_subtotal = 0.0
@@ -501,6 +503,7 @@ def create_inter_company_link(
             for k in ["override_glass_type", "override_glass_category", "override_thickness", "override_description"]:
                 l_copy.pop(k, None)
             l_copy.update({
+                "quantity": qty,
                 "description": meta["description"],
                 "glass_thickness": meta["glass_thickness"],
                 "glass_type": meta["glass_type"],

@@ -228,7 +228,7 @@ const PurchaseOrderForm = () => {
             height_inch: line.height_inch ?? (line.height_mm ? parseFloat((line.height_mm / 25.4).toFixed(4)) : 0),
             sqft: line.sqft || 0,
             sqft_manual: line.sqft_manual,
-            quantity: line.quantity || 1,
+            quantity: line.quantity || line.qty || 1,
             unit_price: line.unit_price || 0,
             // Stored amount, shown as-is: opening a PO never reprices it
             subtotal: line.subtotal || 0,

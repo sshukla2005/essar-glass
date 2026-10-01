@@ -354,7 +354,7 @@ const SalesOrderForm = () => {
         size_key: Date.now() + Math.random() + i,
         width_inch: line.width_inch || (line.width_mm ? line.width_mm / 25.4 : null),
         height_inch: line.height_inch || (line.height_mm ? line.height_mm / 25.4 : null),
-        quantity: line.quantity || 1,
+        quantity: line.quantity || line.qty || 1,
         area_sqft_pc: line.area_sqft_pc || 0,
         total_sqft: line.total_sqft || 0,
         running_ft: line.running_ft || 0,
