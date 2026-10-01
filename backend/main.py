@@ -585,8 +585,23 @@ def _is_true(val) -> bool:
     return val is True or val == 1 or (isinstance(val, str) and val.strip().lower() == "true")
 
 
+def _is_toughened_glass(d) -> bool:
+    """A glass group/line is toughened when flagged, typed 'Toughened', or described as such.
+
+    The SO form sets is_toughened when the glass type is picked, but groups copied from
+    older quotations can carry only the type or the description.
+    """
+    if not isinstance(d, dict):
+        return False
+    if _is_true(d.get("is_toughened")):
+        return True
+    if str(d.get("glass_type") or "").strip().lower() == "toughened":
+        return True
+    return "toughened" in str(d.get("description") or "").lower()
+
+
 def _toughened_so_lines(so):
-    """Yield one line dict per size in each glass group with is_toughened set.
+    """Yield one line dict per size in each toughened glass group.
 
     The group carries is_toughened, glass_thickness, product_id and description;
     its sizes carry dimensions and quantity. SOs saved without groups fall back to
@@ -595,7 +610,7 @@ def _toughened_so_lines(so):
     groups = so.groups if isinstance(so.groups, list) else []
     if groups:
         for g in groups:
-            if not isinstance(g, dict) or not _is_true(g.get("is_toughened")):
+            if not _is_toughened_glass(g):
                 continue
             for size in g.get("sizes") or []:
                 if isinstance(size, dict):
@@ -607,7 +622,7 @@ def _toughened_so_lines(so):
                     }
         return
     for line in so.lines or []:
-        if isinstance(line, dict) and _is_true(line.get("is_toughened")):
+        if _is_toughened_glass(line):
             yield line
 
 
@@ -618,10 +633,11 @@ def get_toughening_register(
     db: Session = Depends(get_db),
     user = Depends(get_current_user),
 ):
-    """Toughening demand from confirmed Sales Orders, for the Dashboard.
+    """Toughening demand from confirmed / in-production Sales Orders, for the Dashboard.
 
-    Counts every size in a toughened glass group on SOs with status 'confirmed'
-    whose order_date (else created_at) falls in the selected period. Thin/thick
+    Counts every size in a toughened glass group on SOs with status 'confirmed' or
+    'in_production' (an SO moves to production as soon as its Workshop Order is
+    created, and its glass still has to be toughened) whose order_date (else created_at) falls in the selected period. Thin/thick
     and sqft use the same helpers as the Cutting Register.
     """
     from sqlalchemy import func
@@ -637,7 +653,7 @@ def get_toughening_register(
     )
     query = db.query(SalesOrder).filter(
         SalesOrder.is_active == True,
-        SalesOrder.status == 'confirmed',
+        SalesOrder.status.in_(('confirmed', 'in_production')),
     )
     if start_d is not None:
         query = query.filter(so_date_expr >= start_d.isoformat(), so_date_expr <= end_d.isoformat())
