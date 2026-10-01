@@ -39,6 +39,25 @@ def _require_permissions(allowed: set[str] | None = None, module: str | None = N
     return _dep
 
 
+def _advance_so_on_wo_progress(db, wo):
+    """A Workshop Order that has started (or finished) means its Sales Order is in production.
+
+    Covers an SO confirmed after its WO already existed (an inter-company link creates both),
+    which the move-to-production on WO creation never saw. Only a 'confirmed' SO moves.
+    """
+    if getattr(wo, "__tablename__", None) != "workshop_orders" or not getattr(wo, "so_id", None):
+        return
+    if getattr(wo, "status", None) not in ("in_progress", "completed"):
+        return
+    from app.models.sales_order import SalesOrder as SalesOrderModel
+    so = db.query(SalesOrderModel).filter(
+        SalesOrderModel.id == wo.so_id,
+        SalesOrderModel.company_id == wo.company_id,
+    ).first()
+    if so is not None and so.status == "confirmed":
+        so.status = "in_production"
+
+
 def _require_quotation_creator(model, item, user):
     """Quotations only: edits, status changes, archive and delete are limited to the
     creator or a superadmin. Quotations with no recorded creator are superadmin-only."""
@@ -660,6 +679,8 @@ def make_crud_router(
             item.profit_amount = prof_a
             item.profit_percent = prof_p
 
+        _advance_so_on_wo_progress(db, item)
+
         db.commit()
         db.refresh(item)
 
@@ -731,6 +752,7 @@ def make_crud_router(
                 new_st = "in_production"
         if hasattr(item, "status"):
             item.status = new_st
+        _advance_so_on_wo_progress(db, item)
         db.commit()
 
         tbl = getattr(model, "__tablename__", None)
