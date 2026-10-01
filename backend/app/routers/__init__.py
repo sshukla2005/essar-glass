@@ -802,6 +802,28 @@ def make_crud_router(
         db.commit()
         return {"message": "Archived successfully"}
 
+    @router.patch("/{item_id}/unarchive")
+    def unarchive_item(
+        item_id: int,
+        db:      Session = Depends(get_db),
+        user           = Depends(_require_permissions(write_roles, module)),
+    ):
+        """Reactivate an archived record (the list's "Unarchive" action)."""
+        q = db.query(model).filter(model.id == item_id)
+        if company_scoped:
+            q = apply_company_filter(q, model, user.active_company_id)
+        q = apply_scope_filter(q, model, user, module)
+        item = q.first()
+        if not item:
+            raise HTTPException(status_code=404, detail="Not found")
+
+        _require_quotation_creator(model, item, user)
+
+        if hasattr(item, "is_active"):
+            item.is_active = True
+        db.commit()
+        return {"message": "Reactivated successfully"}
+
     @router.delete("/{item_id}")
     def delete_item(
         item_id: int,

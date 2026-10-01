@@ -1213,7 +1213,10 @@ const QuotationForm = () => {
       cgst = subIII * 0.09
       sgst = subIII * 0.09
     }
-    const grandTotal = subIII + cgst + sgst + igst
+    // Customers are billed in whole rupees: the grand total is rounded, the difference shown as Round Off
+    const rawTotal = subIII + cgst + sgst + igst
+    const grandTotal = Math.round(rawTotal)
+    const roundOff = parseFloat((grandTotal - rawTotal).toFixed(2))
     const balance = grandTotal - (advanceRec || 0)
 
     let glassCost = 0
@@ -1234,7 +1237,7 @@ const QuotationForm = () => {
     return {
       subI, procTotal, hwTotal, lbTotal, wstTotal, dcCharges, dcCost, subII,
       discountAmt, subIII, cgst, sgst, igst,
-      grandTotal, advanceRec, balance,
+      grandTotal, roundOff, advanceRec, balance,
       totalCost, glassCost, marginAmt, marginPct,
       hwCostTotal, lbCostTotal, wstCostTotal
     }

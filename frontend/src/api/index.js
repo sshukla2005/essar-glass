@@ -37,8 +37,9 @@ const createApi = (endpoint, codeField = null) => ({
     return { data: res.data }
   },
 
-  archive: async (id) => {
-    const res = await api.patch(`/api/v1/${endpoint}/${id}/archive`)
+  // archive(id) archives; archive(id, true) reactivates (the lists' Archive / Unarchive toggle)
+  archive: async (id, active = false) => {
+    const res = await api.patch(`/api/v1/${endpoint}/${id}/${active ? 'unarchive' : 'archive'}`)
     return { data: res.data }
   },
 
