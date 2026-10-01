@@ -182,3 +182,27 @@ def test_a_draft_wo_leaves_the_so_confirmed(ctx):
     assert res.status_code == 200, res.text
     db.expire_all()
     assert db.execute(text("select status from sales_orders where id = :i"), {"i": link["so_id"]}).scalar() == "confirmed"
+
+
+def test_linked_po_so_wo_keep_the_entered_quantity(ctx):
+    db, made = ctx
+    h1, = _superadmin_headers(db, 1)
+    res = client.post("/api/v1/inter-company/link", headers=h1, json={
+        "source_company_id": 1, "supplier_company_id": 2,
+        "lines": [{"description": "Clear Annealed 5mm", "width_inch": 24, "height_inch": 36, "qty": 5},
+                  {"description": "Clear Annealed 8mm", "width_inch": 12, "height_inch": 12, "qty": 3}]})
+    assert res.status_code == 201, res.text
+    link = res.json()
+    made["links"].append(link)
+
+    def col(table, column, id_):
+        return db.execute(text(f"select {column} from {table} where id = :i"), {"i": id_}).scalar()
+
+    po_lines = col("purchase_orders", "lines", link["po_id"])
+    so_lines = col("sales_orders", "lines", link["so_id"])
+    so_groups = col("sales_orders", "groups", link["so_id"])
+    wo_lines = col("workshop_orders", "lines", link["wo_id"])
+    assert [l["quantity"] for l in po_lines] == [5, 3]       # the PO form reads `quantity`
+    assert [l["quantity"] for l in so_lines] == [5, 3]       # the SO form rebuilds sizes from lines
+    assert [g["sizes"][0]["quantity"] for g in so_groups] == [5, 3]
+    assert [l["qty"] for l in wo_lines] == [5, 3]
