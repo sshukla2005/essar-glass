@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from app.database import get_db
-from app.deps import require_superadmin
+from app.deps import get_current_user
 from app.utils.helpers import get_next_code
 from app.models.company import Company
 from app.models.vendor import Vendor
@@ -20,6 +20,34 @@ from app.models.workshop import WorkshopOrder
 from app.models.product import Product
 
 router = APIRouter(prefix="/inter-company", tags=["Inter-Company"])
+
+LINK_PERMISSION = "inter_company_link"
+
+
+def require_inter_company_link(current_user=Depends(get_current_user)):
+    """Superadmin/admin, or a user given the "Link to Supplier Co." tick in User Management."""
+    perms = current_user.permissions or []
+    if current_user.role in ("superadmin", "admin") or "all" in perms or LINK_PERMISSION in perms:
+        return current_user
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="You do not have permission to link to a supplier company",
+    )
+
+
+@router.get("/supplier-companies")
+def list_supplier_companies(
+    db: Session = Depends(get_db),
+    current_user=Depends(require_inter_company_link),
+):
+    """Active companies other than the one being viewed: the choices for the supplier."""
+    rows = (
+        db.query(Company)
+        .filter(Company.is_active == True, Company.id != current_user.active_company_id)
+        .order_by(Company.id)
+        .all()
+    )
+    return [{"id": c.id, "name": c.name, "short_name": c.short_name, "color": c.color} for c in rows]
 
 
 class InterCompanyLinkPayload(BaseModel):
@@ -254,12 +282,18 @@ def _resolve_line_metadata(
 def create_inter_company_link(
     payload: InterCompanyLinkPayload,
     db: Session = Depends(get_db),
-    current_user=Depends(require_superadmin),
+    current_user=Depends(require_inter_company_link),
 ):
     """
     Create a PO in source_company and linked SO + WO in supplier_company in ONE atomic transaction.
-    Requires superadmin role.
+    Superadmin, admin, or a user with the inter_company_link permission. Everyone but a
+    superadmin can only link from the company they are viewing.
     """
+    if current_user.role != "superadmin" and payload.source_company_id != current_user.active_company_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only link workshop orders of the company you are viewing",
+        )
     if payload.source_company_id == payload.supplier_company_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -387,7 +421,10 @@ def create_inter_company_link(
         if payload.source_wo_id:
             source_wo = (
                 db.query(WorkshopOrder)
-                .filter(WorkshopOrder.id == payload.source_wo_id)
+                .filter(
+                    WorkshopOrder.id == payload.source_wo_id,
+                    WorkshopOrder.company_id == payload.source_company_id,
+                )
                 .first()
             )
             if source_wo and source_wo.so_id:

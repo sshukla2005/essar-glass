@@ -6,7 +6,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import dayjs from 'dayjs'
 import MasterForm from '../../components/common/MasterForm'
 import ArtworkPanelMapper from '../../components/common/ArtworkPanelMapper'
-import { workshopOrderApi, salesOrderApi, customerApi, productApi, tougheningBatchApi, processMasterApi, vendorApi, companyApi, interCompanyApi } from '../../api'
+import { workshopOrderApi, salesOrderApi, customerApi, productApi, tougheningBatchApi, processMasterApi, vendorApi, interCompanyApi } from '../../api'
 import { useAuth } from '../../hooks/useAuth'
 // Note for developer/user to add manually in Masters -> Vendors:
 // MEBT, Amath, Sapphire, Al Burhan, RDTuff, Diamond
@@ -111,7 +111,8 @@ const WorkshopOrderForm = () => {
   const productList = Array.isArray(products) ? products : (products?.items || [])
 
   // ── Inter-Company Link State & Queries ─────────────────
-  const { user, isSuperAdmin, activeCompanyId } = useAuth()
+  const { user, isSuperAdmin, activeCompanyId, hasPermission } = useAuth()
+  const canLinkSupplier = hasPermission('inter_company_link')
   const [linkWizard, setLinkWizard] = useState(false)
   const [selectedSupplierCompanyId, setSelectedSupplierCompanyId] = useState(null)
   const [selectedLinkLineKeys, setSelectedLinkLineKeys] = useState([])
@@ -220,8 +221,9 @@ const WorkshopOrderForm = () => {
   }
 
   const { data: companiesData = [] } = useQuery({
-    queryKey: ['companies-dropdown'],
-    queryFn: () => companyApi.dropdown().then(r => r.data),
+    queryKey: ['inter-company-suppliers', activeCompanyId],
+    queryFn: () => interCompanyApi.supplierCompanies().then(r => r.data),
+    enabled: canLinkSupplier,
   })
   const companyList = Array.isArray(companiesData) ? companiesData : (companiesData?.items || [])
 
@@ -1497,7 +1499,7 @@ const WorkshopOrderForm = () => {
         </Col>
         <Col xs={24} lg={12} style={{ textAlign: 'right' }}>
           <Space wrap>
-            {isSuperAdmin && isEdit && (
+            {canLinkSupplier && isEdit && (
               <Button
                 icon={<SwapOutlined />}
                 onClick={handleOpenLinkWizard}

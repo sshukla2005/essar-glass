@@ -716,6 +716,19 @@ def make_crud_router(
 
         old_st = getattr(item, "status", None)
         new_st = data.get("status")
+
+        # Confirming a Sales Order that already has a Workshop Order (e.g. the draft SO an
+        # inter-company link creates together with its WO) goes straight to Production,
+        # the same stage creating the WO from a confirmed SO would give it.
+        if (getattr(model, "__tablename__", None) == "sales_orders" and new_st == "confirmed"
+                and old_st not in ("in_production", "ready", "delivered")):
+            from app.models.workshop import WorkshopOrder as WorkshopOrderModel
+            has_wo = db.query(WorkshopOrderModel.id).filter(
+                WorkshopOrderModel.so_id == item.id,
+                WorkshopOrderModel.is_active == True,
+            ).first() is not None
+            if has_wo:
+                new_st = "in_production"
         if hasattr(item, "status"):
             item.status = new_st
         db.commit()

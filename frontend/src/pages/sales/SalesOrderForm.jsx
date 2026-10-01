@@ -1612,7 +1612,9 @@ const SalesOrderForm = () => {
 
   const statusMutation = useMutation({
     mutationFn: async (newStatus) => {
-      await salesOrderApi.changeStatus(id, newStatus)
+      const res = await salesOrderApi.changeStatus(id, newStatus)
+      // The API moves a newly confirmed SO that already has a Workshop Order to IN PRODUCTION
+      const savedStatus = res?.data?.status || newStatus
 
       if (newStatus === 'confirmed' && record?.crm_lead_id) {
         try {
@@ -1632,7 +1634,7 @@ const SalesOrderForm = () => {
         }
       }
 
-      return newStatus
+      return savedStatus
     },
     onSuccess: (newStatus) => {
       const label = String(newStatus).replace(/_/g, ' ').toUpperCase()

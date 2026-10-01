@@ -213,6 +213,7 @@ export const authApi = {
 // ── Inter-Company Linking API ───────────────────────
 export const interCompanyApi = {
   link: (payload) => api.post('/api/v1/inter-company/link', payload),
+  supplierCompanies: () => api.get('/api/v1/inter-company/supplier-companies'),
 }
 
 // ── HSN Mapping (superadmin) ───────────────────────
