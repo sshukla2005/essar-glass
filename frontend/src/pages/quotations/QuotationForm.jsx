@@ -1471,6 +1471,7 @@ const QuotationForm = () => {
       lines: getFlatLines(),
       hardware_items: hardwareItems,
       labor_items: laborItems,
+      wastage_items: wastageItems,
     }, { save: false })
     return doc ? doc.output('blob') : null
   }
@@ -1523,7 +1524,7 @@ const QuotationForm = () => {
     customer_phone: customers.find(c => c.id === form.getFieldValue('customer_id'))?.phone || '',
     customer_gstin: customers.find(c => c.id === form.getFieldValue('customer_id'))?.gstin || '',
     advance_received: advanceRec || 0, unit_mode: unit, groups, totals, lines: getFlatLines(),
-    hardware_items: hardwareItems, labor_items: laborItems,
+    hardware_items: hardwareItems, labor_items: laborItems, wastage_items: wastageItems,
   })
 
   const [isPreviewingPDF, setIsPreviewingPDF] = useState(false)
