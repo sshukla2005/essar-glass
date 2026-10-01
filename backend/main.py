@@ -2,6 +2,7 @@ import hmac
 import os
 import secrets
 import glob
+import math
 import re
 from fastapi import FastAPI, Depends, Request, Response, Query, Body, HTTPException, UploadFile, File
 from fastapi.responses import JSONResponse
@@ -317,25 +318,55 @@ def _classify_glass(thickness):
     return "thick"
 
 
+def _auto_charged_dim(actual_in, step, custom_mm):
+    """Charged size from the actual size and the line's rounding rule (same as getAutoChargedDim)."""
+    if step == "plus30mm":
+        return actual_in + 30 / 25.4
+    if step == "custom":
+        return actual_in + float(custom_mm or 30) / 25.4
+    try:
+        step = float(step)
+    except (ValueError, TypeError):
+        return actual_in
+    return math.ceil(actual_in / step) * step if step > 0 else actual_in
+
+
 def _glass_line_sqft(line):
-    """(sqft for the line's full qty, is_charged): charged dims if present, else actual dims."""
-    chg_w = line.get("chg_w_in") or line.get("charged_w") or line.get("charged_w_in") or line.get("charged_w_inch") or line.get("ceiling_w_inches")
-    chg_h = line.get("chg_h_in") or line.get("charged_h") or line.get("charged_h_in") or line.get("charged_h_inch") or line.get("ceiling_h_inches")
+    """(sqft for the line's full qty, is_charged): charged dims if present, else actual dims.
+
+    Lines without stored charged dims (e.g. inter-company WOs) get them from the actual
+    dims and the rounding rule (ceiling_w/h_inches). That rule is a step, not a size.
+    """
+    chg_w = line.get("chg_w_in") or line.get("charged_w") or line.get("charged_w_in") or line.get("charged_w_inch") or None
+    chg_h = line.get("chg_h_in") or line.get("charged_h") or line.get("charged_h_in") or line.get("charged_h_inch") or None
 
     if chg_w is None and line.get("charged_w_mm"):
         chg_w = line.get("charged_w_mm") / 25.4
     if chg_h is None and line.get("charged_h_mm"):
         chg_h = line.get("charged_h_mm") / 25.4
 
+    act_w = line.get("act_w_in") or line.get("width_inch") or line.get("width_in")
+    act_h = line.get("act_h_in") or line.get("height_inch") or line.get("height_in")
+    if act_w is None and line.get("act_w_mm"):
+        act_w = float(line.get("act_w_mm")) / 25.4
+    if act_h is None and line.get("act_h_mm"):
+        act_h = float(line.get("act_h_mm")) / 25.4
+    if act_w is None and line.get("width_mm"):
+        act_w = float(line.get("width_mm")) / 25.4
+    if act_h is None and line.get("height_mm"):
+        act_h = float(line.get("height_mm")) / 25.4
+
+    try:
+        if chg_w is None and act_w and line.get("ceiling_w_inches") is not None:
+            chg_w = _auto_charged_dim(float(act_w), line.get("ceiling_w_inches"), line.get("ceiling_w_custom_mm"))
+        if chg_h is None and act_h and line.get("ceiling_h_inches") is not None:
+            chg_h = _auto_charged_dim(float(act_h), line.get("ceiling_h_inches"), line.get("ceiling_h_custom_mm"))
+    except (ValueError, TypeError):
+        pass
+
     is_charged = True
     if chg_w is None or chg_h is None:
         is_charged = False
-        act_w = line.get("act_w_in") or line.get("width_inch") or line.get("width_in")
-        act_h = line.get("act_h_in") or line.get("height_inch") or line.get("height_in")
-        if act_w is None and line.get("width_mm"):
-            act_w = line.get("width_mm") / 25.4
-        if act_h is None and line.get("height_mm"):
-            act_h = line.get("height_mm") / 25.4
         w, h = act_w or 0, act_h or 0
     else:
         w, h = chg_w, chg_h

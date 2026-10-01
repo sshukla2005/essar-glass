@@ -100,6 +100,14 @@ const WorkshopOrderForm = () => {
 
   const soList = Array.isArray(salesOrders) ? salesOrders : (salesOrders?.items || [])
   const customerList = Array.isArray(customers) ? customers : (customers?.items || [])
+  // Open SOs, plus the SO this WO is already linked to whatever its status (e.g. the
+  // draft SO an inter-company link creates), so the field shows its number, not its id
+  const soOptions = soList
+    .filter(s => ['confirmed', 'in_production', 'ready'].includes(s.status) || s.id === record?.so_id)
+    .map(s => ({ value: s.id, label: `${s.so_number} — ${customerList.find(c => c.id === s.customer_id)?.name || s.customer_name || ''}` }))
+  if (record?.so_id && !soOptions.some(o => o.value === record.so_id)) {
+    soOptions.unshift({ value: record.so_id, label: `${record.so_number || `SO #${record.so_id}`} — ${record.customer_name || ''}` })
+  }
   const productList = Array.isArray(products) ? products : (products?.items || [])
 
   // ── Inter-Company Link State & Queries ─────────────────
@@ -880,7 +888,7 @@ const WorkshopOrderForm = () => {
       const cust = customerList.find(c => c.id === values.customer_id);
       values.customer_name = cust?.name || '';
       const so = soList.find(s => s.id === values.so_id);
-      values.so_number = so?.so_number || '';
+      values.so_number = so?.so_number || (values.so_id === record?.so_id ? record?.so_number : '') || '';
       values.lines = updatedLines.map(({ key, ...rest }) => rest);
       values.jobwork_vendor = selectedJobworkVendor || null;
       const cleanMaps = artworkMaps.filter(m => m.image || (m.panels || []).length > 0);
@@ -975,7 +983,7 @@ const WorkshopOrderForm = () => {
         const cust = customerList.find(c => c.id === values.customer_id)
         values.customer_name = cust?.name || ''
         const so = soList.find(s => s.id === values.so_id)
-        values.so_number = so?.so_number || ''
+        values.so_number = so?.so_number || (values.so_id === record?.so_id ? record?.so_number : '') || ''
         values.lines = stamped.map(({ key, ...rest }) => rest)
         values.jobwork_vendor = selectedJobworkVendor || null
         // Status transitions go through changeStatus only — general save must not write status
@@ -1002,7 +1010,7 @@ const WorkshopOrderForm = () => {
       const cust = customerList.find(c => c.id === values.customer_id)
       values.customer_name = cust?.name || ''
       const so = soList.find(s => s.id === values.so_id)
-      values.so_number = so?.so_number || ''
+      values.so_number = so?.so_number || (values.so_id === record?.so_id ? record?.so_number : '') || ''
       values.lines = lines.map(({ key, ...rest }) => rest)
       values.jobwork_vendor = selectedJobworkVendor || null
       // Status transitions go through changeStatus only — general save must not write status
@@ -1552,7 +1560,7 @@ const WorkshopOrderForm = () => {
         <Row gutter={16}>
           <Col span={6}>
             <Form.Item name="so_id" label="Sales Order" rules={[{ required: true }]}>
-              <Select showSearch placeholder="Select SO" options={soList.filter(s => ['confirmed', 'in_production', 'ready'].includes(s.status)).map(s => ({ value: s.id, label: `${s.so_number} — ${customerList.find(c => c.id === s.customer_id)?.name || ''}` }))}
+              <Select showSearch placeholder="Select SO" options={soOptions}
                 filterOption={(input, option) => (option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
                 onChange={handleSOSelect} />
             </Form.Item>

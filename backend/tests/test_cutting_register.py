@@ -385,3 +385,18 @@ def test_cutting_register_filters_and_hydration(cutting_test_env, db_session: Se
     # Clean up
     db_session.delete(legacy_wo)
     db_session.commit()
+
+
+def test_line_without_charged_dims_uses_rounding_rule_not_the_step_itself():
+    """Inter-company WO lines carry actual dims + ceiling_w/h_inches (a rounding step) but no charged dims."""
+    from main import _glass_line_sqft
+    line = {"act_w_in": 13.5625, "act_h_in": 64.5625, "act_w_mm": 345, "act_h_mm": 1640, "qty": 1,
+            "ceiling_w_inches": 6, "ceiling_h_inches": 6}
+    assert _glass_line_sqft(line) == (18 * 66 / 144, True)          # not 6 x 6 / 144 = 0.25
+    assert _glass_line_sqft({**line, "qty": 3})[0] == 3 * 18 * 66 / 144
+    assert round(_glass_line_sqft({**line, "ceiling_w_inches": "plus30mm"})[0], 4) == round((13.5625 + 30 / 25.4) * 66 / 144, 4)
+    # stored charged dims still win; zero means "not set"
+    assert _glass_line_sqft({**line, "charged_w_inch": 24, "charged_h_inch": 72})[0] == 24 * 72 / 144
+    assert _glass_line_sqft({**line, "charged_w_inch": 0, "charged_h_inch": 0})[0] == 18 * 66 / 144
+    # no rounding rule: actual size
+    assert _glass_line_sqft({"width_inch": 24, "height_inch": 24, "quantity": 3}) == (12.0, False)
