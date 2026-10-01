@@ -131,3 +131,54 @@ def test_confirming_an_so_without_a_wo_stays_confirmed(ctx):
     made["sos"].append(res.json()["id"])
     res = client.patch(f"/api/v1/sales-orders/{res.json()['id']}/status", json={"status": "confirmed"}, headers=h)
     assert res.json()["status"] == "confirmed"
+
+
+def _superadmin_headers(db, *company_ids):
+    """One superadmin session, one header per company viewed (a new login would end the session)."""
+    admin = db.query(User).filter(User.role == "superadmin", User.is_active == True).first()
+    sid = uuid.uuid4().hex
+    admin.current_session_id = sid
+    admin.session_started_at = datetime.now(timezone.utc)
+    db.commit()
+    return [{"Authorization": "Bearer " + create_access_token(admin.id, admin.role, company_id=1, home_company_id=1,
+                                                                active_company_id=cid, session_id=sid)}
+            for cid in company_ids]
+
+
+@pytest.mark.parametrize("how", ["status", "save"])
+def test_starting_the_wo_moves_an_already_confirmed_so_to_production(ctx, how):
+    """SO confirmed before PR #14 (or by an older path) while its WO already existed."""
+    db, made = ctx
+    h1, h = _superadmin_headers(db, 1, 2)
+    res = _link(h1)
+    assert res.status_code == 201, res.text
+    link = res.json()
+    made["links"].append(link)
+    db.execute(text("update sales_orders set status = 'confirmed' where id = :i"), {"i": link["so_id"]})
+    db.commit()
+
+    if how == "status":
+        res = client.patch(f"/api/v1/workshop/{link['wo_id']}/status", json={"status": "in_progress"}, headers=h)
+    else:  # a cut recorded on a line makes the save derive in_progress
+        wo = client.get(f"/api/v1/workshop/{link['wo_id']}", headers=h).json()
+        lines = [{**l, "cut_started_at": "2026-10-01T10:00:00"} for l in wo["lines"]]
+        res = client.put(f"/api/v1/workshop/{link['wo_id']}", json={"lines": lines, "status": "draft"}, headers=h)
+    assert res.status_code == 200, res.text
+    assert res.json()["status"] == "in_progress"
+
+    db.expire_all()
+    assert db.execute(text("select status from sales_orders where id = :i"), {"i": link["so_id"]}).scalar() == "in_production"
+
+
+def test_a_draft_wo_leaves_the_so_confirmed(ctx):
+    db, made = ctx
+    h1, h = _superadmin_headers(db, 1, 2)
+    res = _link(h1)
+    link = res.json()
+    made["links"].append(link)
+    db.execute(text("update sales_orders set status = 'confirmed' where id = :i"), {"i": link["so_id"]})
+    db.commit()
+    res = client.put(f"/api/v1/workshop/{link['wo_id']}", json={"priority": "high"}, headers=h)
+    assert res.status_code == 200, res.text
+    db.expire_all()
+    assert db.execute(text("select status from sales_orders where id = :i"), {"i": link["so_id"]}).scalar() == "confirmed"
