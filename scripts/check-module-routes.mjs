@@ -32,6 +32,7 @@ const menuLinks = [...read('components/Layout/AppLayout.jsx').matchAll(/key:\s*'
 
 const problems = []
 for (const m of MODULES) {
+  if (m.route === undefined) continue // action permission (a tickbox, not a page), e.g. inter_company_link
   if (!routes.has(m.route)) problems.push(`MODULES '${m.key}' route ${m.route} is not a route in App.jsx`)
 }
 for (const link of new Set(menuLinks)) {

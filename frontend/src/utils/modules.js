@@ -36,6 +36,8 @@ export const MODULES = [
   // ── Workshop ─────────────────────────────────────────────────────────────────
   { key: 'workshop_orders',  label: 'Workshop Orders',     section: 'workshop',  route: '/workshop/orders' },
   { key: 'toughening',       label: 'Toughening',          section: 'workshop',  route: '/workshop/toughening' },
+  // Action, not a page: shows "Link to Supplier Co." on Workshop Orders (superadmin/admin always have it)
+  { key: 'inter_company_link', label: 'Link to Supplier Co.', section: 'workshop' },
 
   // ── Reports ──────────────────────────────────────────────────────────────────
   { key: 'sales_performance', label: 'Sales Performance',  section: 'reports',   route: '/reports/sales-performance' },

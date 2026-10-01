@@ -117,7 +117,7 @@ const AppLayout = () => {
 
     const routeToModuleMap = {}
     MODULES.forEach(m => {
-      routeToModuleMap[m.route] = m.key
+      if (m.route) routeToModuleMap[m.route] = m.key
     })
 
     return rawItems
