@@ -20,6 +20,8 @@ const { Text } = Typography
 
 const STATUS_STEPS = ['draft', 'dispatched', 'delivered']
 const STATUS_IDX = { draft: 0, dispatched: 1, delivered: 2, returned: 0 }
+// Stage names shown to users; the stored status values stay draft / dispatched / delivered
+const STATUS_LABELS = { draft: 'Ready to Deliver' }
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -413,7 +415,7 @@ const DeliveryChallanForm = () => {
       {/* Status stepper + action buttons */}
       <Row gutter={[16, 16]} align="middle" style={{ marginBottom: 24 }}>
         <Col xs={24} lg={12}>
-          <Steps size="small" current={STATUS_IDX[status] || 0} items={STATUS_STEPS.map(s => ({ title: s.toUpperCase() }))} />
+          <Steps size="small" current={STATUS_IDX[status] || 0} items={STATUS_STEPS.map(s => ({ title: (STATUS_LABELS[s] || s).toUpperCase() }))} />
         </Col>
         <Col xs={24} lg={12} style={{ textAlign: 'right' }}>
           <Space wrap>
