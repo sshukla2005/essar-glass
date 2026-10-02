@@ -421,7 +421,7 @@ const Dashboard = () => {
             isUp={stats.dispatchReady > 0}
             textUp={stats.dispatchReady > 0 ? "Ready for delivery" : "No orders ready"}
             textDown={`${stats.awaitingDispatch} delivery challans pending`}
-            onClick={() => navigate('/sales-orders?status=ready')}
+            onClick={() => navigate('/delivery-challans')}
           />
         </Col>
         <Col xs={24} sm={12} xl={6}>

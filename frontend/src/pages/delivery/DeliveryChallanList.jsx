@@ -19,7 +19,7 @@ const DeliveryChallanList = () => {
     { title: 'Customer', dataIndex: 'customer_name', render: (v, r) => v || r.customer_id || '—' },
     { title: 'SO Ref', dataIndex: 'so_id', render: v => v ? `SO${String(v).padStart(4,'0')}` : '—' },
     { title: 'Date', dataIndex: 'dc_date' },
-    { title: 'Status', dataIndex: 'status', render: v => <Tag color={STATUS_COLORS[v] || 'default'}>{String(v).toUpperCase()}</Tag> },
+    { title: 'Status', dataIndex: 'status', render: v => <Tag color={STATUS_COLORS[v] || 'default'}>{(v === 'draft' ? 'Ready to Deliver' : String(v)).toUpperCase()}</Tag> },
   ]
 
   return (
