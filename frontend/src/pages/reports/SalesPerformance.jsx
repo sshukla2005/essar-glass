@@ -23,6 +23,7 @@ import {
 import api from '../../api/axios'
 import { companyApi, quotationApi, customerApi } from '../../api'
 import { useAuth } from '../../hooks/useAuth'
+import { ORDER_REFERENCES, orderReferenceLabel } from '../../utils/orderReference'
 import * as XLSX from 'xlsx'
 
 dayjs.extend(quarterOfYear)
@@ -173,6 +174,8 @@ const SalesPerformance = () => {
   const { message } = App.useApp()
   const { activeCompanyId } = useAuth()
   const [dateRange, setDateRange] = useState(() => getFYBounds())
+  // Reference filter (Architect, Builders, ... IndiaMART / Online): applies to the whole report
+  const [reference, setReference] = useState(undefined)
 
   // History Filters & Pagination
   const [historyPage, setHistoryPage] = useState(1)
@@ -204,8 +207,9 @@ const SalesPerformance = () => {
     const p = {}
     if (dateRange && dateRange[0]) p.from = dateRange[0].format('YYYY-MM-DD')
     if (dateRange && dateRange[1]) p.to = dateRange[1].format('YYYY-MM-DD')
+    if (reference) p.reference = reference
     return p
-  }, [dateRange])
+  }, [dateRange, reference])
 
   // Main Report Query
   const {
@@ -235,8 +239,9 @@ const SalesPerformance = () => {
     if (historySalesperson) p.salesperson = historySalesperson
     if (historyDocType) p.doc_type = historyDocType
     if (historySearch) p.search = historySearch
+    if (reference) p.reference = reference
     return p
-  }, [dateRange, historyPage, historyPageSize, historySalesperson, historyDocType, historySearch])
+  }, [dateRange, historyPage, historyPageSize, historySalesperson, historyDocType, historySearch, reference])
 
   const {
     data: historyData,
@@ -260,8 +265,9 @@ const SalesPerformance = () => {
     }
     if (dateRange && dateRange[0]) p.from = dateRange[0].format('YYYY-MM-DD')
     if (dateRange && dateRange[1]) p.to = dateRange[1].format('YYYY-MM-DD')
+    if (reference) p.order_reference = reference
     return p
-  }, [dateRange])
+  }, [dateRange, reference])
 
   const {
     data: quotationsData,
@@ -518,6 +524,7 @@ const SalesPerformance = () => {
         { Metric: 'Report Period', Value: fullData.period?.label || '' },
         { Metric: 'From Date', Value: fullData.period?.from || '' },
         { Metric: 'To Date', Value: fullData.period?.to || '' },
+        { Metric: 'Reference', Value: reference ? orderReferenceLabel(reference) : 'All References' },
         { Metric: '', Value: '' },
         { Metric: 'Sales Orders Count', Value: fullData.summary?.so_count ?? 0 },
         { Metric: 'Sales Orders Value (₹)', Value: fullData.summary?.so_value ?? 0 },
@@ -1020,6 +1027,14 @@ const SalesPerformance = () => {
             placeholder={['From date', 'To date']}
             allowClear={false}
             style={{ borderRadius: 8 }}
+          />
+          <Select
+            allowClear
+            placeholder="All References"
+            value={reference}
+            onChange={v => { setReference(v); setHistoryPage(1) }}
+            options={ORDER_REFERENCES}
+            style={{ width: 210 }}
           />
           <Button
             icon={<ReloadOutlined />}
