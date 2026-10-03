@@ -59,6 +59,25 @@ def _round_document_total(item):
         pass
 
 
+def _advance_so_on_dc_delivered(db, dc):
+    """A Delivery Challan marked delivered means its Sales Order has been delivered.
+
+    Moves the linked SO (same company) to 'delivered' from confirmed / in_production /
+    ready. A cancelled or already-delivered SO is left alone.
+    """
+    if getattr(dc, "__tablename__", None) != "delivery_challans" or not getattr(dc, "so_id", None):
+        return
+    if getattr(dc, "status", None) != "delivered":
+        return
+    from app.models.sales_order import SalesOrder as SalesOrderModel
+    so = db.query(SalesOrderModel).filter(
+        SalesOrderModel.id == dc.so_id,
+        SalesOrderModel.company_id == dc.company_id,
+    ).first()
+    if so is not None and so.status in ("confirmed", "in_production", "ready"):
+        so.status = "delivered"
+
+
 def _advance_so_on_wo_progress(db, wo):
     """A Workshop Order that has started (or finished) means its Sales Order is in production.
 
@@ -509,6 +528,7 @@ def make_crud_router(
         elif tbl == "delivery_challans" and item.status == "delivered":
             from app.services.stock_service import sync_dc_stock_movements
             sync_dc_stock_movements(db, item, "delivered", None)
+            _advance_so_on_dc_delivered(db, item)
             db.commit()
 
         return serialize_row(item)
@@ -702,6 +722,7 @@ def make_crud_router(
             item.profit_percent = prof_p
 
         _advance_so_on_wo_progress(db, item)
+        _advance_so_on_dc_delivered(db, item)
 
         db.commit()
         db.refresh(item)
@@ -775,6 +796,7 @@ def make_crud_router(
         if hasattr(item, "status"):
             item.status = new_st
         _advance_so_on_wo_progress(db, item)
+        _advance_so_on_dc_delivered(db, item)
         db.commit()
 
         tbl = getattr(model, "__tablename__", None)

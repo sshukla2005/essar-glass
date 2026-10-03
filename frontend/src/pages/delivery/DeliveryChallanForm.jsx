@@ -221,6 +221,8 @@ const DeliveryChallanForm = () => {
       message.success('Delivery Challan marked as delivered & stock posted')
       queryClient.invalidateQueries({ queryKey: ['delivery_challans', id] })
       queryClient.invalidateQueries({ queryKey: ['products'] })
+      // The API moves the linked Sales Order to DELIVERED
+      queryClient.invalidateQueries({ queryKey: ['sales_orders'] })
     }
   })
 
