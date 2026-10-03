@@ -210,6 +210,14 @@ def make_crud_router(
             from app.models.sales_order import SalesOrder
             entities.append(SalesOrder.id.label("so_id"))
             entities.append(SalesOrder.so_number.label("so_number"))
+        if getattr(model, '__tablename__', None) in ('invoices', 'delivery_challans'):
+            # The linked Sales Order's real number (SO0005), not its database id
+            from app.models.sales_order import SalesOrder as SalesOrderRef
+            entities.append(SalesOrderRef.so_number.label("so_ref_number"))
+        if getattr(model, '__tablename__', None) == 'sales_orders':
+            # The linked quotation's real number (QT0005), not its database id
+            from app.models.quotation import Quotation as QuotationModel
+            entities.append(QuotationModel.quote_number.label("quotation_number"))
 
         if len(entities) > 1:
             q = db.query(*entities)
@@ -222,6 +230,12 @@ def make_crud_router(
             if getattr(model, '__tablename__', None) == 'quotations':
                 from app.models.sales_order import SalesOrder
                 q = q.outerjoin(SalesOrder, (SalesOrder.quotation_id == model.id) & (SalesOrder.is_active == True))
+            if getattr(model, '__tablename__', None) in ('invoices', 'delivery_challans'):
+                from app.models.sales_order import SalesOrder as SalesOrderRef
+                q = q.outerjoin(SalesOrderRef, SalesOrderRef.id == model.so_id)
+            if getattr(model, '__tablename__', None) == 'sales_orders':
+                from app.models.quotation import Quotation as QuotationModel
+                q = q.outerjoin(QuotationModel, QuotationModel.id == model.quotation_id)
         else:
             q = db.query(model)
 

@@ -1,4 +1,5 @@
 import React from 'react'
+import { Link } from 'react-router-dom'
 import { Tag } from 'antd'
 import MasterList from '../../components/common/MasterList'
 import { invoiceApi, customerApi } from '../../api'
@@ -20,7 +21,10 @@ const InvoiceList = () => {
   const columns = [
     { title: 'Invoice No', dataIndex: 'invoice_number', width: 120 },
     { title: 'Customer', dataIndex: 'customer_name', render: (v, r) => v || r.customer_id || '—' },
-    { title: 'SO Ref', dataIndex: 'so_id', render: v => v ? `SO${String(v).padStart(4,'0')}` : '—' },
+    // The linked Sales Order's own number (from the API), opening that order
+    { title: 'SO Ref', dataIndex: 'so_ref_number', render: (v, r) => r.so_id
+      ? <Link to={`/sales-orders/${r.so_id}/edit`} onClick={e => e.stopPropagation()}>{v || `Sales Order #${r.so_id}`}</Link>
+      : '—' },
     { title: 'Invoice Date', dataIndex: 'invoice_date' },
     { title: 'Total', dataIndex: 'total_amount', render: v => <span style={{ color: '#0f172a', fontWeight: 600 }}>₹ {Number(v||0).toLocaleString('en-IN')}</span> },
     { title: 'Paid', dataIndex: 'amount_paid', render: v => <span style={{ color: '#16a34a' }}>₹ {Number(v||0).toLocaleString('en-IN')}</span> },
