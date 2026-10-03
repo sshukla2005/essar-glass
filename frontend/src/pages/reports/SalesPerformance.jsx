@@ -182,6 +182,7 @@ const SalesPerformance = () => {
   const [historySearch, setHistorySearch] = useState('')
   const [exporting, setExporting] = useState(false)
   const [showMissingCost, setShowMissingCost] = useState(false)
+  const [showUnassigned, setShowUnassigned] = useState(false)
 
   // Fetch Companies list to find active company name
   const { data: companiesData } = useQuery({
@@ -1057,6 +1058,19 @@ const SalesPerformance = () => {
                     <span> Unmatched typed names: <b>{dataQuality.unmatched_names.join(', ')}</b>.</span>
                   )}
                 </Text>
+                {(dataQuality.blank_salesperson_docs || []).length > 0 && (() => {
+                  const n = (dataQuality.blank_salesperson_quotes || 0) + (dataQuality.blank_salesperson_sos || 0)
+                  return (
+                    <Button
+                      type="link"
+                      size="small"
+                      onClick={() => setShowUnassigned(v => !v)}
+                      style={{ color: '#854d0e', fontWeight: 600, padding: '0 4px', height: 'auto' }}
+                    >
+                      {showUnassigned ? 'Hide' : `Show ${n} ${n !== 1 ? 'documents' : 'document'}`}
+                    </Button>
+                  )
+                })()}
               </div>
               <Link to="/masters/employees">
                 <Button size="small" type="primary" style={{ background: '#d97706', borderColor: '#d97706', borderRadius: 6 }}>
@@ -1065,6 +1079,42 @@ const SalesPerformance = () => {
               </Link>
             </div>
           }
+          description={showUnassigned ? (
+            <div style={{ marginTop: 4 }}>
+              <Table
+                dataSource={dataQuality.blank_salesperson_docs || []}
+                rowKey={r => `${r.type}-${r.id}`}
+                size="small"
+                pagination={(dataQuality.blank_salesperson_docs || []).length > 10 ? { pageSize: 10, size: 'small', showSizeChanger: false } : false}
+                style={{ background: '#fff', borderRadius: 8 }}
+                columns={[
+                  {
+                    title: 'Type', dataIndex: 'type', key: 'type', width: 120,
+                    render: v => v === 'quotation' ? <Tag color="blue">Quotation</Tag> : <Tag color="green">Sales Order</Tag>,
+                  },
+                  {
+                    title: 'No', dataIndex: 'number', key: 'number', width: 130,
+                    render: (v, r) => (
+                      <Link to={r.type === 'quotation' ? `/quotations/${r.id}/edit` : `/sales-orders/${r.id}/edit`}>
+                        <Text strong style={{ color: '#2563eb' }}>{v}</Text>
+                      </Link>
+                    ),
+                  },
+                  { title: 'Customer', dataIndex: 'customer_name', key: 'customer_name', ellipsis: true, render: v => v || '—' },
+                  { title: 'Date', dataIndex: 'date', key: 'date', width: 110, render: v => v || '—' },
+                  { title: 'Amount', dataIndex: 'total_amount', key: 'total_amount', width: 140, align: 'right', render: v => <Text strong>{fmtINR(v)}</Text> },
+                ]}
+              />
+              <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 8 }}>
+                Open a document and choose its Salesperson to move it out of Unassigned.
+                {(() => {
+                  const total = (dataQuality.blank_salesperson_quotes || 0) + (dataQuality.blank_salesperson_sos || 0)
+                  const shown = (dataQuality.blank_salesperson_docs || []).length
+                  return shown < total ? ` Showing the ${shown} most recent of ${total}; narrow the date range to see the rest.` : ''
+                })()}
+              </Text>
+            </div>
+          ) : null}
         />
       )}
 
