@@ -132,7 +132,7 @@ const ToughDemandTile = ({ title, data, color, bgColor, unclassified }) => {
       <div style={{ fontWeight: 600, color: '#334155', fontSize: 13, marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <span>{title}</span>
         <Tag color={color} style={{ margin: 0, fontSize: 11, borderRadius: 4, fontWeight: 700 }}>
-          {Number(data?.sqft || 0).toFixed(1)} Sq Ft
+          {Number(data?.sqft || 0).toFixed(1)} Cost Sq Ft
         </Tag>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -811,7 +811,7 @@ const Dashboard = () => {
                 </div>
                 <div>
                   <Title level={4} style={{ margin: 0, fontWeight: 700 }}>Toughening Register</Title>
-                  <Text type="secondary" style={{ fontSize: 13 }}>Confirmed &amp; in-production sales orders — glass to be toughened</Text>
+                  <Text type="secondary" style={{ fontSize: 13 }}>Confirmed &amp; in-production sales orders — glass to be toughened (cost sq ft)</Text>
                 </div>
               </div>
               <Space wrap>
@@ -903,7 +903,7 @@ const Dashboard = () => {
                 },
                 { title: 'Date', dataIndex: 'order_date', width: 90, render: fmtShortDate },
                 {
-                  title: 'Thin Sqft', dataIndex: 'thin_sqft', width: 100, align: 'right',
+                  title: 'Thin Cost Sqft', dataIndex: 'thin_sqft', width: 100, align: 'right',
                   render: v => v ? (
                     <Text strong style={{ color: '#16a34a' }}>
                       {Number(v).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
@@ -911,7 +911,7 @@ const Dashboard = () => {
                   ) : null
                 },
                 {
-                  title: 'Thick Sqft', dataIndex: 'thick_sqft', width: 100, align: 'right',
+                  title: 'Thick Cost Sqft', dataIndex: 'thick_sqft', width: 100, align: 'right',
                   render: v => v ? (
                     <Text strong style={{ color: '#1d4ed8' }}>
                       {Number(v).toLocaleString('en-IN', { maximumFractionDigits: 2 })}

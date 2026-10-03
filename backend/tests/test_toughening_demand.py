@@ -67,9 +67,12 @@ def test_toughening_demand_from_confirmed_sales_orders(db_session: Session, dema
     old = (date.today() - timedelta(days=30)).isoformat()
     before = _get(headers, preset="today")
 
-    # 24x24 in = 4 sqft per piece; charged 36x24 = 6 sqft per piece
+    # The register counts COST sqft. 24x24 in = 4 sqft per piece.
+    # thin_size: no saved cost dims -> derived with the cost rounding step (3 in): 24x24 = 4/pc
+    # thick_size: selling charged 36x24 (6/pc) is ignored; saved cost dims 30x24 = 5/pc
     thin_size = {"width_inch": 24, "height_inch": 24, "quantity": 3, "charged_w_inch": 0, "charged_h_inch": 0}
-    thick_size = {"width_inch": 24, "height_inch": 24, "quantity": 2, "charged_w_inch": 36, "charged_h_inch": 24}
+    thick_size = {"width_inch": 24, "height_inch": 24, "quantity": 2, "charged_w_inch": 36, "charged_h_inch": 24,
+                  "cost_charged_w": 30, "cost_charged_h": 24}
     big_thick = {"width_inch": 24, "height_inch": 24, "quantity": 50}
 
     def so(num, status="confirmed", order_date=today, company_id=1, is_active=True, groups=None, lines=None):
@@ -79,7 +82,7 @@ def test_toughening_demand_from_confirmed_sales_orders(db_session: Session, dema
     db_session.add_all([
         so("SO-TD-MIX", groups=[
             _group(5, True, thin_size),                                  # thin: 3 pcs, 12 sqft
-            _group(10, True, thick_size),                                # thick: 2 pcs, 12 sqft (charged dims)
+            _group(10, True, thick_size),                                # thick: 2 pcs, 10 cost sqft (saved cost dims)
             _group(12, False, big_thick),                                # not toughened: ignored
             _group(None, True, {"width_inch": 12, "height_inch": 12, "quantity": 1}, description="Clear 8 mm"),  # thick via description
             _group(None, True, {"width_inch": 12, "height_inch": 12, "quantity": 4}, description="Frosted"),     # unclassified
@@ -107,7 +110,7 @@ def test_toughening_demand_from_confirmed_sales_orders(db_session: Session, dema
     assert delta("thin", "pieces") == 3 + 2            # MIX thin + LEGACY
     assert delta("thin", "sqft") == 12 + 8
     assert delta("thick", "pieces") == 2 + 1 + 50 + 1   # MIX + INPROD + TYPEONLY
-    assert delta("thick", "sqft") == 12 + 1 + 200 + 1
+    assert delta("thick", "sqft") == 10 + 1 + 200 + 1   # cost sqft
     assert delta("unclassified", "pieces") == 4
     assert delta("total", "pieces") == 3 + 2 + 1 + 4 + 2 + 50 + 1
     assert after["total"]["pieces"] == sum(after[b]["pieces"] for b in ("thin", "thick", "unclassified"))
@@ -115,7 +118,7 @@ def test_toughening_demand_from_confirmed_sales_orders(db_session: Session, dema
     items = {i["so_number"]: i for i in after["items"] if i["so_number"] in SO_NUMBERS}
     assert set(items) == {"SO-TD-MIX", "SO-TD-LEGACY", "SO-TD-INPROD", "SO-TD-TYPEONLY"}
     mix = items["SO-TD-MIX"]
-    assert mix["thin_sqft"] == 12 and mix["thick_sqft"] == 13 and mix["unclassified_sqft"] == 4
+    assert mix["thin_sqft"] == 12 and mix["thick_sqft"] == 11 and mix["unclassified_sqft"] == 4
     assert mix["total_pieces"] == 10 and mix["toughened_lines"] == 4
 
     # Outside the period: none of today's SOs

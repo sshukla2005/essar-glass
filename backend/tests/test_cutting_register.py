@@ -400,3 +400,12 @@ def test_line_without_charged_dims_uses_rounding_rule_not_the_step_itself():
     assert _glass_line_sqft({**line, "charged_w_inch": 0, "charged_h_inch": 0})[0] == 18 * 66 / 144
     # no rounding rule: actual size
     assert _glass_line_sqft({"width_inch": 24, "height_inch": 24, "quantity": 3}) == (12.0, False)
+
+
+def test_toughening_cost_sqft_uses_the_cost_rounding_rule():
+    from main import _glass_line_cost_sqft
+    size = {"width_inch": 13.5625, "height_inch": 64.5625, "quantity": 2}
+    assert _glass_line_cost_sqft(size) == 15 * 66 * 2 / 144                       # default cost step 3 in
+    assert _glass_line_cost_sqft({**size, "wizard_cost_ceil_w": 6, "wizard_cost_ceil_h": 6}) == 18 * 66 * 2 / 144
+    assert _glass_line_cost_sqft({**size, "cost_charged_w": 14, "cost_charged_h": 65}) == 14 * 65 * 2 / 144
+    assert _glass_line_cost_sqft({**size, "charged_w_inch": 36, "charged_h_inch": 72}) == 15 * 66 * 2 / 144  # selling ignored
