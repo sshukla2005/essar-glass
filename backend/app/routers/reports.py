@@ -15,7 +15,7 @@ from collections import Counter
 from typing import Optional, List, Dict, Any
 
 from fastapi import APIRouter, Depends, Query, HTTPException, status
-from sqlalchemy import func, case, distinct, or_, cast, String
+from sqlalchemy import func, case, distinct, or_, cast, String, literal
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -806,6 +806,43 @@ def sales_performance(
         sos_q.filter(so_sp_expr.is_(None) | (so_sp_expr == '')).count()
     )
 
+    # The quotes / SOs behind those counts, newest first and capped like so_missing_cost,
+    # so the warning can list them with a link to each document.
+    blank_q_rows = (
+        quotes_q.filter(q_sp_expr.is_(None) | (q_sp_expr == ''))
+        .with_entities(Quotation.id, Quotation.quote_number, Quotation.customer_id,
+                       literal(None).label("customer_name"), q_date_expr.label("doc_date"), Quotation.total_amount)
+        .order_by(q_date_expr.desc(), Quotation.id.desc())
+        .limit(_SO_MISSING_COST_LIMIT).all()
+    )
+    blank_so_rows = (
+        sos_q.filter(so_sp_expr.is_(None) | (so_sp_expr == ''))
+        .with_entities(SalesOrder.id, SalesOrder.so_number, SalesOrder.customer_id, SalesOrder.customer_name,
+                       so_date_expr.label("doc_date"), SalesOrder.total_amount)
+        .order_by(so_date_expr.desc(), SalesOrder.id.desc())
+        .limit(_SO_MISSING_COST_LIMIT).all()
+    )
+    blank_cust_ids = {r.customer_id for r in [*blank_q_rows, *blank_so_rows] if not r.customer_name and r.customer_id}
+    blank_cust_names = dict(
+        db.query(Customer.id, Customer.name).filter(Customer.id.in_(blank_cust_ids)).all()
+    ) if blank_cust_ids else {}
+
+    def _blank_doc(r, doc_type, number):
+        return {
+            "type": doc_type,
+            "id": r.id,
+            "number": number,
+            "customer_name": r.customer_name or blank_cust_names.get(r.customer_id) or None,
+            "date": r.doc_date,
+            "total_amount": round(float(r.total_amount or 0.0), 2),
+        }
+
+    blank_salesperson_docs = sorted(
+        [_blank_doc(r, "sales_order", r.so_number) for r in blank_so_rows]
+        + [_blank_doc(r, "quotation", r.quote_number) for r in blank_q_rows],
+        key=lambda d: (d["date"] or "", d["id"]), reverse=True,
+    )
+
     emp_q = apply_company_filter(
         db.query(Employee).filter(Employee.is_active == True),
         Employee, cid
@@ -822,6 +859,7 @@ def sales_performance(
     data_quality = {
         "blank_salesperson_quotes": blank_q_count,
         "blank_salesperson_sos": blank_so_count,
+        "blank_salesperson_docs": blank_salesperson_docs,
         "unmatched_names": sorted(list(unmatched_names_set)),
         "so_missing_cost": so_missing_cost,
         "so_missing_cost_count": summary["so_without_cost_count"],
