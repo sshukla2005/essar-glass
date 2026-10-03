@@ -1,4 +1,5 @@
 import React, { useState, useImperativeHandle, forwardRef } from 'react'
+import { ORDER_REFERENCES } from '../../../utils/orderReference'
 import { Form, Select, DatePicker, Row, Col, Space, Radio, Typography, Button, Modal, Input } from 'antd'
 import { PlusOutlined } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
@@ -390,6 +391,13 @@ const QuotationDetailsCard = forwardRef(({
           <Col xs={12} md={4}>
             <Form.Item name="payment_terms" label={lbl('Payment Terms')} style={{ marginBottom: 0 }}>
               <Select options={paymentTerms} size="large" style={{ borderRadius: 8 }} />
+            </Form.Item>
+          </Col>
+
+          <Col xs={12} md={4}>
+            {/* Where the order came from; copied to the Sales Order and filterable on the lists */}
+            <Form.Item name="order_reference" label={lbl('Reference')} style={{ marginBottom: 0 }}>
+              <Select options={ORDER_REFERENCES} placeholder="Select reference" allowClear size="large" style={{ borderRadius: 8 }} />
             </Form.Item>
           </Col>
         </Row>

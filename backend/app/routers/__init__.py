@@ -165,6 +165,7 @@ def make_crud_router(
         crm_lead_id:  Optional[int] = Query(None),
         status:       Optional[str] = Query(None),
         product_id:   Optional[int] = Query(None),
+        order_reference: Optional[str] = Query(None),
         sort_by:      Optional[str] = Query(None),
         sort_order:   Optional[str] = Query(None),
         db:    Session = Depends(get_db),
@@ -266,6 +267,8 @@ def make_crud_router(
                 pass
             else:
                 q = q.filter(model.status == status)
+        if order_reference and hasattr(model, 'order_reference'):
+            q = q.filter(model.order_reference == order_reference)
 
         if search:
             search_filters = [getattr(model, f).ilike(f"%{search}%") for f in search_columns]

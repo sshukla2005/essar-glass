@@ -19,6 +19,7 @@ class SalesOrder(Base, TimestampMixin, SoftDeleteMixin):
     salesperson      = Column(String(200), nullable=True)
     payment_terms    = Column(String(50),  nullable=True)
     delivery_address = Column(Text,        nullable=True)   # Ship To text; empty = same as billing
+    order_reference  = Column(String(40),  nullable=True, index=True)  # where the order came from (Architect, Builder, ...)
     status           = Column(String(30),  default="draft", index=True)
     lines            = Column(JSON,        nullable=True)
     groups           = Column(JSON,        nullable=True)

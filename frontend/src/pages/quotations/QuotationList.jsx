@@ -1,8 +1,9 @@
 import React, { useState } from 'react'
-import { Tag, Button, Tooltip, Typography, Space, App } from 'antd'
+import { Tag, Button, Tooltip, Typography, Space, App, Select, Col } from 'antd'
 import { useSearchParams, useNavigate } from 'react-router-dom'
-import { ArrowLeftOutlined, DownloadOutlined, FileImageOutlined, WhatsAppOutlined } from '@ant-design/icons'
+import { ArrowLeftOutlined, DownloadOutlined, FileImageOutlined, WhatsAppOutlined, FilterOutlined } from '@ant-design/icons'
 import MasterList from '../../components/common/MasterList'
+import { ORDER_REFERENCES, orderReferenceLabel, orderReferenceColor } from '../../utils/orderReference'
 import { quotationApi, customerApi } from '../../api'
 import { generateQuotationPDF } from '../../utils/pdfGenerator'
 import { sendQuotationOnWhatsApp, buildQuotationRecordPdfBlob } from '../../utils/quotationWhatsApp'
@@ -21,6 +22,7 @@ const QuotationList = () => {
   const leadId = searchParams.get('lead_id')
 
   const [statusTab, setStatusTab] = useState('active')
+  const [reference, setReference] = useState(undefined)
   const [counts, setCounts] = useState(null)
   const [importModalOpen, setImportModalOpen] = useState(false)
   const [sendingWhatsAppId, setSendingWhatsAppId] = useState(null)
@@ -93,10 +95,19 @@ const QuotationList = () => {
         apiFilters={{
           ...(leadId ? { crm_lead_id: leadId } : {}),
           status: statusTab,
+          ...(reference ? { order_reference: reference } : {}),
         }}
+        extraFilters={
+          <Col>
+            <Select placeholder={<><FilterOutlined /> Reference</>} allowClear style={{ width: 200 }}
+              value={reference} onChange={setReference} options={ORDER_REFERENCES} />
+          </Col>
+        }
         columns={[
           { title: 'Quote No.',  dataIndex: 'quote_number', key: 'quote_number', width: 130 },
           { title: 'Customer',   dataIndex: 'customer_name', key: 'customer_name', width: 200, render: (v, r) => v || r.customer?.name || '—' },
+          { title: 'Reference',  dataIndex: 'order_reference', key: 'order_reference', width: 150,
+            render: v => v ? <Tag color={orderReferenceColor(v)}>{orderReferenceLabel(v)}</Tag> : '—' },
           { title: 'Date',       dataIndex: 'quote_date',   key: 'quote_date',   width: 120 },
           { title: 'Valid Until', dataIndex: 'valid_until',  key: 'valid_until',  width: 120 },
           { title: 'Salesperson', dataIndex: 'salesperson',  key: 'salesperson',  width: 140 },

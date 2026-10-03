@@ -1827,6 +1827,7 @@ const SalesOrderForm = () => {
         payment_terms: quotation.payment_terms,
         salesperson: quotation.salesperson,
         notes: quotation.customer_notes,
+        ...(quotation.order_reference ? { order_reference: quotation.order_reference } : {}),
         ...(qAccId ? { payment_account_id: qAccId } : {}),
       })
 

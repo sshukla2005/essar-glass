@@ -6,6 +6,7 @@ import { useQuery } from '@tanstack/react-query'
 import { generateSOPDF } from '../../utils/pdfGenerator'
 import { DownloadOutlined, FilterOutlined } from '@ant-design/icons'
 import { useSearchParams } from 'react-router-dom'
+import { ORDER_REFERENCES, orderReferenceLabel, orderReferenceColor } from '../../utils/orderReference'
 
 const STATUS_COLORS = {
   draft: 'default',
@@ -20,6 +21,7 @@ const SalesOrderList = () => {
   const { data: customers = [] } = useQuery({ queryKey: ['customers-dd'], queryFn: () => customerApi.dropdown().then(r => r.data) })
   const [searchParams, setSearchParams] = useSearchParams()
   const selectedStatus = searchParams.get('status') || undefined
+  const selectedReference = searchParams.get('reference') || undefined
   
   const customerList = Array.isArray(customers) ? customers : (customers?.items || [])
 
@@ -36,6 +38,7 @@ const SalesOrderList = () => {
   const columns = [
     { title: 'SO Number', dataIndex: 'so_number', width: 120 },
     { title: 'Customer', dataIndex: 'customer_name', render: (v, r) => v || r.customer_id || '—' },
+    { title: 'Reference', dataIndex: 'order_reference', render: v => v ? <Tag color={orderReferenceColor(v)}>{orderReferenceLabel(v)}</Tag> : '—' },
     { title: 'Quotation Ref', dataIndex: 'quotation_id', render: v => v ? `QT${String(v).padStart(4,'0')}` : '—' },
     { title: 'Order Date', dataIndex: 'order_date', sorter: true },
     { title: 'Delivery Date', dataIndex: 'delivery_date', sorter: true },
@@ -62,6 +65,12 @@ const SalesOrderList = () => {
       />
     </Col>
   )
+  const setReference = (value) => {
+    const params = new URLSearchParams(searchParams)
+    if (value) params.set('reference', value)
+    else params.delete('reference')
+    setSearchParams(params)
+  }
 
   return (
     <MasterList
@@ -73,8 +82,17 @@ const SalesOrderList = () => {
       editPath={(r) => `/sales-orders/${r.id}/edit`}
       searchPlaceholder="Search by SO number, salesperson or customer..."
       nameField="so_number"
-      apiFilters={selectedStatus ? { status: selectedStatus } : undefined}
-      extraFilters={extraFilters}
+      apiFilters={selectedStatus || selectedReference ? {
+        ...(selectedStatus ? { status: selectedStatus } : {}),
+        ...(selectedReference ? { order_reference: selectedReference } : {}),
+      } : undefined}
+      extraFilters={<>
+        {extraFilters}
+        <Col>
+          <Select placeholder={<><FilterOutlined /> Reference</>} allowClear style={{ width: 200 }}
+            value={selectedReference} onChange={setReference} options={ORDER_REFERENCES} />
+        </Col>
+      </>}
       extraActions={(r) => (
         <Tooltip title="Download PDF">
           <Button type="text" size="small" icon={<DownloadOutlined />} style={{ color: '#10b981' }} onClick={async () => {
