@@ -36,6 +36,7 @@ const ActionToolbar = ({
   isEdit = false,
   record,
   onImportExcel,
+  onDownloadTemplate,
   onCostAnalysis,
   onGeneratePDF,
   onPreviewPDF,
@@ -97,7 +98,18 @@ const ActionToolbar = ({
       </div>
 
       <Space wrap style={{ gap: 8 }}>
-        {!isSO && onImportExcel && (
+        {onDownloadTemplate && (
+          <Button
+            icon={<DownloadOutlined style={{ color: '#0ea5e9' }} />}
+            onClick={onDownloadTemplate}
+            title="Blank Excel in the S.O. format that Import Excel reads"
+            style={{ borderColor: '#E2E8F0', color: '#0f172a', borderRadius: 8, height: 38, fontWeight: 500, display: 'flex', alignItems: 'center' }}
+          >
+            Template
+          </Button>
+        )}
+
+        {onImportExcel && (
           <Button 
             icon={<UploadOutlined style={{ color: '#0ea5e9' }} />} 
             onClick={onImportExcel} 

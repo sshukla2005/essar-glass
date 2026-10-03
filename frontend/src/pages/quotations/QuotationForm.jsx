@@ -5,6 +5,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import dayjs from 'dayjs'
 import * as XLSX from 'xlsx'
+import { parseSalesOrderExcel, downloadSalesOrderTemplate } from '../../utils/soExcelImport'
 import MasterForm from '../../components/common/MasterForm'
 import { quotationApi, customerApi, productApi, salesOrderApi, processMasterApi, employeeApi, settingsApi } from '../../api'
 import { generateQuotationPDF, makePdfFilename } from '../../utils/pdfGenerator'
@@ -97,97 +98,6 @@ const CEILING_OPTIONS = [
   { value: 'plus30mm', label: '+30mm' },
   { value: 'custom', label: 'Custom mm' },
 ]
-
-const parseGlassDescription = (name, dropdownConfig) => {
-  if (!name) return {}
-
-  const result = {
-    glass_thickness: null,
-    glass_type: null,
-    glass_category: null,
-  }
-
-  const str = name.trim()
-
-  // ── Thickness: match patterns like "3.5mm", "6 mm", "10MM" ──
-  const thicknessMatch = str.match(/(\d+(?:\.\d+)?)\s*mm/i)
-  if (thicknessMatch) {
-    result.glass_thickness = parseFloat(thicknessMatch[1])
-  }
-
-  // ── Glass Types (order matters — check longer names first) ──
-  const glassTypes = dropdownConfig?.glass_types?.length
-    ? dropdownConfig.glass_types
-    : ['Annealed', 'Toughened', 'Laminated', 'DGU']
-
-  // Type aliases for common abbreviations
-  const GLASS_TYPE_SYNONYMS = {
-    'toughened': ['tough', 'temp', 'tempered', 'tgh'],
-    'annealed':  ['ann', 'float', 'normal'],
-    'laminated': ['lam', 'pvb'],
-    'dgu':       ['double glazed', 'insulated', 'igu'],
-  }
-
-  const sortedTypes = [...glassTypes].sort((a, b) => b.length - a.length)
-  const strLowerType = str.toLowerCase()
-
-  // Pass 1: direct substring match
-  for (const t of sortedTypes) {
-    if (strLowerType.includes(t.toLowerCase())) {
-      result.glass_type = t
-      break
-    }
-  }
-
-  // Pass 2: synonym match if Pass 1 found nothing
-  if (!result.glass_type) {
-    for (const t of sortedTypes) {
-      const aliases = GLASS_TYPE_SYNONYMS[t.toLowerCase()] || []
-      if (aliases.some(alias => strLowerType.includes(alias))) {
-        result.glass_type = t
-        break
-      }
-    }
-  }
-
-  // ── Glass Categories ──
-  const glassCategories = dropdownConfig?.categories?.length
-    ? dropdownConfig.categories
-    : ['Clear', 'Xtra Clear', 'Tinted', 'Reflective', 'Mirror']
-
-  // Category aliases for common client Excel abbreviations not in the master list
-  const GLASS_CAT_SYNONYMS = {
-    'clear':      ['plain clear', 'fl clear', 'float clear'],
-    'xtra clear': ['extra clear', 'xtraclear', 'low iron', 'optiwhite', 'diamant'],
-    'tinted':     ['frosted', 'frost', 'obscure', 'satin', 'acid', 'etched', 'colored', 'coloured'],
-    'reflective': ['solar', 'coated', 'spandrel'],
-    'mirror':     ['mir', 'silvered'],
-  }
-
-  const sortedCats = [...glassCategories].sort((a, b) => b.length - a.length)
-  const strLowerCat = str.toLowerCase()
-
-  // Pass 1: direct substring match
-  for (const c of sortedCats) {
-    if (strLowerCat.includes(c.toLowerCase())) {
-      result.glass_category = c
-      break
-    }
-  }
-
-  // Pass 2: synonym match if Pass 1 found nothing
-  if (!result.glass_category) {
-    for (const c of sortedCats) {
-      const aliases = GLASS_CAT_SYNONYMS[c.toLowerCase()] || []
-      if (aliases.some(alias => strLowerCat.includes(alias))) {
-        result.glass_category = c
-        break
-      }
-    }
-  }
-
-  return result
-}
 
 const buildDescription = (group) => {
   const parts = []
@@ -2115,167 +2025,14 @@ const QuotationForm = () => {
   const handleExcelImport = async (e) => {
     const file = e.target.files[0]
     if (!file) return
-
     try {
       const buffer = await file.arrayBuffer()
-      const wb = XLSX.read(buffer, { type: 'array' })
-
-      const wsName = wb.SheetNames.find(n => n.includes('S.O.') || n === 'S.O.')
-      if (!wsName) {
-        message.error('Could not find S.O. sheet in the Excel file')
-        return
-      }
-      const ws = wb.Sheets[wsName]
-      const rawData = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null })
-
-      let orderNo = null
-      let clientName = null
-
-      for (let i = 0; i < Math.min(5, rawData.length); i++) {
-        const row = rawData[i]
-        if (row && row[0] === 'Order No:') orderNo = row[1]
-        if (row && String(row[0] || '').includes('Client')) clientName = row[1]
-      }
-
-      const parsedGroups = []
-      let currentGroup = null
-
-      for (let i = 0; i < rawData.length; i++) {
-        const row = rawData[i]
-        if (!row) continue
-
-        const itemName = row[2]  // Column C
-        const cep = String(row[3] || '').toUpperCase() === 'Y'
-        const w_inch = typeof row[4] === 'number' ? row[4] : null
-        const h_inch = typeof row[5] === 'number' ? row[5] : null
-        const qty = typeof row[6] === 'number' ? row[6] : null
-        const rft_rate = typeof row[9] === 'number' ? row[9] : 0
-        const sqft_rate = typeof row[13] === 'number' ? row[13] : 0
-
-        if (!w_inch || !h_inch) continue
-
-        if (itemName && typeof itemName === 'string' && itemName.trim()) {
-          // Parse glass attributes from description
-          const parsed = parseGlassDescription(itemName.trim(), dropdownConfig)
-
-          // Find matching product in database
-          let matchedProduct = null
-
-          // Step 1: Match by parsed attributes if available (highly precise)
-          if (parsed.glass_thickness && parsed.glass_category) {
-            matchedProduct = products.find(p => 
-              p.thickness_mm === parsed.glass_thickness &&
-              String(p.glass_category).toLowerCase() === String(parsed.glass_category).toLowerCase() &&
-              (!parsed.glass_type || String(p.glass_type).toLowerCase() === String(parsed.glass_type).toLowerCase())
-            )
-          }
-
-          // Step 2: Substring or keyword inclusion fallback (avoiding first-word match on "4mm", "5mm", etc.)
-          if (!matchedProduct) {
-            const itemNameLower = itemName.toLowerCase().trim()
-            matchedProduct = [...products]
-              .sort((a, b) => b.name.length - a.name.length)
-              .find(p => {
-                const prodNameLower = p.name.toLowerCase()
-                if (itemNameLower.includes(prodNameLower) || prodNameLower.includes(itemNameLower)) return true
-                
-                const pWords = prodNameLower.split(/\s+/).filter(w => w !== 'mm' && w.length > 2)
-                if (pWords.length > 0 && pWords.every(w => itemNameLower.includes(w))) return true
-
-                return false
-              })
-          }
-
-          // Auto-calculate rate from matrix if thickness + category found
-          let autoRate = sqft_rate || matchedProduct?.sale_price || 0
-          if (!autoRate && parsed.glass_category && parsed.glass_thickness) {
-            autoRate = calcRateFromMatrix(parsed.glass_category, parsed.glass_thickness)
-          }
-
-          currentGroup = {
-            group_key: Date.now() + Math.random() + i,
-            product_id: matchedProduct?.id || null,
-            description: itemName.trim(),
-            glass_thickness: parsed.glass_thickness || matchedProduct?.thickness_mm || null,
-            glass_type: parsed.glass_type || null,
-            glass_category: parsed.glass_category || null,
-            is_toughened: parsed.glass_type === 'Toughened',
-            ceiling_inches: 6,
-            rate: autoRate,
-            rate_rft: rft_rate || 0,
-            cep: cep,
-            cep_polish_rate: 15,
-            cep_polish_rate_custom: null,
-            pricing_method: 'per_sqft',
-            discount_pct: 0,
-            tax_rate: 18,
-            custom_costing: true,
-            manual_rate: null,
-            cep_rft_multiplier: null,
-            sizes: [],
-            processes: []
-          }
-          parsedGroups.push(currentGroup)
-        }
-
-        if (!currentGroup) {
-          currentGroup = {
-            group_key: Date.now() + Math.random() + i,
-            product_id: null,
-            description: 'Imported Glass',
-            glass_thickness: null,
-            glass_type: null,
-            glass_category: null,
-            is_toughened: false,
-            ceiling_inches: 6,
-            rate: sqft_rate || 0,
-            rate_rft: rft_rate || 0,
-            cep: cep,
-            cep_polish_rate: 15,
-            cep_polish_rate_custom: null,
-            pricing_method: 'per_sqft',
-            discount_pct: 0,
-            tax_rate: 18,
-            custom_costing: true,
-            manual_rate: null,
-            cep_rft_multiplier: null,
-            sizes: [],
-            processes: []
-          }
-          parsedGroups.push(currentGroup)
-        }
-
-        if (sqft_rate > 0) currentGroup.rate = sqft_rate
-        if (rft_rate > 0) currentGroup.rate_rft = rft_rate
-
-        const sizeData = {
-          size_key: Date.now() + Math.random() + i,
-          width_inch: w_inch,
-          height_inch: h_inch,
-          quantity: qty || 1,
-        }
-        const calculatedSize = calcGroupSize(currentGroup, sizeData)
-        currentGroup.sizes.push(calculatedSize)
-      }
-
-      if (parsedGroups.length === 0) {
-        message.error('No glass items found in the Excel file')
-        return
-      }
-
-      setImportPreview({
-        orderNo,
-        clientName,
-        groups: parsedGroups,
-        totalItems: parsedGroups.reduce((s, g) => s + g.sizes.length, 0),
-        totalProducts: parsedGroups.length
-      })
-
+      setImportPreview(parseSalesOrderExcel(buffer, { products, dropdownConfig, calcGroupSize, calcRateFromMatrix }))
     } catch (err) {
       console.error(err)
-      message.error('Failed to read Excel file. Make sure it is a valid .xlsx file.')
+      message.error(err?.message?.startsWith('Could not') || err?.message?.startsWith('No glass')
+        ? err.message : 'Failed to read Excel file. Make sure it is a valid .xlsx file.')
     }
-
     e.target.value = ''
   }
 
@@ -2401,6 +2158,7 @@ const QuotationForm = () => {
             isEdit={isEdit}
             record={record}
             onImportExcel={isReadOnly ? undefined : () => fileInputRef.current?.click()}
+            onDownloadTemplate={isReadOnly ? undefined : downloadSalesOrderTemplate}
             onCostAnalysis={openGlobalComparison}
             onGeneratePDF={() => generateQuotationPDF(getQuotationPdfData())}
             onPreviewPDF={handlePreviewPDF}
