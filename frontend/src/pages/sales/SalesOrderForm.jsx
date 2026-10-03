@@ -1745,14 +1745,11 @@ const SalesOrderForm = () => {
     onError: (err) => message.error(apiError(err, 'Failed to create Delivery Challan')),
   })
 
+  // Opens a new invoice pre-filled from this SO (rates, amounts, HSN, D/C, GST mode),
+  // the same as the Invoices button. Saving the SO's raw lines directly as an invoice
+  // stored every rate and amount as 0.
   const createInvoiceMutation = useMutation({
-    mutationFn: async () => {
-      const invData = { so_id: parseInt(id), customer_id: record?.customer_id, lines: getFlatLines(), ...totals }
-      const res = await invoiceApi.create(invData)
-      return res.data
-    },
-    onSuccess: (data) => { message.success('Invoice created'); navigate(`/invoices/${data.id}/edit`) },
-    onError: (err) => message.error(apiError(err, 'Failed to create Invoice')),
+    mutationFn: async () => navigate(`/invoices/new?so_id=${id}`),
   })
 
   const handleSave = async (andNew = false) => {
