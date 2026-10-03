@@ -510,7 +510,8 @@ def get_cutting_register(
                     line["qty_cut"] = 0
 
             thick_val = parse_thickness(line)
-            sqft, is_charged = calc_line_sqft(line)
+            _, is_charged = calc_line_sqft(line)
+            sqft = _glass_line_cost_sqft(line)  # cost sqft (Cost vs Selling), not selling
             if not is_charged:
                 fallback_line_count += 1
 
