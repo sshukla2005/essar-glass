@@ -381,6 +381,35 @@ def _glass_line_sqft(line):
     return sqft, is_charged
 
 
+def _glass_line_cost_sqft(line):
+    """Cost sqft for the line's full qty: the size's cost charged dims (Cost vs Selling).
+
+    Uses the saved cost_charged_w/h (or cost_charged_sqft); without them, derives them
+    from the actual size and the group's cost rounding rule (wizard_cost_ceil_w/h,
+    default 3 in), as quotationCalc does. Falls back to the selling sqft.
+    """
+    try:
+        qty = float(line.get("qty") or line.get("quantity") or 1)
+    except (TypeError, ValueError):
+        qty = 1.0
+    try:
+        cw, ch = float(line.get("cost_charged_w") or 0), float(line.get("cost_charged_h") or 0)
+        if cw > 0 and ch > 0:
+            return cw * ch * qty / 144.0
+        saved = float(line.get("cost_charged_sqft") or 0)
+        if saved > 0:
+            return saved
+        w = float(line.get("width_inch") or line.get("act_w_in") or 0) or float(line.get("width_mm") or 0) / 25.4
+        h = float(line.get("height_inch") or line.get("act_h_in") or 0) or float(line.get("height_mm") or 0) / 25.4
+        if w > 0 and h > 0:
+            cw = _auto_charged_dim(w, line.get("wizard_cost_ceil_w") or 3, line.get("wizard_cost_ceil_w_custom_mm"))
+            ch = _auto_charged_dim(h, line.get("wizard_cost_ceil_h") or 3, line.get("wizard_cost_ceil_h_custom_mm"))
+            return cw * ch * qty / 144.0
+    except (TypeError, ValueError):
+        pass
+    return _glass_line_sqft(line)[0]
+
+
 def _register_date_range(preset, target_date):
     """Resolve a dashboard register preset to (start_date, end_date), inclusive.
 
@@ -481,7 +510,8 @@ def get_cutting_register(
                     line["qty_cut"] = 0
 
             thick_val = parse_thickness(line)
-            sqft, is_charged = calc_line_sqft(line)
+            _, is_charged = calc_line_sqft(line)
+            sqft = _glass_line_cost_sqft(line)  # cost sqft (Cost vs Selling), not selling
             if not is_charged:
                 fallback_line_count += 1
 
@@ -618,6 +648,10 @@ def _toughened_so_lines(so):
                         "glass_thickness": g.get("glass_thickness"),
                         "product_id": g.get("product_id"),
                         "description": g.get("description"),
+                        "wizard_cost_ceil_w": g.get("wizard_cost_ceil_w"),
+                        "wizard_cost_ceil_h": g.get("wizard_cost_ceil_h"),
+                        "wizard_cost_ceil_w_custom_mm": g.get("wizard_cost_ceil_w_custom_mm"),
+                        "wizard_cost_ceil_h_custom_mm": g.get("wizard_cost_ceil_h_custom_mm"),
                         **size,
                     }
         return
@@ -678,7 +712,7 @@ def get_toughening_register(
 
         for line in _toughened_so_lines(so):
             cat = _classify_glass(_glass_line_thickness(line, product_thick_map))
-            sqft, _ = _glass_line_sqft(line)
+            sqft = _glass_line_cost_sqft(line)  # cost sqft (what toughening is paid on), not selling
             try:
                 pieces = int(float(line.get("qty") or line.get("quantity") or 1))
             except (ValueError, TypeError):

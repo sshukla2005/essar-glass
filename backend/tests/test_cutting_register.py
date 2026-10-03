@@ -400,3 +400,40 @@ def test_line_without_charged_dims_uses_rounding_rule_not_the_step_itself():
     assert _glass_line_sqft({**line, "charged_w_inch": 0, "charged_h_inch": 0})[0] == 18 * 66 / 144
     # no rounding rule: actual size
     assert _glass_line_sqft({"width_inch": 24, "height_inch": 24, "quantity": 3}) == (12.0, False)
+
+
+def test_toughening_cost_sqft_uses_the_cost_rounding_rule():
+    from main import _glass_line_cost_sqft
+    size = {"width_inch": 13.5625, "height_inch": 64.5625, "quantity": 2}
+    assert _glass_line_cost_sqft(size) == 15 * 66 * 2 / 144                       # default cost step 3 in
+    assert _glass_line_cost_sqft({**size, "wizard_cost_ceil_w": 6, "wizard_cost_ceil_h": 6}) == 18 * 66 * 2 / 144
+    assert _glass_line_cost_sqft({**size, "cost_charged_w": 14, "cost_charged_h": 65}) == 14 * 65 * 2 / 144
+    assert _glass_line_cost_sqft({**size, "charged_w_inch": 36, "charged_h_inch": 72}) == 15 * 66 * 2 / 144  # selling ignored
+
+
+def test_cutting_register_counts_cost_sqft(db_session: Session, cutting_test_env):
+    """Row thin/thick sqft use the cost size: saved cost dims, else the cost rounding step (3 in)."""
+    headers = cutting_test_env["headers"] if isinstance(cutting_test_env, dict) else cutting_test_env
+    db_session.query(WorkshopOrder).filter(WorkshopOrder.wo_number == "WO-COST-SQFT").delete(synchronize_session=False)
+    wo = WorkshopOrder(wo_number="WO-COST-SQFT", company_id=1, status="draft", is_active=True,
+                       customer_name="Cost Sqft", order_date=date.today().isoformat(), lines=[
+        # thin, selling charged 18x66, no saved cost dims -> cost 15x66 (3 in step)
+        {"description": "Clear 5mm", "glass_thickness": 5, "act_w_in": 13.5625, "act_h_in": 64.5625, "qty": 2,
+         "charged_w_inch": 18, "charged_h_inch": 66, "ceiling_w_inches": 6, "ceiling_h_inches": 6},
+        # thick, saved cost dims 30x24 win over selling 36x24
+        {"description": "Clear 12mm", "glass_thickness": 12, "act_w_in": 24, "act_h_in": 24, "qty": 1,
+         "charged_w_inch": 36, "charged_h_inch": 24, "cost_charged_w": 30, "cost_charged_h": 24},
+    ])
+    db_session.add(wo)
+    db_session.commit()
+    try:
+        res = client.get("/api/v1/workshop/cutting-register", params={"preset": "all_time"}, headers=headers)
+        assert res.status_code == 200, res.text
+        body = res.json()
+        rows = body.get("rows") or body.get("items") or []
+        row = next(r for r in rows if r["wo_number"] == "WO-COST-SQFT")
+        assert row["thin_sqft"] == round(15 * 66 * 2 / 144, 2)
+        assert row["thick_sqft"] == round(30 * 24 / 144, 2)
+    finally:
+        db_session.query(WorkshopOrder).filter(WorkshopOrder.wo_number == "WO-COST-SQFT").delete(synchronize_session=False)
+        db_session.commit()
