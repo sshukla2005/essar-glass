@@ -15,7 +15,7 @@ from collections import Counter
 from typing import Optional, List, Dict, Any
 
 from fastapi import APIRouter, Depends, Query, HTTPException, status
-from sqlalchemy import func, case, distinct, or_, cast, String, literal
+from sqlalchemy import func, case, distinct, or_, cast, String, literal, select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -47,6 +47,27 @@ _PENDING_QUOTE_STATUSES = ('draft', 'sent', 'confirmed')
 
 # Sales orders listed in the "Cost Rate Missing" data-quality alert are capped at this many.
 _SO_MISSING_COST_LIMIT = 100
+
+
+def _ref_value(reference) -> Optional[str]:
+    """The Reference filter (architect, builder, ...) or None. Ignores a FastAPI Query
+    default, which is what a direct Python call to an endpoint function passes."""
+    if not isinstance(reference, str):
+        return None
+    return reference.strip() or None
+
+
+def _so_ref_expr():
+    """A Sales Order's Reference, falling back to its quotation's (needs Quotation joined)."""
+    return func.coalesce(func.nullif(SalesOrder.order_reference, ''), func.nullif(Quotation.order_reference, ''))
+
+
+def _lead_ids_with_ref(ref: str):
+    """Leads that have a quotation or sales order with this Reference."""
+    return (
+        select(Quotation.crm_lead_id).where(Quotation.order_reference == ref, Quotation.crm_lead_id.isnot(None))
+        .union(select(SalesOrder.crm_lead_id).where(SalesOrder.order_reference == ref, SalesOrder.crm_lead_id.isnot(None)))
+    )
 
 
 def _has_cost_rate(total_cost) -> bool:
@@ -126,7 +147,9 @@ def _calc_summary(
     cid: Optional[int],
     db: Session,
     user=None,
+    reference: Optional[str] = None,
 ) -> Dict[str, Any]:
+    ref = _ref_value(reference)
     f_str = f_date.isoformat()
     t_str = t_date.isoformat()
     start_dt = datetime.combine(f_date, time.min)
@@ -144,6 +167,8 @@ def _calc_summary(
         ),
         CRMLead, user, "crm_leads"
     )
+    if ref:
+        leads_q = leads_q.filter(CRMLead.id.in_(_lead_ids_with_ref(ref)))
     leads_created = leads_q.count()
     expected_rev_sum = float(leads_q.with_entities(func.sum(CRMLead.expected_revenue)).scalar() or 0.0)
 
@@ -164,6 +189,8 @@ def _calc_summary(
         ),
         Quotation, user, "quotations"
     ).outerjoin(CRMLead, Quotation.crm_lead_id == CRMLead.id).filter(q_date_expr >= f_str, q_date_expr <= t_str)
+    if ref:
+        quotes_q = quotes_q.filter(Quotation.order_reference == ref)
 
     quotes_created = quotes_q.count()
     quotes_value = round(float(quotes_q.with_entities(func.sum(Quotation.total_amount)).scalar() or 0.0), 2)
@@ -185,7 +212,8 @@ def _calc_summary(
     leads_with_q = (
         leads_q
         .join(Quotation, Quotation.crm_lead_id == CRMLead.id)
-        .filter(Quotation.is_active == True, Quotation.status != 'cancelled')
+        .filter(Quotation.is_active == True, Quotation.status != 'cancelled',
+                *([Quotation.order_reference == ref] if ref else []))
         .with_entities(func.count(distinct(CRMLead.id)))
         .scalar() or 0
     )
@@ -211,6 +239,8 @@ def _calc_summary(
         ),
         SalesOrder, user, "sales_orders"
     ).outerjoin(Quotation, SalesOrder.quotation_id == Quotation.id).outerjoin(CRMLead, func.coalesce(SalesOrder.crm_lead_id, Quotation.crm_lead_id) == CRMLead.id).filter(so_date_expr >= f_str, so_date_expr <= t_str)
+    if ref:
+        sos_q = sos_q.filter(_so_ref_expr() == ref)
 
     so_count = sos_q.count()
     so_value = round(float(sos_q.with_entities(func.sum(SalesOrder.total_amount)).scalar() or 0.0), 2)
@@ -267,6 +297,10 @@ def _calc_summary(
         ),
         Invoice, user, "invoices"
     ).filter(inv_date_expr >= f_str, inv_date_expr <= t_str)
+    if ref:  # invoices count under the Reference of the Sales Order they bill
+        invs_q = (invs_q.join(SalesOrder, Invoice.so_id == SalesOrder.id)
+                  .outerjoin(Quotation, SalesOrder.quotation_id == Quotation.id)
+                  .filter(_so_ref_expr() == ref))
 
     invoiced_count = invs_q.count()
     invoiced_value = round(float(invs_q.with_entities(func.sum(Invoice.total_amount)).scalar() or 0.0), 2)
@@ -286,6 +320,10 @@ def _calc_summary(
         ),
         Payment, user, "payment_accounts"
     ).filter(pay_date_expr >= f_str, pay_date_expr <= t_str)
+    if ref:  # payments count under the Reference of their Sales Order
+        pays_q = (pays_q.join(SalesOrder, Payment.so_id == SalesOrder.id)
+                  .outerjoin(Quotation, SalesOrder.quotation_id == Quotation.id)
+                  .filter(_so_ref_expr() == ref))
     collected_count = pays_q.count()
     collected_value = round(float(pays_q.with_entities(func.sum(Payment.amount)).scalar() or 0.0), 2)
 
@@ -365,10 +403,12 @@ def _calc_summary(
 def sales_performance(
     from_date: Optional[str] = Query(None, alias="from"),
     to_date:   Optional[str] = Query(None, alias="to"),
+    reference: Optional[str] = Query(None),
     db:   Session = Depends(get_db),
     user = Depends(_sales_performance_user),
 ):
     cid = getattr(user, "active_company_id", None)
+    ref = _ref_value(reference)
     f_date, t_date, period_label = _parse_dates(from_date, to_date)
     f_str = f_date.isoformat()
     t_str = t_date.isoformat()
@@ -376,13 +416,13 @@ def sales_performance(
     end_dt = datetime.combine(t_date, time.max)
 
     # Summary for current period
-    summary = _calc_summary(f_date, t_date, cid, db, user)
+    summary = _calc_summary(f_date, t_date, cid, db, user, reference=ref)
 
     # Previous period calculation for deltas
     duration_days = (t_date - f_date).days + 1
     prev_to = f_date - timedelta(days=1)
     prev_from = prev_to - timedelta(days=duration_days - 1)
-    previous = _calc_summary(prev_from, prev_to, cid, db, user)
+    previous = _calc_summary(prev_from, prev_to, cid, db, user, reference=ref)
     so_missing_cost = summary.pop("_so_missing_cost")
     previous.pop("_so_missing_cost", None)
 
@@ -434,6 +474,7 @@ def sales_performance(
             ),
             CRMLead, cid
         )
+        .filter(*([CRMLead.id.in_(_lead_ids_with_ref(ref))] if ref else []))
         .with_entities(CRMLead.salesperson, func.count(CRMLead.id).label("cnt"))
         .group_by(CRMLead.salesperson)
         .all()
@@ -459,6 +500,7 @@ def sales_performance(
         )
         .outerjoin(CRMLead, Quotation.crm_lead_id == CRMLead.id)
         .filter(q_date_expr >= f_str, q_date_expr <= t_str)
+        .filter(*([Quotation.order_reference == ref] if ref else []))
     )
 
     quote_rows = (
@@ -506,7 +548,8 @@ def sales_performance(
             CRMLead, cid
         )
         .join(Quotation, Quotation.crm_lead_id == CRMLead.id)
-        .filter(Quotation.is_active == True, Quotation.status != 'cancelled')
+        .filter(Quotation.is_active == True, Quotation.status != 'cancelled',
+                *([Quotation.order_reference == ref] if ref else []))
         .with_entities(CRMLead.salesperson, func.count(distinct(CRMLead.id)).label("cnt"))
         .group_by(CRMLead.salesperson)
         .all()
@@ -537,6 +580,7 @@ def sales_performance(
         .outerjoin(Quotation, SalesOrder.quotation_id == Quotation.id)
         .outerjoin(CRMLead, func.coalesce(SalesOrder.crm_lead_id, Quotation.crm_lead_id) == CRMLead.id)
         .filter(so_date_expr >= f_str, so_date_expr <= t_str)
+        .filter(*([_so_ref_expr() == ref] if ref else []))
     )
 
     so_rows = (
@@ -587,6 +631,7 @@ def sales_performance(
         .outerjoin(Quotation, SalesOrder.quotation_id == Quotation.id)
         .outerjoin(CRMLead, func.coalesce(SalesOrder.crm_lead_id, Quotation.crm_lead_id) == CRMLead.id)
         .filter(inv_date_expr >= f_str, inv_date_expr <= t_str)
+        .filter(*([_so_ref_expr() == ref] if ref else []))
         .with_entities(inv_sp_expr.label("sp"), func.sum(Invoice.total_amount).label("amt"))
         .group_by(inv_sp_expr)
         .all()
@@ -618,6 +663,7 @@ def sales_performance(
         .outerjoin(Quotation, SalesOrder.quotation_id == Quotation.id)
         .outerjoin(CRMLead, func.coalesce(SalesOrder.crm_lead_id, Quotation.crm_lead_id) == CRMLead.id)
         .filter(pay_date_expr >= f_str, pay_date_expr <= t_str)
+        .filter(*([_so_ref_expr() == ref] if ref else []))
         .with_entities(pay_sp_expr.label("sp"), func.sum(Payment.amount).label("amt"))
         .group_by(pay_sp_expr)
         .all()
@@ -770,27 +816,30 @@ def sales_performance(
         month_slots.append((y, m, m_start.strftime("%b"), m_start.isoformat(), m_end.isoformat()))
 
     for y, m, m_label, ms_str, me_str in month_slots:
-        so_m_val = float(
-            apply_company_filter(
-                db.query(func.sum(SalesOrder.total_amount)).filter(
+        so_m_q = apply_company_filter(
+                db.query(func.sum(SalesOrder.total_amount)).select_from(SalesOrder).filter(
                     SalesOrder.is_active == True,
                     SalesOrder.status != 'cancelled',
                     cast(func.coalesce(func.nullif(SalesOrder.order_date, ''), func.to_char(SalesOrder.created_at, 'YYYY-MM-DD')), String) >= ms_str,
                     cast(func.coalesce(func.nullif(SalesOrder.order_date, ''), func.to_char(SalesOrder.created_at, 'YYYY-MM-DD')), String) <= me_str,
                 ),
                 SalesOrder, cid
-            ).scalar() or 0.0
-        )
-        pay_m_val = float(
-            apply_company_filter(
-                db.query(func.sum(Payment.amount)).filter(
+            )
+        pay_m_q = apply_company_filter(
+                db.query(func.sum(Payment.amount)).select_from(Payment).filter(
                     Payment.is_active == True,
                     cast(func.coalesce(func.nullif(Payment.payment_date, ''), func.to_char(Payment.created_at, 'YYYY-MM-DD')), String) >= ms_str,
                     cast(func.coalesce(func.nullif(Payment.payment_date, ''), func.to_char(Payment.created_at, 'YYYY-MM-DD')), String) <= me_str,
                 ),
                 Payment, cid
-            ).scalar() or 0.0
-        )
+            )
+        if ref:
+            so_m_q = so_m_q.outerjoin(Quotation, SalesOrder.quotation_id == Quotation.id).filter(_so_ref_expr() == ref)
+            pay_m_q = (pay_m_q.join(SalesOrder, Payment.so_id == SalesOrder.id)
+                       .outerjoin(Quotation, SalesOrder.quotation_id == Quotation.id)
+                       .filter(_so_ref_expr() == ref))
+        so_m_val = float(so_m_q.scalar() or 0.0)
+        pay_m_val = float(pay_m_q.scalar() or 0.0)
         monthly.append({
             "month": m_label,
             "year": y,
@@ -896,7 +945,9 @@ def _get_history_dataset(
     salesperson_filter: Optional[str] = None,
     doc_type_filter: Optional[str] = None,
     search: Optional[str] = None,
+    reference: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
+    ref = _ref_value(reference)
     f_str = f_date.isoformat()
     t_str = t_date.isoformat()
     items = []
@@ -931,6 +982,7 @@ def _get_history_dataset(
             .outerjoin(CRMLead, Quotation.crm_lead_id == CRMLead.id)
             .outerjoin(Customer, Quotation.customer_id == Customer.id)
             .filter(q_date_expr >= f_str, q_date_expr <= t_str)
+            .filter(*([Quotation.order_reference == ref] if ref else []))
         )
 
         so_sub = (
@@ -997,6 +1049,7 @@ def _get_history_dataset(
             .outerjoin(CRMLead, func.coalesce(SalesOrder.crm_lead_id, Quotation.crm_lead_id) == CRMLead.id)
             .outerjoin(Customer, SalesOrder.customer_id == Customer.id)
             .filter(so_date_expr >= f_str, so_date_expr <= t_str)
+            .filter(*([_so_ref_expr() == ref] if ref else []))
         )
 
         for so, q, lead, cust in sos_q.with_entities(SalesOrder, Quotation, CRMLead, Customer).all():
@@ -1043,6 +1096,7 @@ def sales_performance_history(
     salesperson: Optional[str] = Query(None),
     doc_type:    Optional[str] = Query(None),
     search:      Optional[str] = Query(None),
+    reference:   Optional[str] = Query(None),
     db:          Session = Depends(get_db),
     user = Depends(_sales_performance_user),
 ):
@@ -1053,7 +1107,8 @@ def sales_performance_history(
         f_date, t_date, cid, db,
         salesperson_filter=salesperson,
         doc_type_filter=doc_type,
-        search=search
+        search=search,
+        reference=reference,
     )
 
     total = len(dataset)
@@ -1076,14 +1131,17 @@ def sales_performance_export(
     to_date:     Optional[str] = Query(None, alias="to"),
     salesperson: Optional[str] = Query(None),
     doc_type:    Optional[str] = Query(None),
+    reference:   Optional[str] = Query(None),
     db:          Session = Depends(get_db),
     user = Depends(_sales_performance_user),
 ):
     cid = getattr(user, "active_company_id", None)
     f_date, t_date, period_label = _parse_dates(from_date, to_date)
+    ref = _ref_value(reference)
 
-    report_data = sales_performance(from_date=f_date.isoformat(), to_date=t_date.isoformat(), db=db, user=user)
-    history_dataset = _get_history_dataset(f_date, t_date, cid, db, salesperson_filter=salesperson, doc_type_filter=doc_type)
+    report_data = sales_performance(from_date=f_date.isoformat(), to_date=t_date.isoformat(), reference=ref, db=db, user=user)
+    history_dataset = _get_history_dataset(f_date, t_date, cid, db, salesperson_filter=salesperson, doc_type_filter=doc_type,
+                                           reference=ref)
 
     report_data["history"] = history_dataset
     return report_data
