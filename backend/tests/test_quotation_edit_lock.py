@@ -78,19 +78,19 @@ def _new_quotation(ctx, who="creator"):
 def test_creator_can_update_own_quotation(ctx):
     q = _new_quotation(ctx)
     assert q["created_by"] == ctx["users"]["creator"].id
-    res = client.put(f"/api/v1/quotations/{q['id']}", json={"internal_notes": "creator edit"}, headers=ctx["h"]["creator"])
+    res = client.put(f"/api/v1/quotations/{q['id']}", json={"payment_terms": "creator edit"}, headers=ctx["h"]["creator"])
     assert res.status_code == 200, res.text
-    assert res.json()["internal_notes"] == "creator edit"
+    assert res.json()["payment_terms"] == "creator edit"
 
 
 def test_other_sales_user_gets_403(ctx):
     q = _new_quotation(ctx)
-    res = client.put(f"/api/v1/quotations/{q['id']}", json={"internal_notes": "not mine"}, headers=ctx["h"]["other"])
+    res = client.put(f"/api/v1/quotations/{q['id']}", json={"payment_terms": "not mine"}, headers=ctx["h"]["other"])
     assert res.status_code == 403
     assert res.json()["detail"] == LOCK_MSG
     ctx["db"].expire_all()
     got = client.get(f"/api/v1/quotations/{q['id']}", headers=ctx["h"]["creator"]).json()
-    assert got.get("internal_notes") != "not mine"
+    assert got.get("payment_terms") != "not mine"
 
 
 def test_manager_gets_403(ctx):

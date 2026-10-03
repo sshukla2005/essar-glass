@@ -1,10 +1,13 @@
 import React from 'react'
 import { Form, Input, Tabs } from 'antd'
 import { FileTextOutlined } from '@ant-design/icons'
+import { useAuth } from '../../../hooks/useAuth'
 
 const { TextArea } = Input
 
 const NotesCard = () => {
+  // Internal Notes are Super Admin only; the API also hides them and ignores edits from others
+  const { isSuperAdmin } = useAuth()
   return (
     <div style={{ 
       background: '#fff', 
@@ -45,7 +48,7 @@ const NotesCard = () => {
                 </Form.Item>
               ) 
             },
-            { 
+            isSuperAdmin && { 
               key: 'in', 
               label: 'Internal Notes', 
               children: (
@@ -58,7 +61,7 @@ const NotesCard = () => {
                 </Form.Item>
               ) 
             },
-          ]} 
+          ].filter(Boolean)} 
         />
       </div>
     </div>
