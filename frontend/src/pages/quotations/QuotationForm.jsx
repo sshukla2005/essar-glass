@@ -2438,7 +2438,7 @@ const QuotationForm = () => {
 
       {/* ── Modal 2: Cost vs Selling (Per-Product) ── */}
       <Modal title={<Space><LineChartOutlined style={{ color: '#6366f1' }} /><span>Cost vs Selling — {compWizard?.product_name}</span></Space>}
-        open={compWizard !== null} onCancel={() => { flushWizardRowsToSizes(); setCompWizard(null); setWizardCostPrice(null) }} width={820}
+        open={compWizard !== null} onCancel={() => { flushWizardRowsToSizes(); setCompWizard(null); setWizardCostPrice(null) }} width="min(1400px, 96vw)"
         footer={<Space>
           <Button style={{ borderColor: '#10b981', color: '#10b981' }} disabled={!wizardCostPrice || wizardCostPrice <= 0}
             onClick={() => { flushWizardRowsToSizes(); if (compWizard?.group_key && wizardCostPrice > 0) { updateGroup(compWizard.group_key, 'manual_cost_price', wizardCostPrice); message.success(`Cost price ₹${wizardCostPrice}/sqft saved`) } setCompWizard(null); setWizardCostPrice(null) }}>
@@ -2666,7 +2666,7 @@ const QuotationForm = () => {
         footer={
           <Button onClick={() => setGlobalComparison(null)}>Close</Button>
         }
-        width={1050}
+        width="min(1400px, 96vw)"
       >
         {globalComparison && (
           <>
