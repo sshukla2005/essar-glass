@@ -43,6 +43,39 @@ def _require_permissions(allowed: set[str] | None = None, module: str | None = N
 ROUNDED_TOTAL_TABLES = ("quotations", "sales_orders", "purchase_orders")
 
 
+# Fields only a superadmin may see or change, per table. Hidden from every response and
+# ignored on create/update for everyone else (an existing value is kept).
+SUPERADMIN_ONLY_FIELDS = {
+    "quotations": ("internal_notes",),
+    "sales_orders": ("internal_notes",),
+}
+
+
+def _superadmin_only_fields(model, user):
+    if getattr(user, "role", None) == "superadmin":
+        return ()
+    return SUPERADMIN_ONLY_FIELDS.get(getattr(model, "__tablename__", None), ())
+
+
+def _hide_superadmin_only(model, user, out):
+    """Strip superadmin-only fields from a serialized row (dict), a list of rows or a page."""
+    fields = _superadmin_only_fields(model, user)
+    if not fields:
+        return out
+    rows = out.get("items", []) if isinstance(out, dict) and "items" in out else (out if isinstance(out, list) else [out])
+    for row in rows:
+        if isinstance(row, dict):
+            for f in fields:
+                row.pop(f, None)
+    return out
+
+
+def _drop_superadmin_only_input(model, user, payload: dict) -> dict:
+    for f in _superadmin_only_fields(model, user):
+        payload.pop(f, None)
+    return payload
+
+
 def _round_document_total(item):
     """Quotations, SOs and POs are billed in whole rupees (Round Off on the PDF and form).
 
@@ -298,12 +331,12 @@ def make_crud_router(
             if isinstance(model.__table__.columns[sort_by].type, _String):
                 col = _func.nullif(col, "")
             direction = col.desc() if sort_order == "descend" else col.asc()
-            return paginate(q.order_by(direction.nulls_last(), model.id.desc()), page, page_size, counts=counts)
+            return _hide_superadmin_only(model, user, paginate(q.order_by(direction.nulls_last(), model.id.desc()), page, page_size, counts=counts))
 
         # Sort customers alphabetically by name, everything else by id desc
         if hasattr(model, 'name') and getattr(model, '__tablename__', None) == 'customers':
-            return paginate(q.order_by(model.name.asc()), page, page_size, counts=counts)
-        return paginate(q.order_by(model.id.desc()), page, page_size, counts=counts)
+            return _hide_superadmin_only(model, user, paginate(q.order_by(model.name.asc()), page, page_size, counts=counts))
+        return _hide_superadmin_only(model, user, paginate(q.order_by(model.id.desc()), page, page_size, counts=counts))
 
     @router.get("/dropdown")
     def dropdown(
@@ -316,7 +349,7 @@ def make_crud_router(
         q = apply_scope_filter(q, model, user, module)
         if hasattr(model, "is_active"):
             q = q.filter(model.is_active == True)
-        return [serialize_row(o) for o in q.order_by(model.id).all()]
+        return _hide_superadmin_only(model, user, [serialize_row(o) for o in q.order_by(model.id).all()])
 
     @router.get("/{item_id}")
     def get_item(
@@ -338,7 +371,7 @@ def make_crud_router(
             from app.models.user import User as UserModel
             creator = db.query(UserModel).filter(UserModel.id == item.created_by).first() if item.created_by else None
             out["created_by_name"] = (creator.name or creator.username) if creator else None
-        return out
+        return _hide_superadmin_only(model, user, out)
 
     @router.post("/", status_code=201)
     def create_item(
@@ -348,6 +381,15 @@ def make_crud_router(
     ):
         obj_data = data.model_dump()
         obj_data = prepare_write_only_fields(model, obj_data, is_update=False)
+        obj_data = _drop_superadmin_only_input(model, user, obj_data)
+        # A Sales Order made from a quotation keeps the quotation's internal notes, also when
+        # the user converting it cannot see them (and so sent none)
+        if (getattr(model, "__tablename__", None) == "sales_orders" and obj_data.get("quotation_id")
+                and not obj_data.get("internal_notes")):
+            from app.models.quotation import Quotation as QuotationNotes
+            src = db.query(QuotationNotes.internal_notes).filter(QuotationNotes.id == obj_data["quotation_id"]).scalar()
+            if src:
+                obj_data["internal_notes"] = src
 
         if company_scoped:
             from app.models.user import User as UserModel
@@ -560,7 +602,7 @@ def make_crud_router(
             _advance_so_on_dc_delivered(db, item)
             db.commit()
 
-        return serialize_row(item)
+        return _hide_superadmin_only(model, user, serialize_row(item))
 
     @router.put("/{item_id}")
     def update_item(
@@ -584,6 +626,7 @@ def make_crud_router(
 
         update_data = data.model_dump(exclude_unset=True)
         update_data = prepare_write_only_fields(model, update_data, is_update=True)
+        update_data = _drop_superadmin_only_input(model, user, update_data)
 
         # Never allow financial server-computed fields, company_id or created_by to be changed via update
         update_data.pop("company_id", None)
@@ -776,7 +819,7 @@ def make_crud_router(
                 sync_dc_stock_movements(db, item, new_st, old_status)
                 db.commit()
 
-        return serialize_row(item)
+        return _hide_superadmin_only(model, user, serialize_row(item))
 
     @router.patch("/{item_id}/status")
     def change_status(
@@ -839,7 +882,7 @@ def make_crud_router(
             db.commit()
 
         db.refresh(item)
-        return serialize_row(item)
+        return _hide_superadmin_only(model, user, serialize_row(item))
 
     @router.patch("/{item_id}/archive")
     def archive_item(
