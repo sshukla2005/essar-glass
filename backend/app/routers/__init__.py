@@ -165,6 +165,8 @@ def make_crud_router(
         crm_lead_id:  Optional[int] = Query(None),
         status:       Optional[str] = Query(None),
         product_id:   Optional[int] = Query(None),
+        sort_by:      Optional[str] = Query(None),
+        sort_order:   Optional[str] = Query(None),
         db:    Session = Depends(get_db),
         user         = Depends(_require_permissions(read_roles, module)),
     ):
@@ -270,6 +272,16 @@ def make_crud_router(
             if search_filters:
                 from sqlalchemy import or_
                 q = q.filter(or_(*search_filters))
+
+        # A column header sort from the list (?sort_by=delivery_date&sort_order=ascend|descend).
+        # Only real columns of this table; blanks go last either way; id breaks ties.
+        if sort_by and sort_by in model.__table__.columns:
+            col = getattr(model, sort_by)
+            from sqlalchemy import String as _String, func as _func
+            if isinstance(model.__table__.columns[sort_by].type, _String):
+                col = _func.nullif(col, "")
+            direction = col.desc() if sort_order == "descend" else col.asc()
+            return paginate(q.order_by(direction.nulls_last(), model.id.desc()), page, page_size, counts=counts)
 
         # Sort customers alphabetically by name, everything else by id desc
         if hasattr(model, 'name') and getattr(model, '__tablename__', None) == 'customers':

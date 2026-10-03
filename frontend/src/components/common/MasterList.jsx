@@ -55,6 +55,8 @@ const MasterList = ({
 
   const [page,      setPage]      = useState(1)
   const [pageSize,  setPageSize]  = useState(DEFAULT_PAGE_SIZE)
+  // Column header sort, applied by the API to the whole list: { by: 'delivery_date', order: 'ascend' | 'descend' }
+  const [sort,      setSort]      = useState(null)
   const [search,    setSearch]    = useState('')
   const [isActive,  setIsActive]  = useState(undefined) // undefined = show all
 
@@ -67,7 +69,7 @@ const MasterList = ({
     // NOTE: never put JSX in a queryKey — TanStack serializes it and React
     // elements recurse into the fiber tree (stack overflow). Only include
     // extraFilters when it's a plain filter-params object (legacy dual-use).
-    queryKey: [queryKey, page, pageSize, search, isActive,
+    queryKey: [queryKey, page, pageSize, search, isActive, sort,
       (typeof extraFilters === 'object' && !React.isValidElement(extraFilters) ? extraFilters : null),
       apiFilters],
     queryFn:  () => api.list({
@@ -75,6 +77,7 @@ const MasterList = ({
       page_size: pageSize,
       search,
       is_active: isActive,
+      ...(sort ? { sort_by: sort.by, sort_order: sort.order } : {}),
       ...(typeof extraFilters === 'object' && !React.isValidElement(extraFilters) ? extraFilters : {}),
       ...(apiFilters || {}),
     }).then(r => r.data),
@@ -304,6 +307,11 @@ const MasterList = ({
           loading={isLoading || isFetching}
           scroll={{ x: 'max-content' }}
           rowClassName={(r) => r.is_active === false ? 'row-archived' : ''}
+          onChange={(_pagination, _filters, sorter, extra) => {
+            if (extra?.action !== 'sort') return
+            setSort(sorter?.order ? { by: sorter.field || sorter.columnKey, order: sorter.order } : null)
+            setPage(1)
+          }}
           pagination={{
             current:   page,
             pageSize:  pageSize,

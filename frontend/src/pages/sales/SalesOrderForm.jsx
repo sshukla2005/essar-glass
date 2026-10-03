@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { Form, Row, Col, Divider, Button, Space, Tag, Badge, App, Modal, Typography, Table, InputNumber, Select, Card, Checkbox } from 'antd'
-import { PlusOutlined, ShoppingCartOutlined, FileTextOutlined, CarOutlined, DollarOutlined, ToolOutlined, DownloadOutlined, AimOutlined, LineChartOutlined } from '@ant-design/icons'
+import { Form, Row, Col, Divider, Button, Space, Tag, Badge, App, Modal, Typography, Table, InputNumber, Select, Card, Checkbox, Collapse } from 'antd'
+import { PlusOutlined, ShoppingCartOutlined, FileTextOutlined, CarOutlined, DollarOutlined, ToolOutlined, DownloadOutlined, AimOutlined, LineChartOutlined, UploadOutlined } from '@ant-design/icons'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import dayjs from 'dayjs'
 import * as XLSX from 'xlsx'
+import { parseSalesOrderExcel, downloadSalesOrderTemplate } from '../../utils/soExcelImport'
 import MasterForm from '../../components/common/MasterForm'
 import { salesOrderApi, customerApi, productApi, quotationApi, purchaseOrderApi, deliveryChallanApi, invoiceApi, warehouseApi, workshopOrderApi, processMasterApi, employeeApi, settingsApi } from '../../api'
 import { generateSOPDF, makePdfFilename } from '../../utils/pdfGenerator'
@@ -141,6 +142,8 @@ const SalesOrderForm = () => {
   const [leavePrompt, setLeavePrompt] = useState(null)
   const hydratedRef = useRef(false)
   const rateCardRef = useRef(null)
+  const fileInputRef = useRef(null)
+  const [importPreview, setImportPreview] = useState(null)
 
   const [soUnit, setSoUnit] = useState('inch')
   const [dropdownConfig] = useState(getDropdownConfig())
@@ -1881,6 +1884,40 @@ const SalesOrderForm = () => {
   }
 
   const status = record?.status || 'draft'
+  // Glass sizes can be imported while the order is still being prepared
+  const canImportExcel = ['draft', 'confirmed'].includes(status)
+
+  // Client S.O. Excel → glass groups (same reader as the Quotation form)
+  const handleExcelImport = async (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    try {
+      const buffer = await file.arrayBuffer()
+      setImportPreview(parseSalesOrderExcel(buffer, { products, dropdownConfig, calcGroupSize, calcRateFromMatrix }))
+    } catch (err) {
+      console.error(err)
+      message.error(err?.message?.startsWith('Could not') || err?.message?.startsWith('No glass')
+        ? err.message : 'Failed to read Excel file. Make sure it is a valid .xlsx file.')
+    }
+    e.target.value = ''
+  }
+
+  const applyExcelImport = () => {
+    const preview = importPreview
+    // Keep glass already entered; drop only empty groups (the blank starter row)
+    setGroups(prev => [
+      ...prev.filter(g => (g.sizes || []).some(sz => sz.width_inch && sz.height_inch)),
+      ...preview.groups,
+    ])
+    if (preview.clientName && !form.getFieldValue('customer_id')) {
+      const name = String(preview.clientName).toLowerCase()
+      const match = customers.find(c => c.name && (c.name.toLowerCase().includes(name) || name.includes(c.name.toLowerCase())))
+      if (match) form.setFieldValue('customer_id', match.id)
+      else message.warning(`Customer "${preview.clientName}" not found. Please select the customer.`)
+    }
+    message.success(`Imported ${preview.totalItems} sizes across ${preview.totalProducts} products`)
+    setImportPreview(null)
+  }
   const soId = id ? parseInt(id) : null
 
   const poItems = Array.isArray(posData) ? posData : (posData?.items || [])
@@ -2142,10 +2179,13 @@ const SalesOrderForm = () => {
 
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
+          <input type="file" accept=".xlsx,.xls" ref={fileInputRef} style={{ display: 'none' }} onChange={handleExcelImport} />
           <ActionToolbar
             type="sales_order"
             status={status}
             isEdit={isEdit}
+            onImportExcel={canImportExcel ? () => fileInputRef.current?.click() : undefined}
+            onDownloadTemplate={canImportExcel ? downloadSalesOrderTemplate : undefined}
             onCostAnalysis={openGlobalComparison}
             onGeneratePDF={async () => {
               const recordData = getSOPdfData()
@@ -3163,6 +3203,36 @@ const SalesOrderForm = () => {
         ].filter(Boolean)}
       >
         <p>You have unsaved changes. If you leave now, all changes will be lost.</p>
+      </Modal>
+      {/* ── Excel Import Preview ── */}
+      <Modal title={<Space><UploadOutlined style={{ color: '#0ea5e9' }} /><span>Excel Import Preview</span></Space>}
+        open={importPreview !== null} onCancel={() => setImportPreview(null)} width={700}
+        footer={[
+          <Button key="cancel" onClick={() => setImportPreview(null)}>Cancel</Button>,
+          <Button key="import" type="primary" style={{ background: '#0ea5e9', borderColor: '#0ea5e9' }} onClick={applyExcelImport}>
+            Import {importPreview?.totalItems} Items
+          </Button>,
+        ]}>
+        {importPreview && (<>
+          <Row gutter={16} style={{ marginBottom: 16 }}>
+            {importPreview.orderNo && <Col span={12}><Text type="secondary">Order No: </Text><Text strong>{importPreview.orderNo}</Text></Col>}
+            {importPreview.clientName && <Col span={12}><Text type="secondary">Client: </Text><Text strong>{importPreview.clientName}</Text></Col>}
+          </Row>
+          <Row gutter={16} style={{ marginBottom: 16 }}>
+            <Col span={8}><Card size="small" style={{ textAlign: 'center', background: '#f0fdf4' }}><Text type="secondary">Products Found</Text><div style={{ fontSize: 24, fontWeight: 700, color: '#16a34a' }}>{importPreview.totalProducts}</div></Card></Col>
+            <Col span={8}><Card size="small" style={{ textAlign: 'center', background: '#eff6ff' }}><Text type="secondary">Total Sizes</Text><div style={{ fontSize: 24, fontWeight: 700, color: '#1d4ed8' }}>{importPreview.totalItems}</div></Card></Col>
+            <Col span={8}><Card size="small" style={{ textAlign: 'center', background: '#fff7ed' }}><Text type="secondary">Est. Total (₹)</Text><div style={{ fontSize: 18, fontWeight: 700, color: '#ea580c' }}>₹{importPreview.groups.flatMap(g => g.sizes).reduce((t, sz) => t + (sz.subtotal || 0), 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</div></Card></Col>
+          </Row>
+          <Collapse size="small" items={importPreview.groups.map((g, gi) => ({
+            key: gi,
+            label: <Space><Tag color="blue">{gi + 1}</Tag><Text strong>{g.description}</Text><Tag>{g.sizes.length} sizes</Tag><Tag color="green">₹{g.rate}/sqft</Tag>{g.cep && <Tag color="orange">CEP</Tag>}</Space>,
+            children: g.sizes.map((sz, si) => (
+              <div key={si} style={{ fontSize: 12, marginBottom: 4 }}>
+                {String.fromCharCode(97 + si)}.{' '}{unit === 'inch' ? `${toFraction(sz.width_inch)}"` : `${Math.round(sz.width_inch * 25.4)}mm`}{' × '}{unit === 'inch' ? `${toFraction(sz.height_inch)}"` : `${Math.round(sz.height_inch * 25.4)}mm`}{' × '}{sz.quantity} pcs{' = '}<Text strong>{sz.total_sqft?.toFixed(3)} sqft</Text>{' → '}<Text strong style={{ color: '#059669' }}>₹{(sz.subtotal || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Text>
+              </div>
+            )),
+          }))} />
+        </>)}
       </Modal>
     </MasterForm>
   )
