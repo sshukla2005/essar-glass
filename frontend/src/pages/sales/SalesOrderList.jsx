@@ -5,7 +5,7 @@ import { salesOrderApi, customerApi } from '../../api'
 import { useQuery } from '@tanstack/react-query'
 import { generateSOPDF } from '../../utils/pdfGenerator'
 import { DownloadOutlined, FilterOutlined } from '@ant-design/icons'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, Link } from 'react-router-dom'
 import { ORDER_REFERENCES, orderReferenceLabel, orderReferenceColor } from '../../utils/orderReference'
 
 const STATUS_COLORS = {
@@ -39,7 +39,13 @@ const SalesOrderList = () => {
     { title: 'SO Number', dataIndex: 'so_number', width: 120 },
     { title: 'Customer', dataIndex: 'customer_name', render: (v, r) => v || r.customer_id || '—' },
     { title: 'Reference', dataIndex: 'order_reference', render: v => v ? <Tag color={orderReferenceColor(v)}>{orderReferenceLabel(v)}</Tag> : '—' },
-    { title: 'Quotation Ref', dataIndex: 'quotation_id', render: v => v ? `QT${String(v).padStart(4,'0')}` : '—' },
+    {
+      // The linked quotation's own number (from the API), opening that quotation
+      title: 'Quotation Ref', dataIndex: 'quotation_number',
+      render: (v, r) => r.quotation_id
+        ? <Link to={`/quotations/${r.quotation_id}/edit`} onClick={e => e.stopPropagation()}>{v || `Quotation #${r.quotation_id}`}</Link>
+        : '—',
+    },
     { title: 'Order Date', dataIndex: 'order_date', sorter: true },
     { title: 'Delivery Date', dataIndex: 'delivery_date', sorter: true },
     { title: 'Total Amount', dataIndex: 'total_amount', render: v => <span style={{ color: '#16a34a', fontWeight: 600 }}>₹ {Math.round(Number(v||0)).toLocaleString('en-IN')}</span> },
