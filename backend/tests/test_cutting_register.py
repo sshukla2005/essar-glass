@@ -437,3 +437,33 @@ def test_cutting_register_counts_cost_sqft(db_session: Session, cutting_test_env
     finally:
         db_session.query(WorkshopOrder).filter(WorkshopOrder.wo_number == "WO-COST-SQFT").delete(synchronize_session=False)
         db_session.commit()
+
+
+def test_mark_complete_put_fills_cut_and_completes(cutting_test_env, db_session: Session):
+    """Mark Complete sends every line with Cut = Qty plus status=completed in one PUT."""
+    headers = cutting_test_env["headers"]
+
+    payload = {
+        "customer_name": "Mark Complete Customer",
+        "order_date": date.today().isoformat(),
+        "status": "draft",
+        "lines": [
+            {"description": "Glass A 8mm", "thickness": 8, "act_w_in": 30.0, "act_h_in": 60.0, "qty": 3, "qty_cut": 1},
+            {"description": "Glass B 12mm", "thickness": 12, "act_w_in": 20.0, "act_h_in": 40.0, "qty": 5, "qty_cut": 0},
+        ],
+    }
+    res = client.post("/api/v1/workshop/", json=payload, headers=headers)
+    assert res.status_code == 201
+    wo_id = res.json()["id"]
+    assert res.json()["status"] != "completed"
+
+    try:
+        lines = [{**l, "qty_cut": l["qty"]} for l in res.json()["lines"]]
+        res = client.put(f"/api/v1/workshop/{wo_id}", json={"lines": lines, "status": "completed"}, headers=headers)
+        assert res.status_code == 200
+        body = res.json()
+        assert body["status"] == "completed"
+        assert [l["qty_cut"] for l in body["lines"]] == [3, 5]
+        assert all(l["cut_completed_at"] for l in body["lines"])
+    finally:
+        client.delete(f"/api/v1/workshop/{wo_id}", headers=headers)

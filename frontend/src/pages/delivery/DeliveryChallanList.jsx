@@ -12,6 +12,12 @@ const STATUS_COLORS = {
   returned: 'red',
 }
 
+// Pieces on the challan: dispatched qty of every line (glass and hardware)
+const totalQty = (lines) => (Array.isArray(lines) ? lines : []).reduce((s, l) => {
+  const q = Number(l?.qty_dispatched ?? l?.dispatch_qty ?? l?.quantity ?? 0)
+  return s + (Number.isFinite(q) ? q : 0)
+}, 0)
+
 const DeliveryChallanList = () => {
   const { data: customers = [] } = useQuery({ queryKey: ['customers-dd'], queryFn: () => customerApi.dropdown().then(r => r.data) })
   
@@ -23,6 +29,7 @@ const DeliveryChallanList = () => {
       ? <Link to={`/sales-orders/${r.so_id}/edit`} onClick={e => e.stopPropagation()}>{v || `Sales Order #${r.so_id}`}</Link>
       : '—' },
     { title: 'Date', dataIndex: 'dc_date' },
+    { title: 'Total Qty', key: 'total_qty', align: 'right', width: 100, render: (_, r) => totalQty(r.lines).toLocaleString('en-IN') },
     { title: 'Status', dataIndex: 'status', render: v => <Tag color={STATUS_COLORS[v] || 'default'}>{(v === 'draft' ? 'Ready to Deliver' : String(v)).toUpperCase()}</Tag> },
   ]
 
