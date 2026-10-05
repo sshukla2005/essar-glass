@@ -493,6 +493,7 @@ def get_cutting_register(
 
         wo_cut_pieces = 0
         wo_total_pieces = 0
+        wo_remaining_sqft = 0.0
         lines = wo.lines or []
         wo_completed = (wo.status == "completed")
 
@@ -551,6 +552,7 @@ def get_cutting_register(
             # lines that then stay at 0 cut.
             if wo.status != "cancelled" and qty_pending > 0:
                 tile_data["pending"][cat] += unit_sqft * qty_pending
+                wo_remaining_sqft += unit_sqft * qty_pending
                 if qty_cut > 0:
                     tile_data["in_progress"][cat] += unit_sqft * qty_pending
 
@@ -576,6 +578,7 @@ def get_cutting_register(
                 "total_sqft": round(row_total, 2),
                 "cut_pieces": wo_cut_pieces,
                 "total_pieces": wo_total_pieces,
+                "remaining_sqft": round(wo_remaining_sqft, 2),
                 "progress_pct": pct,
                 "status": wo.status or "draft",
                 "status_label": status_map.get(wo.status, "PENDING"),
