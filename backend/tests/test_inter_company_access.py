@@ -223,3 +223,49 @@ def test_linked_po_so_reference_is_the_source_so(ctx):
     made["links"].append(link)
     ref = db.execute(text("select vendor_reference from purchase_orders where id = :i"), {"i": link["po_id"]}).scalar()
     assert ref == so["so_number"]
+
+
+@pytest.mark.parametrize("how", ["delete", "archive"])  # the lists' red delete icon calls archive
+def test_deleting_the_linked_so_deletes_only_the_supplier_side(ctx, how):
+    """Delete the linked SO in the supplier company: its WO and POs there go, the source company's PO stays."""
+    db, made = ctx
+    h1, h2 = _superadmin_headers(db, 1, 2)
+    res = client.post("/api/v1/inter-company/link", headers=h1, json={
+        "source_company_id": 1, "supplier_company_id": 2, "lines": LINES})
+    assert res.status_code == 201, res.text
+    link = res.json()
+    made["links"].append(link)
+    supplier_po = client.post("/api/v1/purchase-orders/", json={"so_id": link["so_id"], "lines": []}, headers=h2)
+    assert supplier_po.status_code == 201, supplier_po.text
+    other_so = client.post("/api/v1/sales-orders/", json={"status": "draft"}, headers=h2).json()
+    made["sos"].append(other_so["id"])
+    other_wo = client.post("/api/v1/workshop/", json={"so_id": other_so["id"], "lines": LINES}, headers=h2).json()
+
+    if how == "delete":
+        assert client.delete(f"/api/v1/sales-orders/{link['so_id']}", headers=h2).status_code == 200
+    else:
+        assert client.patch(f"/api/v1/sales-orders/{link['so_id']}/archive", headers=h2).status_code == 200
+
+    def active(table, id_):
+        db.expire_all()
+        return db.execute(text(f"select is_active from {table} where id = :i"), {"i": id_}).scalar()
+    try:
+        assert active("sales_orders", link["so_id"]) is False
+        assert active("workshop_orders", link["wo_id"]) is False
+        assert active("purchase_orders", supplier_po.json()["id"]) is False
+        assert active("purchase_orders", link["po_id"]) is True       # source company's PO untouched
+        assert active("workshop_orders", other_wo["id"]) is True       # unrelated WO untouched
+    finally:
+        db.execute(text("delete from purchase_orders where id = :i"), {"i": supplier_po.json()["id"]})
+        db.commit()
+
+
+def test_deleting_a_normal_so_leaves_its_wo(ctx):
+    db, made = ctx
+    h1, = _superadmin_headers(db, 1)
+    so = client.post("/api/v1/sales-orders/", json={"status": "draft"}, headers=h1).json()
+    made["sos"].append(so["id"])
+    wo = client.post("/api/v1/workshop/", json={"so_id": so["id"], "lines": LINES}, headers=h1).json()
+    assert client.delete(f"/api/v1/sales-orders/{so['id']}", headers=h1).status_code == 200
+    db.expire_all()
+    assert db.execute(text("select is_active from workshop_orders where id = :i"), {"i": wo["id"]}).scalar() is True

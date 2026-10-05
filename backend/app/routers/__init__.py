@@ -111,6 +111,27 @@ def _advance_so_on_dc_delivered(db, dc):
         so.status = "delivered"
 
 
+def _delete_linked_so_children(db, so):
+    """Deleting an SO created by Link to Supplier Co. also deletes (archives) that
+    company's WO and POs for it. Only the SO's own company is touched: the source
+    company's PO (whose so_id also points here) stays."""
+    if getattr(so, "__tablename__", None) != "sales_orders":
+        return
+    ref = so.linked_ref if isinstance(getattr(so, "linked_ref", None), dict) else {}
+    if not ref.get("po_id"):
+        return
+    from sqlalchemy import or_
+    from app.models.workshop import WorkshopOrder
+    from app.models.purchase_order import PurchaseOrder
+    wo_match = WorkshopOrder.so_id == so.id
+    if ref.get("wo_id"):
+        wo_match = or_(wo_match, WorkshopOrder.id == ref["wo_id"])
+    for wo in db.query(WorkshopOrder).filter(WorkshopOrder.company_id == so.company_id, wo_match).all():
+        wo.is_active = False
+    for po in db.query(PurchaseOrder).filter(PurchaseOrder.company_id == so.company_id, PurchaseOrder.so_id == so.id).all():
+        po.is_active = False
+
+
 def _advance_so_on_wo_progress(db, wo):
     """A Workshop Order that has started (or finished) means its Sales Order is in production.
 
@@ -915,6 +936,7 @@ def make_crud_router(
 
         if hasattr(item, "is_active"):
             item.is_active = False
+        _delete_linked_so_children(db, item)
         db.commit()
         return {"message": "Archived successfully"}
 
@@ -977,6 +999,7 @@ def make_crud_router(
             item.is_active = False
         else:
             db.delete(item)
+        _delete_linked_so_children(db, item)
         db.commit()
 
         if tbl == "stock_movements" and pid:
