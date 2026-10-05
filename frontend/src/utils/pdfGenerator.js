@@ -3390,6 +3390,8 @@ export const generateDeliveryChallanPDF = async (dc) => {
 
     // 7. Glass Groups rendering
     let groupNo = 0
+    let totalOrdered = 0
+    let totalDispatched = 0
     groupsMap.forEach((sizes, groupDesc) => {
       groupNo++
       checkPageBreakDC(25)
@@ -3426,6 +3428,11 @@ export const generateDeliveryChallanPDF = async (dc) => {
         ]
       })
 
+      const groupOrd = bodyRows.reduce((t, r) => t + (Number(r[3]) || 0), 0)
+      const groupDisp = bodyRows.reduce((t, r) => t + (Number(r[4]) || 0), 0)
+      totalOrdered += groupOrd
+      totalDispatched += groupDisp
+
       autoTable(doc, {
         startY: y,
         theme: 'grid',
@@ -3434,6 +3441,9 @@ export const generateDeliveryChallanPDF = async (dc) => {
           'Sr No', 'Actual Size (Inch)', 'Size (mm)', 'Ordered Qty', 'Dispatched Qty', 'Remarks'
         ]],
         body: bodyRows,
+        foot: [['', 'Total', '', String(groupOrd), String(groupDisp), '']],
+        showFoot: 'lastPage',
+        footStyles: { fillColor: C.summaryBg, textColor: C.text, fontStyle: 'bold', fontSize: 8.5, halign: 'center' },
         styles: {
           fontSize: 8.5,
           cellPadding: 2,
@@ -3486,12 +3496,20 @@ export const generateDeliveryChallanPDF = async (dc) => {
         h.remarks || '—'
       ])
 
+      const hwOrd = hwBodyRows.reduce((t, r) => t + (Number(r[2]) || 0), 0)
+      const hwDisp = hwBodyRows.reduce((t, r) => t + (Number(r[3]) || 0), 0)
+      totalOrdered += hwOrd
+      totalDispatched += hwDisp
+
       autoTable(doc, {
         startY: y,
         theme: 'grid',
         margin: { left: MARGIN.l, right: MARGIN.r },
         head: [['Sr No', 'Description', 'Ordered Qty', 'Dispatched Qty', 'Remarks']],
         body: hwBodyRows,
+        foot: [['', 'Total', String(hwOrd), String(hwDisp), '']],
+        showFoot: 'lastPage',
+        footStyles: { fillColor: C.summaryBg, textColor: C.text, fontStyle: 'bold', fontSize: 8.5, halign: 'center' },
         styles: {
           fontSize: 8.5,
           cellPadding: 2,
@@ -3521,6 +3539,17 @@ export const generateDeliveryChallanPDF = async (dc) => {
       })
 
       y = doc.lastAutoTable.finalY + SP_16
+    }
+
+    // Grand total of pieces on the challan (glass + hardware)
+    if (totalOrdered || totalDispatched) {
+      checkPageBreakDC(12)
+      drawCard(doc, MARGIN.l, y, CONTENT_W, 9, C.summaryBg, C.border, 1.5)
+      setFont(doc, 8.5, 'bold', C.text)
+      drawText(doc, 'TOTAL QTY', MARGIN.l + 4, y + 5.8)
+      drawText(doc, `Ordered: ${totalOrdered.toLocaleString('en-IN')}     Dispatched: ${totalDispatched.toLocaleString('en-IN')}`,
+        MARGIN.l + CONTENT_W - 4, y + 5.8, { align: 'right' })
+      y += 9 + SP_16
     }
 
     // 9. Signature Block
