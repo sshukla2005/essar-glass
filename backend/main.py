@@ -545,13 +545,14 @@ def get_cutting_register(
                 except Exception:
                     pass
 
-            # 3. In Progress
-            cut_started = line.get("cut_started_at")
-            if (cut_started or qty_cut > 0) and qty_cut < qty:
-                tile_data["in_progress"][cat] += unit_sqft * qty_pending
-            # 4. Pending
-            if not cut_started and qty_cut == 0:
-                tile_data["pending"][cat] += unit_sqft * qty
+            # 3/4. Only the pieces still to cut (qty - cut), on orders not cancelled.
+            # Pending: every uncut piece. In Progress: uncut pieces of lines already
+            # partly cut. cut_started_at is not used: starting processing stamps it on
+            # lines that then stay at 0 cut.
+            if wo.status != "cancelled" and qty_pending > 0:
+                tile_data["pending"][cat] += unit_sqft * qty_pending
+                if qty_cut > 0:
+                    tile_data["in_progress"][cat] += unit_sqft * qty_pending
 
         row_total = thin_sqft + thick_sqft + unclassified_sqft
         if lines:
