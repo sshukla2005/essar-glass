@@ -1783,7 +1783,7 @@ const drawSignatureStrip = (doc, company, y) => {
   const cardH = 22
   
   const blocks = [
-    { label: 'Customer Acceptance', info: 'I/We accept specs & rates.', line: 'Signature & Stamp / Date' },
+    { label: 'Vendor Acceptance', info: 'I/We accept specs & rates.', line: 'Signature & Stamp / Date' },
     { label: 'Prepared By', info: 'Sales & Estimations Desk', line: 'Account Executive Signature' },
     { label: `For ${company?.name || 'COMPANY'}`, info: 'Office Seal Area', line: 'Authorised Signatory' }
   ]
@@ -2748,40 +2748,71 @@ export const generateSOPDF = async (so, { save = true } = {}) => {
 const drawPOItemsCard = (doc, lines, cols, startY, pageNum, po, company) => {
   let y = startY
   let ly = y + SP_8
-  
-  const bannerTitle = 'PURCHASE ITEMS'
+
+  // Glass lines are grouped under a banner with their glass name ("Clear Toughened 12mm"),
+  // a new banner whenever the glass changes, as on the Quotation / SO PDF. Other items
+  // (hardware, labour, wastage) keep their name in the row itself.
   const refCode = po.po_number || 'PO'
-  ly = drawGroupBanner(doc, '1', refCode, bannerTitle, false, false, ly)
-  ly = drawTableHeader(doc, cols, ly)
-  
+  const ROW_H = 6.5, HEADER_H = 7.5, BANNER_H = 8
+  let groupNo = 0
+  let banner = null   // { title, toughened, cep } of the section being drawn
+
+  const isNonGlassLine = (line, w, h) => Boolean((line.item_type && line.item_type !== 'glass') ||
+    (!line.item_type && w === 0 && h === 0 && (line.description || line.remarks || line.product_name)))
+
+  const startSection = (title, toughened, cep, continued = false) => {
+    if ((PAGE_H - 18) - ly < BANNER_H + HEADER_H + ROW_H) {
+      y = checkPageBreak(doc, y, 999, pageNum, po, company)
+      ly = y + SP_8
+    }
+    ly = drawGroupBanner(doc, String(groupNo), refCode, continued ? `${title} (Continued)` : title, toughened, cep, ly)
+    ly = drawTableHeader(doc, cols, ly)
+  }
+
   let tQty = 0, tArea = 0, tRft = 0, tAmt = 0
   const unitMode = po?.unit_mode || 'inch'
-  
+
   lines.forEach((line, i) => {
     const w = line.width_inch || (line.width_mm ? line.width_mm / 25.4 : 0)
     const h = line.height_inch || (line.height_mm ? line.height_mm / 25.4 : 0)
-    const qty = line.quantity || 1
+    const qty = line.quantity || line.qty || 1
     const area = line.sqft ?? line.charged_sqft ?? line.total_sqft ?? 0
     const rft = parseFloat(((w + h) * 2 / 12 * qty).toFixed(3))
     const amt = line.subtotal || line.line_total || 0
     tQty += qty; tArea += area; tRft += rft; tAmt += amt
-    
-    if ((PAGE_H - 18) - ly < 6.5 + 7.5 + 5.5) {
+
+    const isNonGlass = isNonGlassLine(line, w, h)
+    if (!isNonGlass) {
+      const title = String(line.description || line.product_name || 'Glass').trim() || 'Glass'
+      if (!banner || banner.title !== title) {
+        groupNo += 1
+        banner = {
+          title,
+          toughened: Boolean(line.is_toughened) || /tough/i.test(title),
+          cep: Boolean(line.cep),
+        }
+        startSection(banner.title, banner.toughened, banner.cep)
+      }
+    } else if (!banner) {
+      groupNo += 1
+      banner = { title: 'PURCHASE ITEMS', toughened: false, cep: false }
+      startSection(banner.title, false, false)
+    }
+
+    if ((PAGE_H - 18) - ly < ROW_H + 5.5) {
       y = checkPageBreak(doc, y, 999, pageNum, po, company)
       ly = y + SP_8
-      ly = drawGroupBanner(doc, '1', refCode, bannerTitle + ' (Continued)', false, false, ly)
-      ly = drawTableHeader(doc, cols, ly)
+      startSection(banner.title, banner.toughened, banner.cep, true)
     }
-    
+
     const chargedW = line.charged_w_inch || w
     const chargedH = line.charged_h_inch || h
     const rate = line.unit_price ?? line.rate ?? 0
-    
-    const isNonGlass = Boolean((line.item_type && line.item_type !== 'glass') || (!line.item_type && w === 0 && h === 0 && (line.description || line.remarks || line.product_name)))
+
     const desc = isNonGlass
       ? String(line.description || line.remarks || line.product_name || (line.item_type ? (line.item_type.charAt(0).toUpperCase() + line.item_type.slice(1)) : '')).trim()
       : ''
-    
+
     const vals = isNonGlass ? [
       String(i + 1),
       desc,
@@ -2803,13 +2834,17 @@ const drawPOItemsCard = (doc, lines, cols, startY, pageNum, po, company) => {
       fmtN(rate),
       fmtN(amt)
     ]
-    
+
     ly = drawDataRow(doc, cols, vals, false, ly, isNonGlass ? { 1: 4 } : null)
   })
-  
+
+  if (!banner) {   // a PO with no lines still gets its (empty) items table
+    groupNo = 1
+    startSection('PURCHASE ITEMS', false, false)
+  }
   ly = drawGroupSubtotal(doc, cols, tQty, tArea, tRft, 0, tAmt, false, ly)
   ly = drawGroupHsnRow(doc, { hsn: po.hsn_summary, cs: '400' }, ly)
-  
+
   return { endY: ly, tQty, tArea, tAmt }
 }
 
