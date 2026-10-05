@@ -848,6 +848,63 @@ const WorkshopOrderForm = () => {
     return null;
   }, [record, lines]);
 
+  // Every line with Cut = Qty (cut timestamps kept when already set)
+  const linesFullyCut = () => {
+    const nowIso = new Date().toISOString();
+    return lines.map(l => {
+      const qty = Number(l.qty || l.quantity || 1);
+      return {
+        ...l,
+        qty_cut: qty,
+        cut_started_at: l.cut_started_at || nowIso,
+        cut_completed_at: l.cut_completed_at || nowIso,
+      };
+    });
+  };
+
+  // Form values for a save with the given lines
+  const buildSaveValues = (saveLines) => {
+    const values = form.getFieldsValue();
+    if (values.order_date?.format) values.order_date = values.order_date.format('YYYY-MM-DD');
+    if (values.required_by?.format) values.required_by = values.required_by.format('YYYY-MM-DD');
+    const cust = customerList.find(c => c.id === values.customer_id);
+    values.customer_name = cust?.name || '';
+    const so = soList.find(s => s.id === values.so_id);
+    values.so_number = so?.so_number || (values.so_id === record?.so_id ? record?.so_number : '') || '';
+    values.lines = saveLines.map(({ key, ...rest }) => rest);
+    values.jobwork_vendor = selectedJobworkVendor || null;
+    const cleanMaps = artworkMaps.filter(m => m.image || (m.panels || []).length > 0);
+    values.artwork_panels = cleanMaps;
+    values.artwork_image = cleanMaps[0]?.image || null;
+    return values;
+  };
+
+  // Mark Complete: fill Cut = Qty on every line, save, and complete the order in one step
+  const markComplete = () => {
+    if (!lines.length) {
+      message.warning('Add at least one glass line before completing the order.')
+      return
+    }
+    Modal.confirm({
+      title: 'Mark order complete?',
+      content: `All ${lines.length} line(s) will be recorded as fully cut (Cut = Qty) and the order moved to COMPLETED.`,
+      okText: 'Yes, complete',
+      cancelText: 'Cancel',
+      onOk: async () => {
+        const updatedLines = linesFullyCut();
+        const values = buildSaveValues(updatedLines);
+        values.status = 'completed';
+        try {
+          await saveMutation.mutateAsync(values);
+          setLines(updatedLines);
+          message.success('Workshop Order moved to COMPLETED');
+        } catch (err) {
+          message.error(err?.response?.data?.detail || 'Could not complete the workshop order');
+        }
+      },
+    })
+  }
+
   const handleReconcile = async () => {
     if (!mismatchState) return;
 
@@ -871,31 +928,9 @@ const WorkshopOrderForm = () => {
       }))
       if (!ok) return
 
-      const nowIso = new Date().toISOString();
-      const updatedLines = lines.map(l => {
-        const qty = Number(l.qty || l.quantity || 1);
-        return {
-          ...l,
-          qty_cut: qty,
-          cut_started_at: l.cut_started_at || nowIso,
-          cut_completed_at: l.cut_completed_at || nowIso,
-        };
-      });
+      const updatedLines = linesFullyCut();
       setLines(updatedLines);
-
-      // Trigger saving to backend
-      const values = form.getFieldsValue();
-      if (values.order_date?.format) values.order_date = values.order_date.format('YYYY-MM-DD');
-      if (values.required_by?.format) values.required_by = values.required_by.format('YYYY-MM-DD');
-      const cust = customerList.find(c => c.id === values.customer_id);
-      values.customer_name = cust?.name || '';
-      const so = soList.find(s => s.id === values.so_id);
-      values.so_number = so?.so_number || (values.so_id === record?.so_id ? record?.so_number : '') || '';
-      values.lines = updatedLines.map(({ key, ...rest }) => rest);
-      values.jobwork_vendor = selectedJobworkVendor || null;
-      const cleanMaps = artworkMaps.filter(m => m.image || (m.panels || []).length > 0);
-      values.artwork_panels = cleanMaps;
-      values.artwork_image = cleanMaps[0]?.image || null;
+      const values = buildSaveValues(updatedLines);
 
       try {
         await saveMutation.mutateAsync(values);
@@ -1545,7 +1580,7 @@ const WorkshopOrderForm = () => {
                 Start Processing
               </Button>
             )}
-            {status === 'in_progress' && <Button type="primary" icon={<CheckCircleOutlined />} onClick={() => changeStatus('completed')} style={{ background: '#10b981' }}>Mark Complete</Button>}
+            {status === 'in_progress' && <Button type="primary" icon={<CheckCircleOutlined />} onClick={markComplete} loading={saveMutation.isPending} style={{ background: '#10b981' }}>Mark Complete</Button>}
             {status === 'completed' && <Tag color="green" style={{ padding: '6px 12px', fontSize: 14 }}>✅ Completed</Tag>}
 
             {lines.some(l => l.is_toughened) && (
