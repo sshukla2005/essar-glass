@@ -437,6 +437,12 @@ def create_inter_company_link(
                     .first()
                 )
 
+        # SO Reference on the PO = the source company's own SO behind the linked WO,
+        # like POs raised from an SO (the supplier's name stays only as fallback)
+        own_so_number = (source_so.so_number if source_so else None) or (source_wo.so_number if source_wo else None)
+        if own_so_number:
+            po.vendor_reference = own_so_number
+
         so_groups = []
         so_lines = []
         wo_lines = []

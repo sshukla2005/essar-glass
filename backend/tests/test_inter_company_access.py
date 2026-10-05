@@ -206,3 +206,20 @@ def test_linked_po_so_wo_keep_the_entered_quantity(ctx):
     assert [l["quantity"] for l in so_lines] == [5, 3]       # the SO form rebuilds sizes from lines
     assert [g["sizes"][0]["quantity"] for g in so_groups] == [5, 3]
     assert [l["qty"] for l in wo_lines] == [5, 3]
+
+
+def test_linked_po_so_reference_is_the_source_so(ctx):
+    """The PO's SO Reference is the source company's own SO behind the linked WO, not the supplier's name."""
+    db, made = ctx
+    h1, = _superadmin_headers(db, 1)
+    so = client.post("/api/v1/sales-orders/", json={"status": "draft"}, headers=h1).json()
+    made["sos"].append(so["id"])
+    wo = client.post("/api/v1/workshop/", json={"so_id": so["id"], "so_number": so["so_number"], "lines": LINES}, headers=h1)
+    assert wo.status_code == 201, wo.text
+    res = client.post("/api/v1/inter-company/link", headers=h1, json={
+        "source_company_id": 1, "supplier_company_id": 2, "source_wo_id": wo.json()["id"], "lines": LINES})
+    assert res.status_code == 201, res.text
+    link = res.json()
+    made["links"].append(link)
+    ref = db.execute(text("select vendor_reference from purchase_orders where id = :i"), {"i": link["po_id"]}).scalar()
+    assert ref == so["so_number"]
