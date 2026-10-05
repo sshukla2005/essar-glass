@@ -502,3 +502,24 @@ def test_pending_counts_only_uncut_pieces(cutting_test_env, db_session: Session)
         db_session.delete(wo)
         db_session.delete(cancelled)
         db_session.commit()
+
+
+def test_rows_carry_remaining_sqft(cutting_test_env, db_session: Session):
+    """Each register row shows the cost sqft of its pieces still to cut."""
+    headers = cutting_test_env["headers"]
+    size = {"description": "Clear Annealed 5mm", "thickness": 5, "act_w_in": 24.0, "act_h_in": 36.0}
+    wo = WorkshopOrder(wo_number="WO-TEST-002", company_id=1, status="in_progress", is_active=True,
+                       customer_name="Remaining Test", order_date=date.today().isoformat(), lines=[
+        {**size, "qty": 4, "qty_cut": 1},   # 3 left
+        {**size, "qty": 2, "qty_cut": 2},   # done
+    ])
+    db_session.add(wo)
+    db_session.commit()
+    try:
+        res = client.get("/api/v1/workshop/cutting-register", params={"preset": "all_time"}, headers=headers)
+        row = next(r for r in res.json()["items"] if r["id"] == wo.id)
+        unit = row["total_sqft"] / 6
+        assert row["remaining_sqft"] == pytest.approx(3 * unit, abs=0.02)
+    finally:
+        db_session.delete(wo)
+        db_session.commit()

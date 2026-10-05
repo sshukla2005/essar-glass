@@ -726,6 +726,15 @@ const Dashboard = () => {
                   ) : null
                 }] : []),
                 {
+                  title: <AntTooltip title="Cost sqft of the pieces still to cut (Qty − Cut)">REMAINING (SQFT)</AntTooltip>,
+                  dataIndex: 'remaining_sqft', width: 90, align: 'right',
+                  render: v => v ? (
+                    <Text strong style={{ color: '#d97706' }}>
+                      {Number(v).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                    </Text>
+                  ) : <Text type="secondary">0</Text>
+                },
+                {
                   title: 'Cut / Total', key: 'cut_total', width: 90, align: 'center',
                   render: (_, record) => (
                     <Text style={{ fontSize: 13, fontWeight: 600, color: '#334155' }}>
