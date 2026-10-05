@@ -467,3 +467,38 @@ def test_mark_complete_put_fills_cut_and_completes(cutting_test_env, db_session:
         assert all(l["cut_completed_at"] for l in body["lines"])
     finally:
         client.delete(f"/api/v1/workshop/{wo_id}", headers=headers)
+
+
+def test_pending_counts_only_uncut_pieces(cutting_test_env, db_session: Session):
+    """Pending = pieces still to cut (qty - cut); In Progress = the uncut pieces of partly cut lines."""
+    headers = cutting_test_env["headers"]
+    size = {"description": "Clear Annealed 5mm", "thickness": 5, "act_w_in": 24.0, "act_h_in": 36.0}
+
+    def tiles():
+        res = client.get("/api/v1/workshop/cutting-register", params={"preset": "all_time"}, headers=headers)
+        assert res.status_code == 200
+        d = res.json()
+        return {k: d[k]["thin_sqft"] for k in ("pending", "in_progress", "completed")}
+
+    before = tiles()
+    wo = WorkshopOrder(wo_number="WO-TEST-002", company_id=1, status="in_progress", is_active=True,
+                       customer_name="Pending Test", order_date=date.today().isoformat(), lines=[
+        {**size, "qty": 2, "qty_cut": 1, "cut_started_at": "2026-10-05T08:00:00"},  # 1 left, partly cut
+        {**size, "qty": 3, "qty_cut": 0, "cut_started_at": "2026-10-05T08:00:00"},  # started stamp, nothing cut
+        {**size, "qty": 2, "qty_cut": 2, "cut_started_at": "2026-10-05T08:00:00",
+         "cut_completed_at": "2026-10-05T09:00:00"},                                 # done
+    ])
+    cancelled = WorkshopOrder(wo_number="WO-TEST-FLOW-001", company_id=1, status="cancelled", is_active=True,
+                              customer_name="Cancelled", lines=[{**size, "qty": 5, "qty_cut": 0}])
+    db_session.add_all([wo, cancelled])
+    db_session.commit()
+    try:
+        after = tiles()
+        unit = (after["completed"] - before["completed"]) / 2
+        assert unit > 0
+        assert after["pending"] - before["pending"] == pytest.approx(4 * unit, abs=0.02)      # 1 + 3, not 2 + 3 + 5
+        assert after["in_progress"] - before["in_progress"] == pytest.approx(1 * unit, abs=0.02)
+    finally:
+        db_session.delete(wo)
+        db_session.delete(cancelled)
+        db_session.commit()
