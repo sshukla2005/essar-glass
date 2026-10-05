@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { Form, Input, Select, Row, Col, Divider, DatePicker, Button, Table, Steps, Space, Tag, Checkbox, Card, Badge, App, Typography, InputNumber, Switch, Modal, Alert, Popconfirm } from 'antd'
+import { Form, Input, Select, Row, Col, Divider, DatePicker, Button, Table, Steps, Space, Tag, Checkbox, Card, Badge, App, Typography, InputNumber, Switch, Modal, Alert, Popconfirm, Tooltip } from 'antd'
 import { PlusOutlined, DeleteOutlined, ToolOutlined, FireOutlined, FileTextOutlined, CheckCircleOutlined, DownloadOutlined, SwapOutlined, LinkOutlined, PlayCircleOutlined, RollbackOutlined } from '@ant-design/icons'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -91,7 +91,18 @@ const WorkshopOrderForm = () => {
   const { data: salesOrders = [] } = useQuery({ queryKey: ['so-dd'], queryFn: () => salesOrderApi.dropdown().then(r => r.data) })
   const { data: customers = [] } = useQuery({ queryKey: ['customers-dd'], queryFn: () => customerApi.dropdown().then(r => r.data) })
   const { data: products = [] } = useQuery({ queryKey: ['products-dd'], queryFn: () => productApi.dropdown().then(r => r.data) })
-  const { data: tbData } = useQuery({ queryKey: ['tb-wo', id], queryFn: () => tougheningBatchApi.list({ wo_id: id }).then(r => r.data), enabled: isEdit })
+  // Batches record their WO on each line (wo_number); the list API has no WO filter
+  const woNumber = record?.wo_number
+  const { data: tbData } = useQuery({
+    queryKey: ['tb-wo', id, woNumber],
+    queryFn: () => tougheningBatchApi.list({ page_size: 1000 }).then(r => {
+      const items = (r.data?.items || []).filter(b =>
+        (Array.isArray(b.wo_ids) && b.wo_ids.map(String).includes(String(id))) ||
+        (b.lines || []).some(l => l?.wo_number === woNumber))
+      return { items, total: items.length }
+    }),
+    enabled: isEdit && !!woNumber,
+  })
   const { data: processMastersData } = useQuery({ queryKey: ['process-masters'], queryFn: () => processMasterApi.dropdown().then(r => r.data) })
   const { data: vendors = [] } = useQuery({ queryKey: ['vendors-dd'], queryFn: () => vendorApi.dropdown().then(r => r.data) })
 
@@ -1521,8 +1532,12 @@ const WorkshopOrderForm = () => {
               📋 SO: {record.so_number || `#${record.so_id}`}
             </Button>
           )}
+          {/* Greyed out when the order has no toughened glass and no batch yet */}
           <Badge count={tbData?.total || 0}>
-            <Button icon={<FireOutlined />} onClick={() => guardedNavigate(`/workshop/toughening?wo_id=${id}`)}>🔥 Toughening Batches</Button>
+            <Tooltip title={!lines.some(l => l.is_toughened) && !tbData?.total ? 'No toughened glass in this order' : ''}>
+              <Button icon={<FireOutlined />} disabled={!lines.some(l => l.is_toughened) && !tbData?.total}
+                onClick={() => guardedNavigate(`/workshop/toughening?wo_id=${id}`)}>🔥 Toughening Batches</Button>
+            </Tooltip>
           </Badge>
         </div>
       )}
