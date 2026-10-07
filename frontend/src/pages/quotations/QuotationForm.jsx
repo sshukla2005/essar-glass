@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react'
-import { Form, Input, InputNumber, Select, Row, Col, Divider, Tabs, DatePicker, Button, Table, Steps, Space, Tag, Popconfirm, Switch, App, Collapse, Checkbox, Typography, Radio, Tooltip, Modal, Card, Alert } from 'antd'
+import { Form, Input, InputNumber, Select, Row, Col, Divider, Tabs, DatePicker, Button, Table, Steps, Space, Tag, Popconfirm, Switch, App, Collapse, Checkbox, Typography, Radio, Tooltip, Modal, Card } from 'antd'
 import { PlusOutlined, DeleteOutlined, CheckCircleOutlined, CloseCircleOutlined, ShoppingCartOutlined, DownloadOutlined, LineChartOutlined, UploadOutlined } from '@ant-design/icons'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -2037,11 +2037,9 @@ const QuotationForm = () => {
   }
 
   const status = record?.status || 'draft'
-  // Only the creator (or a superadmin) may edit or change the status of an existing quotation; the API enforces the same rule
-  const isCreatorLocked = isEdit && !!record && user?.role !== 'superadmin' && record.created_by !== user?.id
   // Converted quotations are locked, except for a superadmin. Editing one does not change its Sales Order.
   const convertedLocked = status === 'converted' && user?.role !== 'superadmin'
-  const isReadOnly = convertedLocked || status === 'lost' || isCreatorLocked
+  const isReadOnly = convertedLocked || status === 'lost'
   const fmt = (v) => `₹ ${Number(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
   const handleCustomerChange = (val) => {
@@ -2198,7 +2196,6 @@ const QuotationForm = () => {
             isMarkingLost={isMarkingLost}
             onReopen={handleReopen}
             isReopening={isReopening}
-            canChangeStatus={!isCreatorLocked}
           />
         </div>
         <Button
@@ -2221,10 +2218,6 @@ const QuotationForm = () => {
         </Button>
       </div>
 
-      {isCreatorLocked && (
-        <Alert type="info" showIcon style={{ marginBottom: 12 }}
-          message={`Read-only: created by ${record.created_by_name || 'another user'}. Only the creator can edit this quotation.`} />
-      )}
 
       <Form form={form} layout="vertical" disabled={isReadOnly}
         onValuesChange={() => { if (hydratedRef.current) setIsDirty(true) }}>

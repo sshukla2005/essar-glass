@@ -152,8 +152,9 @@ def _advance_so_on_wo_progress(db, wo):
 
 
 def _require_quotation_creator(model, item, user):
-    """Quotations only: edits, status changes, archive and delete are limited to the
-    creator or a superadmin. Quotations with no recorded creator are superadmin-only."""
+    """Quotations only: archive and delete are limited to the creator or a superadmin
+    (anyone with quotation access may edit or change the stage). Quotations with no
+    recorded creator can be archived or deleted only by a superadmin."""
     if getattr(model, "__tablename__", None) != "quotations":
         return
     if user.role != "superadmin" and item.created_by != user.id:
@@ -640,7 +641,6 @@ def make_crud_router(
         if not item:
             raise HTTPException(status_code=404, detail="Not found")
 
-        _require_quotation_creator(model, item, user)
 
         old_status = getattr(item, "status", None)
         old_product_id = getattr(item, "product_id", None)
@@ -857,7 +857,6 @@ def make_crud_router(
         if not item:
             raise HTTPException(status_code=404, detail="Not found")
 
-        _require_quotation_creator(model, item, user)
 
         if getattr(model, "__tablename__", None) == "workshop_orders" and data.get("status") == "completed":
             lines = item.lines or []

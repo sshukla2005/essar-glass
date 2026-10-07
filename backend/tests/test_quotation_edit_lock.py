@@ -1,4 +1,4 @@
-"""MOM 28/09: quotation creator-only edits, manager has no Sales Performance,
+"""MOM 28/09 (edits since opened to everyone; archive/delete stay creator-only), manager has no Sales Performance,
 and creating a Workshop Order moves its confirmed Sales Order to in_production."""
 import os
 import sys
@@ -83,21 +83,14 @@ def test_creator_can_update_own_quotation(ctx):
     assert res.json()["payment_terms"] == "creator edit"
 
 
-def test_other_sales_user_gets_403(ctx):
+@pytest.mark.parametrize("who", ["other", "manager"])
+def test_anyone_with_access_can_edit_a_quotation(ctx, who):
+    """Edits are open to every user with quotation access (no longer creator-only)."""
     q = _new_quotation(ctx)
-    res = client.put(f"/api/v1/quotations/{q['id']}", json={"payment_terms": "not mine"}, headers=ctx["h"]["other"])
-    assert res.status_code == 403
-    assert res.json()["detail"] == LOCK_MSG
-    ctx["db"].expire_all()
-    got = client.get(f"/api/v1/quotations/{q['id']}", headers=ctx["h"]["creator"]).json()
-    assert got.get("payment_terms") != "not mine"
-
-
-def test_manager_gets_403(ctx):
-    q = _new_quotation(ctx)
-    res = client.put(f"/api/v1/quotations/{q['id']}", json={"internal_notes": "manager edit"}, headers=ctx["h"]["manager"])
-    assert res.status_code == 403
-    assert res.json()["detail"] == LOCK_MSG
+    res = client.put(f"/api/v1/quotations/{q['id']}", json={"payment_terms": f"{who} edit"}, headers=ctx["h"][who])
+    assert res.status_code == 200, res.text
+    assert res.json()["payment_terms"] == f"{who} edit"
+    assert res.json()["created_by"] == ctx["users"]["creator"].id   # the creator stays recorded
 
 
 def test_superadmin_can_update_any_quotation(ctx):
@@ -116,9 +109,6 @@ def test_superadmin_can_edit_a_converted_quotation_and_it_stays_converted(ctx):
     assert res.status_code == 200, res.text
     body = res.json()
     assert (body["salesperson"], body["internal_notes"], body["status"]) == ("Reassigned", "after SO", "converted")
-    # Non-creators are still locked out of it
-    assert client.put(f"/api/v1/quotations/{q['id']}", json={"internal_notes": "x"},
-                      headers=ctx["h"]["other"]).status_code == 403
 
 
 def test_non_creator_can_still_read_and_sees_creator_name(ctx):
@@ -128,19 +118,8 @@ def test_non_creator_can_still_read_and_sees_creator_name(ctx):
     assert res.json()["created_by_name"] == ctx["users"]["creator"].name
 
 
-@pytest.mark.parametrize("who", ["other", "manager"])
-@pytest.mark.parametrize("status", ["confirmed", "converted", "cancelled", "lost", "draft"])
-def test_non_creator_cannot_change_status(ctx, who, status):
-    q = _new_quotation(ctx)
-    res = client.patch(f"/api/v1/quotations/{q['id']}/status", json={"status": status}, headers=ctx["h"][who])
-    assert res.status_code == 403
-    assert res.json()["detail"] == LOCK_MSG
-    got = client.get(f"/api/v1/quotations/{q['id']}", headers=ctx["h"]["creator"]).json()
-    assert got["status"] == "draft"
-
-
-@pytest.mark.parametrize("who", ["creator", "superadmin"])
-def test_creator_and_superadmin_can_change_status(ctx, who):
+@pytest.mark.parametrize("who", ["creator", "other", "manager", "superadmin"])
+def test_anyone_with_access_can_change_status(ctx, who):
     q = _new_quotation(ctx)
     res = client.patch(f"/api/v1/quotations/{q['id']}/status", json={"status": "confirmed"}, headers=ctx["h"][who])
     assert res.status_code == 200, res.text
@@ -166,14 +145,13 @@ def test_creator_can_archive(ctx):
     assert res.status_code == 200, res.text
 
 
-def test_quotation_without_creator_is_superadmin_only(ctx):
+def test_quotation_without_creator_can_be_archived_only_by_superadmin(ctx):
     q = _new_quotation(ctx)
     ctx["db"].execute(text("update quotations set created_by = null where id = :id"), {"id": q["id"]})
     ctx["db"].commit()
-    res = client.put(f"/api/v1/quotations/{q['id']}", json={"internal_notes": "x"}, headers=ctx["h"]["creator"])
-    assert res.status_code == 403
-    res = client.put(f"/api/v1/quotations/{q['id']}", json={"internal_notes": "x"}, headers=ctx["h"]["superadmin"])
-    assert res.status_code == 200, res.text
+    assert client.put(f"/api/v1/quotations/{q['id']}", json={"payment_terms": "x"}, headers=ctx["h"]["other"]).status_code == 200
+    assert client.patch(f"/api/v1/quotations/{q['id']}/archive", headers=ctx["h"]["creator"]).status_code == 403
+    assert client.patch(f"/api/v1/quotations/{q['id']}/archive", headers=ctx["h"]["superadmin"]).status_code == 200
 
 
 def test_other_models_status_is_unchanged(ctx):
